@@ -1,0 +1,206 @@
+rules_version = '2';
+// WORFIX Firestore security rules (web app, Firebase mode — web/src/lib/store/cloud.ts).
+//
+// v2.1 adds message reactions, replies, edits and deletes, admin messages and announcements.
+// v2 keeps every v1 collection and rule, and adds: agent missions (made by the GPS mission agent for one
+// volunteer), the Fixcoin shop (shopItems, orders), direct messages and team invites (messages).
+// Deploy: firebase deploy --only firestore:rules,firestore:indexes
+//
+// Model: business rules run in the browser; these rules protect what must not be forged:
+//   • roles, account status and XP / hours / impact / streak on user profiles (reviewers only);
+//   • Fixcoin: only reviewers add it; an owner can only spend it, by placing an order in the same batch;
+//   • organization approval; who may review submissions and issue certificates;
+//   • ownership of friend requests, cheers, notifications, orders and messages.
+service cloud.firestore {
+  match /databases/{db}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function me() { return get(/databases/$(db)/documents/users/$(uid())).data; }
+    function active() { return signedIn() && exists(/databases/$(db)/documents/users/$(uid())) && me().status == 'active'; }
+    function isAdmin() { return active() && me().role in ['admin', 'super_admin']; }
+    function orgApproved(orgId) { return get(/databases/$(db)/documents/organizations/$(orgId)).data.verificationStatus == 'approved'; }
+    function isOrgUser(orgId) { return active() && me().role == 'organization' && me().organizationId == orgId; }
+    function isReviewer() { return isAdmin() || (active() && me().role == 'organization' && me().organizationId != null && orgApproved(me().organizationId)); }
+    function touches(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasAny(keys); }
+    function onlyTouches(keys) { return request.resource.data.diff(resource.data).affectedKeys().hasOnly(keys); }
+    function areFriends(a, b) {
+      return (exists(/databases/$(db)/documents/friendships/$(a + '_' + b)) && get(/databases/$(db)/documents/friendships/$(a + '_' + b)).data.status == 'accepted')
+          || (exists(/databases/$(db)/documents/friendships/$(b + '_' + a)) && get(/databases/$(db)/documents/friendships/$(b + '_' + a)).data.status == 'accepted');
+    }
+    // XP and Fixcoin by difficulty (web/src/lib/domain/rewards.ts).
+    function xpFor(d) { return {'easy': 60, 'medium': 140, 'hard': 300}[d]; }
+    function coinsFor(d) { return {'easy': 15, 'medium': 35, 'hard': 75}[d]; }
+
+    // ── users ──
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && uid() == userId
+        && request.resource.data.id == userId
+        && request.resource.data.role in ['volunteer', 'organization']
+        && request.resource.data.status == 'active'
+        && request.resource.data.xp == 0 && request.resource.data.points == 0 && request.resource.data.level == 1
+        && request.resource.data.emailVerified == false;
+      allow update: if
+        // Owner: profile, personal info, language and privacy. Never role or rewards. Fixcoin may only go down
+        // (spent in the shop — the order rule below checks the amount).
+        (signedIn() && uid() == userId
+          && !touches(['id', 'role', 'xp', 'level', 'trustScore', 'reputation', 'streak', 'lastApprovedDay', 'totalVolunteerHours', 'totalImpact', 'impact'])
+          && (!touches(['points']) || (request.resource.data.points >= 0 && request.resource.data.points < resource.data.points))
+          && (!touches(['status']) || request.resource.data.status == 'deleted')
+          && (!touches(['emailVerified']) || request.auth.token.email_verified == true)
+          && (!touches(['organizationId']) || resource.data.role == 'organization'))
+        || (isReviewer() && !touches(['id', 'email', 'role', 'status', 'organizationId', 'emailVerified', 'phone', 'birthYear']))
+        || (isAdmin() && !touches(['id', 'email']));
+      allow delete: if false;
+    }
+
+    // ── organizations ──
+    match /organizations/{orgId} {
+      allow read: if true;
+      allow create: if active() && me().role == 'organization'
+        && request.resource.data.ownerId == uid() && request.resource.data.verificationStatus == 'pending';
+      allow update: if isAdmin()
+        || (active() && resource.data.ownerId == uid() && !touches(['verificationStatus', 'verificationNote', 'ownerId', 'id']))
+        || (active() && onlyTouches(['totalVolunteers', 'totalMissions']));
+      allow delete: if false;
+    }
+
+    // ── missions ──
+    match /missions/{missionId} {
+      allow read: if true;
+      allow create: if
+        (isOrgUser(request.resource.data.organizationId) && request.resource.data.status == 'draft'
+          && request.resource.data.rewardXP == xpFor(request.resource.data.difficulty))
+        // GPS agent mission: owned by one volunteer, published for them, reward fixed by difficulty.
+        || (active() && request.resource.data.source == 'agent'
+          && request.resource.data.ownerId == uid()
+          && request.resource.data.organizationId == 'agent_' + uid()
+          && request.resource.data.status == 'published'
+          && request.resource.data.featured == false
+          && request.resource.data.participantsCount <= 1
+          && request.resource.data.rewardXP == xpFor(request.resource.data.difficulty)
+          && request.resource.data.rewardPoints == coinsFor(request.resource.data.difficulty));
+      allow update: if isAdmin()
+        || (isOrgUser(resource.data.organizationId) && !touches(['organizationId', 'featured', 'id', 'source', 'ownerId'])
+            && (!touches(['rewardXP']) || request.resource.data.rewardXP == xpFor(request.resource.data.difficulty))
+            && (request.resource.data.status != 'published' || orgApproved(resource.data.organizationId)))
+        || (active() && resource.data.source == 'agent' && resource.data.ownerId == uid()
+            && onlyTouches(['status', 'participantsCount', 'updatedAt']) && request.resource.data.status in ['published', 'cancelled'])
+        || (active() && onlyTouches(['participantsCount']));
+      allow delete: if isOrgUser(resource.data.organizationId) && resource.data.status == 'draft';
+    }
+
+    // ── participation (teamId, startedAt, startGps are the participant's own fields) ──
+    match /participants/{id} {
+      allow read: if signedIn();
+      allow create: if active() && request.resource.data.userId == uid();
+      allow update: if active() && (resource.data.userId == uid() || isReviewer() || me().role == 'organization');
+      allow delete: if false;
+    }
+
+    // ── submissions ──
+    match /submissions/{id} {
+      allow read: if signedIn();
+      allow create: if active() && request.resource.data.userId == uid()
+        && request.resource.data.verificationStatus == 'pending'
+        && request.resource.data.rewardGrantedAt == null && request.resource.data.certificateId == null;
+      allow update: if
+        (signedIn() && resource.data.userId == uid()
+          && !touches(['userId', 'missionId', 'organizationId', 'rewardGrantedAt', 'certificateId', 'reviewedBy'])
+          && (!touches(['verificationStatus']) || request.resource.data.verificationStatus == 'pending'))
+        || isAdmin()
+        || (isReviewer() && me().organizationId == resource.data.organizationId && !touches(['userId', 'missionId', 'organizationId']));
+      allow delete: if false;
+    }
+
+    match /records/{id} {
+      allow read: if signedIn();
+      allow create: if isReviewer() && request.resource.data.reviewerId == uid();
+      allow update, delete: if false;
+    }
+
+    // ── certificates: issued by reviewers when a volunteer reaches a certificate level ──
+    match /certificates/{id} {
+      allow read: if true;
+      allow create: if isReviewer();
+      allow update: if signedIn() && resource.data.userId == uid() && onlyTouches(['holderName']);
+      allow delete: if false;
+    }
+
+    match /notifications/{id} {
+      allow read, delete: if signedIn() && resource.data.userId == uid();
+      allow create: if active();
+      allow update: if signedIn() && resource.data.userId == uid() && onlyTouches(['read']);
+    }
+
+    match /audits/{id} {
+      allow read: if isAdmin();
+      allow create: if signedIn();
+      allow update, delete: if false;
+    }
+
+    // ── community ──
+    match /friendships/{id} {
+      allow read: if signedIn();
+      allow create: if active() && request.resource.data.from == uid() && request.resource.data.status == 'pending'
+        && id == request.resource.data.from + '_' + request.resource.data.to;
+      allow update: if active() && resource.data.to == uid() && onlyTouches(['status']) && request.resource.data.status == 'accepted';
+      allow delete: if signedIn() && (resource.data.from == uid() || resource.data.to == uid());
+    }
+    match /cheers/{id} {
+      allow read: if signedIn();
+      allow create: if active() && request.resource.data.userId == uid() && id == request.resource.data.submissionId + '_' + uid();
+      allow delete: if signedIn() && resource.data.userId == uid();
+      allow update: if false;
+    }
+
+    // ── v2: direct messages and team invites, between friends (or with the moderation team) ──
+    function otherOf(p) { return p[0] == uid() ? p[1] : p[0]; }
+    function userIsAdmin(id) { return get(/databases/$(db)/documents/users/$(id)).data.role in ['admin', 'super_admin']; }
+    match /messages/{id} {
+      allow read: if signedIn() && uid() in resource.data.participants;
+      allow create: if active() && request.resource.data.from == uid()
+        && uid() in request.resource.data.participants
+        && request.resource.data.participants.size() == 2
+        && request.resource.data.text.size() <= 2200
+        && request.resource.data.get('deletedAt', null) == null
+        && (request.resource.data.get('via', null) != 'admin' || isAdmin())
+        && (areFriends(request.resource.data.participants[0], request.resource.data.participants[1])
+            || isAdmin() || userIsAdmin(otherOf(request.resource.data.participants)));
+      allow update: if signedIn() && uid() in resource.data.participants && (
+        // Either participant: read receipts and reactions.
+        onlyTouches(['readBy', 'reactions'])
+        // The sender: edit or delete their own text message.
+        || (resource.data.from == uid() && resource.data.kind == 'text'
+            && onlyTouches(['text', 'editedAt', 'deletedAt', 'reactions', 'readBy'])
+            && request.resource.data.text.size() <= 2200));
+      allow delete: if false;
+    }
+
+    // ── v2.1: announcements from the admins (one document read by everyone in the audience) ──
+    match /announcements/{id} {
+      allow read: if signedIn();
+      allow create: if isAdmin() && request.resource.data.authorId == uid();
+      allow update, delete: if isAdmin();
+    }
+
+    // ── v2: Fixcoin shop ──
+    match /shopItems/{id} {
+      allow read: if true;
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin()
+        || (active() && onlyTouches(['stock']) && request.resource.data.stock == resource.data.stock - 1);
+    }
+    match /orders/{id} {
+      allow read: if signedIn() && (resource.data.userId == uid() || isAdmin());
+      // The price must match the catalog and the buyer's balance must drop by exactly that price in the same batch.
+      allow create: if active() && request.resource.data.userId == uid()
+        && request.resource.data.status == 'placed'
+        && request.resource.data.price == get(/databases/$(db)/documents/shopItems/$(request.resource.data.itemId)).data.price
+        && getAfter(/databases/$(db)/documents/users/$(uid())).data.points == me().points - request.resource.data.price;
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+  }
+}

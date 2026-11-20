@@ -1,0 +1,32 @@
+{
+  "name": "worfix-web",
+  "version": "2.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/lib/domain/*.test.ts",
+    "prebuild": "node scripts/check-env.mjs"
+  },
+  "dependencies": {
+    "firebase": "^13.4.0",
+    "maplibre-gl": "^5.24.1",
+    "next": "15.5.29",
+    "qrcode": "^1.5.4",
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/qrcode": "^1.5.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "tsx": "^4.20.5",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
