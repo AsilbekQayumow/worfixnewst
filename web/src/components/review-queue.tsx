@@ -19,21 +19,41 @@ function TrustMeter({ score }: { score: number }) {
   return <Status tone={tone}>{t("rv.trust", { p })}</Status>;
 }
 
-export function ReviewQueue({ scope }: { scope: "org" | "admin" }) {
+type QueueItem = Awaited<ReturnType<typeof api.reviewQueue>>[number];
+
+/** The AI reviewer's decision on a submission, as shown to reviewers and admins. */
+export function AiReviewBox({ r }: { r: NonNullable<QueueItem["submission"]["aiReview"]> }) {
+  const { t } = useI18n();
+  const f = useFmt();
+  const tone = r.decision === "approved" ? "ok" : r.decision === "rejected" ? "bad" : r.decision === "escalated" ? "neutral" : "warn";
+  return (
+    <div className="inset stack g8 ai-box" style={{ padding: "12px 14px" }}>
+      <div className="row between g8 wrap">
+        <span className="row g8" style={{ fontWeight: 500, fontSize: 14 }}><Icon name="scan" size={16} />{t("ai.reviewer")}</span>
+        <Status tone={tone}>{t(`ai.d.${r.decision}`)}</Status>
+      </div>
+      {r.decision !== "escalated" || r.confidence > 0 ? <span className="t-small secondary">{t("ai.confidence", { p: Math.round(r.confidence * 100) })}{r.model ? ` · ${r.model}` : ""} · {f.relative(r.at)}</span> : null}
+      {r.summary && <p className="t-small">{r.summary}</p>}
+      {r.reasons.length > 0 && <ul className="stack g4 t-small secondary">{r.reasons.map((x, i) => <li key={i} className="row g8"><Icon name="info" size={14} />{x.startsWith("ai.r.") ? t(x) : x}</li>)}</ul>}
+      {r.audit !== "not_needed" && <span className="t-small muted">{t(`ai.audit.${r.audit}`)}{r.auditNote ? ` — ${r.auditNote}` : ""}</span>}
+    </div>
+  );
+}
+
+export function ReviewQueue({ scope, items, missionId }: { scope: "org" | "admin"; items?: QueueItem[]; missionId?: string | null }) {
   const { t } = useI18n();
   const f = useFmt();
   const toast = useToast();
   const errText = useErrorText();
   const [filter, setFilter] = useState<"pending" | "all">("pending");
-  const [source, setSource] = useState<"all" | "agent">(scope === "admin" ? "agent" : "all");
-  const q = useApi(() => api.reviewQueue(scope), [scope]);
+  const q = useApi(() => (items ? Promise.resolve(items) : api.reviewQueue(scope)), [scope, items]);
   const [open, setOpen] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
 
   const list = useMemo(() => (q.data ?? [])
     .filter((x) => (filter === "pending" ? x.submission.verificationStatus === "pending" : true))
-    .filter((x) => (source === "agent" ? isAgentOrg(x.submission.organizationId) : true)), [q.data, filter, source]);
+    .filter((x) => (missionId ? x.submission.missionId === missionId : true)), [q.data, filter, missionId]);
 
   const decide = async (id: string, decision: "approved" | "rejected" | "needs_more_info") => {
     setBusy(id + decision);
@@ -46,9 +66,8 @@ export function ReviewQueue({ scope }: { scope: "org" | "admin" }) {
     <div className="stack g16">
       <div className="row g12 wrap">
         <Segmented value={filter} onChange={setFilter} items={[{ value: "pending", label: t("rv.pending") }, { value: "all", label: t("rv.all") }]} />
-        {scope === "admin" && <Segmented value={source} onChange={setSource} items={[{ value: "agent", label: t("rv.agentOnly") }, { value: "all", label: t("rv.everything") }]} />}
+        {missionId && list[0] && <span className="t-small secondary">{t("rv.forMission", { title: list[0].mission.title })}</span>}
       </div>
-      {scope === "admin" && source === "agent" && <p className="t-small secondary">{t("rv.agentNote")}</p>}
       {!q.data ? <Skeleton rows={3} height={80} /> : list.length === 0 ? <div className="card"><Empty icon="shield" title={t("rv.none")} /></div> : (
         <div className="stack g12">
           {list.map(({ submission: s, mission: m, volunteer: v, participant: p }) => {
@@ -62,6 +81,7 @@ export function ReviewQueue({ scope }: { scope: "org" | "admin" }) {
                     <span className="truncate" style={{ fontWeight: 500 }}>{m.title}</span>
                     <span className="t-small secondary truncate">{v.fullName} · {f.relative(s.timestamp)}{s.metadata.submissionCount > 1 ? ` · ${t("rv.resubmitted", { n: s.metadata.submissionCount })}` : ""}</span>
                   </span>
+                  {isAgentOrg(s.organizationId) && <Status tone="info">{t("md.agentMission")}</Status>}
                   {s.verificationStatus === "pending" ? <TrustMeter score={s.fraudScore} /> : <VerificationStatusTag status={s.verificationStatus} />}
                   <Icon name={expanded ? "chevronDown" : "chevronRight"} size={16} className="muted" />
                 </button>
@@ -81,6 +101,7 @@ export function ReviewQueue({ scope }: { scope: "org" | "admin" }) {
                         </div>
                       )}
                       {s.notes && <p className="prose t-small">{s.notes}</p>}
+                      {s.aiReview && <AiReviewBox r={s.aiReview} />}
                       {s.aiNotes && <p className="t-small secondary row g8" style={{ alignItems: "flex-start" }}><Icon name="scan" size={16} style={{ marginTop: 2 }} />{s.aiNotes}</p>}
                       {(s.checklistDone?.length ?? 0) > 0 && (
                         <ul className="stack g4 t-small">{s.checklistDone!.map((c) => <li key={c} className="row g8"><Icon name="check" size={14} className="accent-text" />{c}</li>)}</ul>

@@ -11,13 +11,21 @@ import { runChecks } from "../domain/checks";
 import { resubmit, reviewSubmission, type ReviewDecision } from "../domain/verification";
 import { computeAchievements, nextAchievement, type AchievementStats } from "../domain/achievements";
 import { sampleCatalog } from "../domain/shop";
+import { aiNote, aiReviewer, AI_REVIEWER_ID, decideAi, reverseGrant, type AiVerdict } from "../domain/ai-review";
 import {
-  passwordProblem, validateLogin, validateMission, validateOrganization, validatePersonal, validateProfile, validateRegister,
+  GROUP_COLORS, GROUP_MAX_MEMBERS, groupBoard, groupLevel, groupXp, km, makeGroupCode, monthKey, normaliseGroupCode, scopeKey, SCOPES, signalAudience,
+  SIGNAL_HOURS, SIGNAL_RADIUS_KM, SIGNALS_PER_DAY, volunteerBoard, earnedXp, type Scope,
+} from "../domain/community";
+import { rankFor, RANKS, xpForLevel } from "../domain/rewards";
+import {
+  ageErrors, passwordProblem, validateLogin, validateMission, validateOrganization, validatePersonal, validateProfile, validateRegister,
   type Errors, type MissionInput, type OrganizationInput, type PersonalInput, type ProfileInput, type RegisterInput, type Result,
 } from "../domain/validation";
 import type {
-  Announcement, Category, Certificate, Evidence, GpsFix, Lang, Message, Mission, Notification, Order, Organization, Role, ShopItem, Submission, UserProfile,
+  AiReview, Announcement, Category, Certificate, Evidence, GpsFix, Group, GroupMessage, HelpSignal, Lang, Message, Mission, NewsPost, Notification, Order,
+  Organization, Role, ShopItem, Submission, UserProfile,
 } from "../domain/types";
+import { postAi } from "../ai/client";
 import type { AiMission } from "../ai/missions";
 import * as cloud from "./cloud";
 import { commit, FIREBASE, getDB, hashPassword, nowIso, ready, SESSION_KEY, uid, type DB } from "./db";
@@ -124,6 +132,7 @@ function canSee(db: DB, viewer: UserProfile, target: UserProfile) {
 function person(u: UserProfile) {
   return {
     id: u.id, fullName: u.fullName, username: u.username, avatar: u.avatar, city: u.city, province: u.province, country: u.country,
+    district: u.district ?? "", mahalla: u.mahalla ?? "",
     level: levelForXp(u.xp), xp: u.xp, hours: u.totalVolunteerHours, impact: u.totalImpact, streak: u.streak, privacy: privacyOf(u),
   };
 }
@@ -402,11 +411,17 @@ export const api = {
   },
 
   /* ---- profile & settings ---- */
-  async updateProfile(input: Partial<ProfileInput>, extra: { avatar?: string | null; onboarded?: boolean } = {}) {
+  async updateProfile(input: Partial<ProfileInput>, extra: { avatar?: string | null; onboarded?: boolean; birthYear?: number | null; guardianConsent?: boolean } = {}) {
     await ready();
     const data = unwrap(validateProfile(input));
+    if (extra.birthYear !== undefined) {
+      const e = ageErrors(extra.birthYear, extra.guardianConsent);
+      if (Object.keys(e).length) throw new ValidationError(e);
+    }
     await commit((db) => {
       const u = actor(db);
+      if (extra.onboarded && u.role === "volunteer" && !u.birthYear && extra.birthYear == null) throw new ValidationError({ birthYear: "v.birthYear" });
+      if (extra.birthYear != null) u.birthYear = extra.birthYear;
       if (db.users.some((x) => x.id !== u.id && x.username === data.username)) throw new ValidationError({ username: "e.usernameTaken" });
       Object.assign(u, data, { updatedAt: nowIso() });
       if (extra.avatar !== undefined) u.avatar = extra.avatar;
@@ -450,6 +465,7 @@ export const api = {
       db.friendships = db.friendships.filter((f) => f.from !== u.id && f.to !== u.id);
       db.cheers = db.cheers.filter((c) => c.userId !== u.id);
       db.messages = db.messages.filter((m) => !m.participants.includes(u.id));
+      for (const g of db.groups.filter((x) => x.members.includes(u.id))) removeFromGroup(db, g, u.id);
       Object.assign(u, {
         email: `deleted-${u.id}@deleted.invalid`, fullName: "—", username: `deleted_${u.id.slice(0, 8)}`, avatar: null, bio: "", city: "",
         province: "", country: "", skills: [], languages: [], interests: [], phone: "", status: "deleted", updatedAt: nowIso(),
@@ -698,6 +714,9 @@ export const api = {
       p.teamId = null;
       const m = db.missions.find((x) => x.id === missionId);
       if (m) m.participantsCount = Math.max(0, m.participantsCount - 1);
+      // The organization's volunteer counter counted this join; take it back.
+      const org = m ? orgOf(db, m.organizationId) : null;
+      if (org) org.totalVolunteers = Math.max(0, org.totalVolunteers - 1);
       log(db, u, "mission.leave", "missionParticipants", p.id);
     });
   },
@@ -745,7 +764,7 @@ export const api = {
           .flatMap((x) => { const f = db.users.find((y) => y.id === x.userId); return f ? [person(f)] : []; })
       : [];
     const friends = [...friendIdsOf(db, u.id)].flatMap((id) => { const f = db.users.find((y) => y.id === id && y.status === "active"); return f ? [person(f)] : []; });
-    return { participant: p, submission: sub ? publicSubmission(sub) : null, team, friends, emailVerified: u.emailVerified, onboarded: u.onboarded, role: u.role };
+    return { participant: p, submission: sub ? publicSubmission(sub) : null, team, friends, emailVerified: isVerifiedAccount(u), onboarded: u.onboarded, role: u.role };
   },
 
   async missionParticipants(missionId: string) {
@@ -826,6 +845,8 @@ export const api = {
     if (input.notes.trim().length > 1000) throw new ValidationError({ notes: "v.notes" });
     if (input.images.length < 1) throw new ValidationError({ images: "e.photoNeeded" });
     if (input.images.length > 6) throw new ValidationError({ images: "e.photoMax" });
+    let submissionId = "";
+    let agent = false;
     await commit((db) => {
       const u = actor(db);
       const m = db.missions.find((x) => x.id === missionId);
@@ -836,29 +857,35 @@ export const api = {
       const t = nowIso();
       const gps = input.gpsConsent ? input.gps : null;
       const extra = { checklistDone: input.checklistDone, aiConfidence: input.aiConfidence, aiNotes: input.aiNotes.slice(0, 600), teamId: p.teamId ?? null };
+      agent = m.source === "agent";
       if (existing) {
         const next = { ...resubmit(existing, { images: input.images, notes: input.notes.trim() }, t), ...extra, gps: gps ?? existing.gps };
         const r = runChecks({ submission: next, mission: m, participant: p, others: db.submissions.filter((s) => s.id !== existing.id) });
-        Object.assign(existing, next, { checks: r.checks, fraudScore: r.score, fraudFlags: r.flags });
+        Object.assign(existing, next, { checks: r.checks, fraudScore: r.score, fraudFlags: r.flags, aiReview: null });
+        submissionId = existing.id;
         log(db, u, "submission.resubmit", "missionSubmissions", existing.id);
       } else {
         const sub: Submission = {
           id: uid(), missionId, userId: u.id, organizationId: m.organizationId, images: input.images, videos: [], notes: input.notes.trim(),
           gps, gpsConsent: input.gpsConsent, timestamp: t, metadata: { userAgent: navigator.userAgent.slice(0, 160), submissionCount: 1 },
           fraudScore: 0, fraudFlags: [], verificationStatus: "pending", reviewedBy: null, reviewedAt: null, reviewNote: "", rewardGrantedAt: null,
-          certificateId: null, checks: [], ...extra,
+          certificateId: null, checks: [], ...extra, groupId: groupOf(db, u.id)?.id ?? null, aiReview: null, grant: null,
         };
+        submissionId = sub.id;
         const r = runChecks({ submission: sub, mission: m, participant: p, others: db.submissions });
         Object.assign(sub, { checks: r.checks, fraudScore: r.score, fraudFlags: r.flags });
         db.submissions.push(sub);
         log(db, u, "submission.create", "missionSubmissions", sub.id);
       }
       p.completionStatus = "submitted";
-      const reviewers = isAgentOrg(m.organizationId)
-        ? db.users.filter((x) => isAdmin(x.role) && x.status === "active").map((x) => x.id)
-        : [orgOf(db, m.organizationId)?.ownerId].filter((x): x is string => Boolean(x));
-      for (const r of reviewers) notify(db, r, "submission", "n.toReview", { name: u.fullName, title: m.title }, isAgentOrg(m.organizationId) ? "/admin?tab=review" : "/org/review");
+      // Agent missions are reviewed by the AI first (admins are told only when it escalates); org missions by the organization.
+      if (!isAgentOrg(m.organizationId)) {
+        const owner = orgOf(db, m.organizationId)?.ownerId;
+        if (owner) notify(db, owner, "submission", "n.toReview", { name: u.fullName, title: m.title }, `/org/review?mission=${m.id}`);
+      }
     });
+    if (agent) void api.runAiReview(submissionId).catch(() => undefined);
+    return { id: submissionId, agent };
   },
 
   async reviewQueue(scope: "org" | "admin") {
@@ -1083,7 +1110,7 @@ export const api = {
     };
   },
 
-  /* ---- chat ---- */
+  /* ---- chat: personal chats (friends, moderators) and group chats ---- */
   async chats() {
     await ready();
     const db = getDB();
@@ -1097,43 +1124,96 @@ export const api = {
       if (!other) return [];
       const ms = (threads.get(chatIdOf(u.id, id)) ?? []).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
       const last = ms[ms.length - 1] ?? null;
-      return [{ person: person(other), last, unread: ms.filter((m) => !m.readBy.includes(u.id)).length, isFriend: friends.has(id) }];
+      return [{ person: person(other), last, unread: ms.filter((m) => !m.readBy.includes(u.id)).length, isFriend: friends.has(id), isTeam: isAdmin(other.role) }];
     }).sort((a, b) => (b.last ? Date.parse(b.last.createdAt) : 0) - (a.last ? Date.parse(a.last.createdAt) : 0) || a.person.fullName.localeCompare(b.person.fullName));
   },
 
-  async thread(friendId: string) {
+  /** Group chats of the signed-in user (one per group). */
+  async groupChats() {
     await ready();
     const db = getDB();
     const u = actor(db);
-    const other = db.users.find((x) => x.id === friendId && x.status === "active");
-    if (!other) return null;
-    const chatId = chatIdOf(u.id, friendId);
-    const messages = db.messages.filter((m) => m.chatId === chatId).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)).map((m) => {
-      const mission = m.missionId ? db.missions.find((x) => x.id === m.missionId) ?? null : null;
-      const joined = m.missionId ? db.participants.some((p) => p.id === `${m.missionId}_${u.id}` && p.status === "accepted") : false;
-      return { ...m, mission: mission ? { id: mission.id, title: mission.title, date: mission.date, location: mission.location, category: mission.category, difficulty: mission.difficulty, status: mission.status } : null, joined };
+    return db.groups.filter((g) => g.members.includes(u.id)).map((g) => {
+      const ms = db.groupMessages.filter((m) => m.groupId === g.id).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
+      const last = ms[ms.length - 1] ?? null;
+      const lastFrom = last ? db.users.find((x) => x.id === last.from)?.fullName.split(" ")[0] ?? "" : "";
+      return { group: g, last, lastFrom, unread: ms.filter((m) => !m.readBy.includes(u.id)).length };
     });
-    const myActive = db.participants.filter((p) => p.userId === u.id && p.status === "accepted" && p.completionStatus === "joined")
-      .flatMap((p) => { const m = db.missions.find((x) => x.id === p.missionId && x.status === "published"); return m ? [{ id: m.id, title: m.title, date: m.date }] : []; });
-    const adminThread = isAdmin(u.role) || isAdmin(other.role);
-    return { me: u.id, person: person(other), isFriend: relationOf(db, u.id, friendId) === "friend", canWrite: relationOf(db, u.id, friendId) === "friend" || adminThread, otherIsAdmin: isAdmin(other.role), messages, myActive };
   },
 
-  async sendMessage(friendId: string, text: string, replyToId: string | null = null) {
+  /** One conversation. `id` is a user id (personal chat) or "g_<groupId>" (group chat). */
+  async thread(id: string) {
+    await ready();
+    const db = getDB();
+    const u = actor(db);
+    const myActive = db.participants.filter((p) => p.userId === u.id && p.status === "accepted" && p.completionStatus === "joined")
+      .flatMap((p) => { const m = db.missions.find((x) => x.id === p.missionId && x.status === "published"); return m ? [{ id: m.id, title: m.title, date: m.date }] : []; });
+    const missionOf = (missionId: string | null) => {
+      const mission = missionId ? db.missions.find((x) => x.id === missionId) ?? null : null;
+      return mission ? { id: mission.id, title: mission.title, date: mission.date, location: mission.location, category: mission.category, difficulty: mission.difficulty, status: mission.status } : null;
+    };
+    if (id.startsWith("g_")) {
+      const g = db.groups.find((x) => x.id === id.slice(2));
+      if (!g || !g.members.includes(u.id)) return null;
+      const names: Record<string, { name: string; avatar: string | null }> = {};
+      for (const uidx of new Set([...g.members, ...db.groupMessages.filter((m) => m.groupId === g.id).map((m) => m.from)])) {
+        const x = db.users.find((y) => y.id === uidx);
+        names[uidx] = { name: x?.fullName ?? "—", avatar: x?.avatar ?? null };
+      }
+      const messages = db.groupMessages.filter((m) => m.groupId === g.id).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)).map((m) => {
+        const sig = m.signalId ? db.helpSignals.find((x) => x.id === m.signalId) ?? null : null;
+        return {
+          ...m, kind: m.kind, mission: null, joined: false,
+          signal: sig ? { id: sig.id, title: sig.title, place: sig.place, status: sig.status, expiresAt: sig.expiresAt, responders: sig.responders.length, going: sig.responders.includes(u.id) } : null,
+        };
+      });
+      return {
+        kind: "group" as const, id, me: u.id, title: g.name, subtitle: "", color: g.color, avatar: null as string | null, group: { id: g.id, members: g.members.length, ownerId: g.ownerId },
+        person: null, isFriend: false, canWrite: true, otherIsAdmin: false, names, messages, myActive,
+      };
+    }
+    const other = db.users.find((x) => x.id === id && x.status === "active");
+    if (!other) return null;
+    const chatId = chatIdOf(u.id, id);
+    const messages = db.messages.filter((m) => m.chatId === chatId).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)).map((m) => ({
+      ...m, mission: missionOf(m.missionId), signal: null,
+      joined: m.missionId ? db.participants.some((p) => p.id === `${m.missionId}_${u.id}` && p.status === "accepted") : false,
+    }));
+    const adminThread = isAdmin(u.role) || isAdmin(other.role);
+    const friend = relationOf(db, u.id, id) === "friend";
+    return {
+      kind: "direct" as const, id, me: u.id, title: other.fullName, subtitle: "", color: null as string | null, avatar: other.avatar, group: null,
+      person: person(other), isFriend: friend, canWrite: friend || adminThread, otherIsAdmin: isAdmin(other.role),
+      names: { [u.id]: { name: u.fullName, avatar: u.avatar }, [other.id]: { name: other.fullName, avatar: other.avatar } } as Record<string, { name: string; avatar: string | null }>,
+      messages, myActive,
+    };
+  },
+
+  async sendMessage(to: string, text: string, replyToId: string | null = null) {
     await ready();
     const body = text.trim();
     if (!body) return;
     if (body.length > 1000) throw new ValidationError({ text: "v.message" });
     await commit((db) => {
       const u = actor(db);
-      const other = db.users.find((x) => x.id === friendId);
+      if (to.startsWith("g_")) {
+        const g = db.groups.find((x) => x.id === to.slice(2));
+        if (!g || !g.members.includes(u.id)) throw new DomainError("forbidden", "e.groupMembersOnly");
+        const ref = replyToId ? db.groupMessages.find((m) => m.id === replyToId && m.groupId === g.id && !m.deletedAt) : null;
+        db.groupMessages.push({
+          id: uid(), groupId: g.id, from: u.id, text: body, kind: "text", signalId: null, readBy: [u.id], createdAt: nowIso(), reactions: {},
+          replyTo: ref ? { id: ref.id, from: ref.from, text: ref.text.slice(0, 140) } : null, editedAt: null, deletedAt: null,
+        });
+        return;
+      }
+      const other = db.users.find((x) => x.id === to);
       if (!other) throw new DomainError("not_found", "e.notFound");
       const admin = isAdmin(u.role) || isAdmin(other.role);
-      if (!admin && relationOf(db, u.id, friendId) !== "friend") throw new DomainError("forbidden", "e.friendsOnly");
-      const chatId = chatIdOf(u.id, friendId);
+      if (!admin && relationOf(db, u.id, to) !== "friend") throw new DomainError("forbidden", "e.friendsOnly");
+      const chatId = chatIdOf(u.id, to);
       const ref = replyToId ? db.messages.find((m) => m.id === replyToId && m.chatId === chatId && !m.deletedAt) : null;
       db.messages.push({
-        id: uid(), chatId, participants: [u.id, friendId].sort() as [string, string], from: u.id, text: body, kind: "text", missionId: null,
+        id: uid(), chatId, participants: [u.id, to].sort() as [string, string], from: u.id, text: body, kind: "text", missionId: null,
         readBy: [u.id], createdAt: nowIso(), reactions: {}, replyTo: ref ? { id: ref.id, from: ref.from, text: ref.text.slice(0, 140) } : null,
         editedAt: null, deletedAt: null, via: isAdmin(u.role) ? "admin" : null,
       });
@@ -1147,7 +1227,7 @@ export const api = {
     if (body.length > 1000) throw new ValidationError({ text: "v.message" });
     await commit((db) => {
       const u = actor(db);
-      const m = db.messages.find((x) => x.id === messageId);
+      const m = findMessage(db, messageId);
       if (!m || m.from !== u.id || m.kind !== "text" || m.deletedAt) throw new DomainError("forbidden", "e.forbidden");
       if (m.text === body) return;
       m.text = body;
@@ -1159,7 +1239,7 @@ export const api = {
     await ready();
     await commit((db) => {
       const u = actor(db);
-      const m = db.messages.find((x) => x.id === messageId);
+      const m = findMessage(db, messageId);
       if (!m || m.from !== u.id || m.deletedAt) throw new DomainError("forbidden", "e.forbidden");
       m.text = "";
       m.reactions = {};
@@ -1172,8 +1252,9 @@ export const api = {
     if (!REACTIONS.includes(emoji)) return;
     await commit((db) => {
       const u = actor(db);
-      const m = db.messages.find((x) => x.id === messageId);
-      if (!m || !m.participants.includes(u.id) || m.deletedAt) throw new DomainError("forbidden", "e.forbidden");
+      const m = findMessage(db, messageId);
+      const allowed = m && ("participants" in m ? m.participants.includes(u.id) : Boolean(db.groups.find((g) => g.id === m.groupId)?.members.includes(u.id)));
+      if (!m || !allowed || m.deletedAt) throw new DomainError("forbidden", "e.forbidden");
       const r: Record<string, string[]> = {};
       let had = false;
       for (const [e, ids] of Object.entries(m.reactions ?? {})) {
@@ -1187,12 +1268,18 @@ export const api = {
     });
   },
 
-  async markChatRead(friendId: string) {
+  async markChatRead(id: string) {
     await ready();
     const db0 = getDB();
     const me = readSession(db0);
     if (!me) return;
-    const chatId = chatIdOf(me.id, friendId);
+    if (id.startsWith("g_")) {
+      const gid = id.slice(2);
+      if (!db0.groupMessages.some((m) => m.groupId === gid && !m.readBy.includes(me.id))) return;
+      await commit((db) => { for (const m of db.groupMessages) if (m.groupId === gid && !m.readBy.includes(me.id)) m.readBy = [...m.readBy, me.id]; });
+      return;
+    }
+    const chatId = chatIdOf(me.id, id);
     if (!db0.messages.some((m) => m.chatId === chatId && !m.readBy.includes(me.id))) return;
     await commit((db) => { for (const m of db.messages) if (m.chatId === chatId && !m.readBy.includes(me.id)) m.readBy = [...m.readBy, me.id]; });
   },
@@ -1213,6 +1300,8 @@ export const api = {
   async buy(itemId: string) {
     await ready();
     let code = "";
+    let orderId = "";
+    let promo = false;
     await commit((db) => {
       const u = actor(db);
       if (u.role !== "volunteer") throw new DomainError("forbidden", "e.volunteersOnly");
@@ -1223,11 +1312,17 @@ export const api = {
       u.points -= item.price;
       item.stock -= 1;
       code = makeOrderCode();
-      db.orders.push({ id: uid(), userId: u.id, itemId, itemTitle: item.title.en, price: item.price, code, status: "placed", createdAt: nowIso() });
-      notify(db, u.id, "reward", "n.order", { code }, "/app/shop?tab=orders");
+      orderId = uid();
+      promo = item.delivery === "promo";
+      const order: Order = { id: orderId, userId: u.id, itemId, itemTitle: item.title.en, price: item.price, code, status: "placed", createdAt: nowIso(), promoCode: null };
+      db.orders.push(order);
+      // Local mode: the promo code is issued at once. Firebase mode: by the shop-fulfil server function (or an admin).
+      if (promo && !FIREBASE) issueCode(db, order);
+      else notify(db, u.id, "reward", "n.order", { code }, "/app/shop?tab=orders");
       log(db, u, "shop.buy", "orders", code, item.id);
     });
-    return { code };
+    if (promo && FIREBASE) await callServer("shop-fulfil", { orderId }).catch(() => undefined);
+    return { code, orderId, promo };
   },
 
   async publishCatalog() {
@@ -1270,7 +1365,7 @@ export const api = {
       approved: stats.approvedMissions, today: dayKey(nowIso()),
       board: board.slice(0, 5).map((x) => ({ ...person(x), isMe: x.id === u.id })),
       pendingFriends: db.friendships.filter((f) => f.to === u.id && f.status === "pending").length,
-      unreadMessages: db.messages.filter((m) => m.participants.includes(u.id) && !m.readBy.includes(u.id)).length,
+      unreadMessages: unreadFor(db, u.id),
     };
   },
 
@@ -1279,12 +1374,17 @@ export const api = {
     await ready();
     const db = getDB();
     const u = readSession(db);
-    if (!u) return { notifications: 0, messages: 0, friends: 0 };
+    if (!u) return { notifications: 0, messages: 0, friends: 0, reviews: 0, adminQueue: 0, aiAudit: 0, signals: 0 };
+    const admin = isAdmin(u.role);
     return {
       notifications: db.notifications.filter((n) => n.userId === u.id && !n.read).length
         + announcementsFor(db, u).filter((a) => !u.announcementsSeenAt || Date.parse(a.createdAt) > Date.parse(u.announcementsSeenAt)).length,
-      messages: db.messages.filter((m) => m.participants.includes(u.id) && !m.readBy.includes(u.id)).length,
+      messages: unreadFor(db, u.id),
       friends: db.friendships.filter((f) => f.to === u.id && f.status === "pending").length,
+      reviews: u.organizationId ? db.submissions.filter((s) => s.organizationId === u.organizationId && s.verificationStatus === "pending").length : 0,
+      adminQueue: admin ? db.submissions.filter((s) => needsAdmin(s)).length : 0,
+      aiAudit: admin ? db.submissions.filter((s) => s.aiReview?.audit === "pending").length : 0,
+      signals: u.role === "volunteer" ? openSignalsFor(db, u, null).filter((x) => x.userId !== u.id && !x.responders.includes(u.id)).length : 0,
     };
   },
 
@@ -1336,7 +1436,13 @@ export const api = {
       missions: db.missions.length, agentMissions: db.missions.filter((m) => m.source === "agent").length,
       pendingSubmissions: db.submissions.filter((s) => s.verificationStatus === "pending").length,
       flagged: db.submissions.filter((s) => s.fraudScore >= 0.5 && s.verificationStatus === "pending").length,
+      volunteersByMonth: lastMonths(6).map((mk) => ({ month: mk, n: db.users.filter((x) => x.role === "volunteer" && monthKey(x.createdAt) === mk).length })),
+      approvalsByMonth: lastMonths(6).map((mk) => ({ month: mk, n: db.submissions.filter((x) => x.verificationStatus === "approved" && x.reviewedAt && monthKey(x.reviewedAt) === mk).length })),
       orders: db.orders.length, shopItems: db.shopItems.length, recentActivity: db.audits.slice(0, 10),
+      adminQueue: db.submissions.filter((s) => needsAdmin(s)).length, aiAudit: db.submissions.filter((s) => s.aiReview?.audit === "pending").length,
+      orgPending: db.submissions.filter((s) => s.verificationStatus === "pending" && !isAgentOrg(s.organizationId)).length,
+      ordersOpen: db.orders.filter((o) => o.status === "placed" || o.status === "processing").length,
+      groups: db.groups.length, news: db.news.filter((n) => n.status === "published").length,
     };
   },
   async adminUsers(): Promise<UserProfile[]> {
@@ -1464,10 +1570,14 @@ export const api = {
     let id = existingId ?? "";
     await commit((db) => {
       const a = requireAdmin(db);
-      const data = { title, description, price: input.price, stock: input.stock, kind: input.kind, art: input.art, active: input.active, image: input.image || null };
+      const delivery: "pickup" | "promo" = input.delivery === "promo" ? "promo" : "pickup";
+      const data = { title, description, price: input.price, stock: input.stock, kind: input.kind, art: input.art, active: input.active, image: input.image || null, delivery };
+      // A promo item's stock is the number of free codes; it changes only when codes are added or used.
+      if (delivery === "promo") data.stock = existingId ? db.shopItems.find((i) => i.id === existingId)?.stock ?? 0 : 0;
       if (existingId) {
         const it = db.shopItems.find((i) => i.id === existingId);
         if (!it) throw new DomainError("not_found", "e.notFound");
+        if (delivery === "promo" && it.delivery !== "promo") data.stock = db.promoCodes.filter((c) => c.itemId === it.id && !c.orderId).length;
         Object.assign(it, data);
       } else {
         id = uid();
@@ -1510,6 +1620,567 @@ export const api = {
     });
   },
 
+  /* ───────────── v3: phone and Telegram sign-in ───────────── */
+  /** Sends an SMS code. Local demo mode: no SMS, the code is 123456 (returned as devCode). */
+  async phoneStart(rawPhone: string, recaptchaContainer: string) {
+    await ready();
+    const phone = normalisePhone(rawPhone);
+    if (!phone) throw new ValidationError({ phone: "e.phoneInvalid" });
+    if (FIREBASE) { await cloud.startPhone(phone, recaptchaContainer); return { phone, devCode: null as string | null }; }
+    pendingPhone = phone;
+    return { phone, devCode: "123456" as string | null };
+  },
+
+  async phoneConfirm(code: string) {
+    await ready();
+    const clean = code.replace(/\D/g, "");
+    if (clean.length !== 6) throw new ValidationError({ code: "e.codeInvalid" });
+    if (FIREBASE) {
+      const id = await cloud.confirmPhone(clean);
+      return ensureProfile(id, { provider: "phone", phone: cloud.currentPhone() ?? "", name: "" });
+    }
+    if (!pendingPhone || clean !== "123456") throw new ValidationError({ code: "e.codeInvalid" });
+    const phone = pendingPhone;
+    pendingPhone = null;
+    const existing = getDB().users.find((u) => u.phone === phone && u.phoneVerified && u.status !== "deleted");
+    return ensureProfile(existing?.id ?? uid(), { provider: "phone", phone, name: "" });
+  },
+
+  /** Telegram Login Widget result → server check → custom token → profile. */
+  async telegramLogin(data: Record<string, string | number>) {
+    await ready();
+    if (!FIREBASE) throw new DomainError("invalid_state", "e.telegramFirebase");
+    const res = await fetch("/.netlify/functions/telegram-auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) }).catch(() => null);
+    const body = res ? ((await res.json().catch(() => ({}))) as { token?: string; error?: string; name?: string }) : {};
+    if (!res?.ok || !body.token) throw new DomainError("forbidden", body.error ?? "e.telegramFailed");
+    const id = await cloud.signInWithToken(body.token);
+    return ensureProfile(id, { provider: "telegram", telegramId: String(data.id), name: body.name ?? "" });
+  },
+
+  /* ───────────── v3: groups ───────────── */
+  async myGroup() {
+    await ready();
+    const db = getDB();
+    const u = actor(db);
+    const g = groupOf(db, u.id);
+    return g ? groupView(db, g, u) : null;
+  },
+
+  async group(id: string) {
+    await ready();
+    const db = getDB();
+    const u = actor(db);
+    const g = db.groups.find((x) => x.id === id);
+    return g ? groupView(db, g, u) : null;
+  },
+
+  async createGroup(input: { name: string; description: string; color: string }) {
+    await ready();
+    const name = input.name.trim();
+    const description = input.description.trim();
+    const errors: Errors = {};
+    if (name.length < 2 || name.length > 40) errors.name = "v.groupName";
+    if (description.length > 200) errors.description = "v.tooLong";
+    if (Object.keys(errors).length) throw new ValidationError(errors);
+    let id = "";
+    await commit((db) => {
+      const u = actor(db);
+      if (u.role !== "volunteer") throw new DomainError("forbidden", "e.volunteersOnly");
+      if (groupOf(db, u.id)) throw new DomainError("conflict", "e.inGroup");
+      if (!scopeKey(u, "district")) throw new DomainError("invalid_state", "e.areaFirst");
+      id = uid();
+      const t = nowIso();
+      db.groups.push({
+        id, name, description, color: (GROUP_COLORS as readonly string[]).includes(input.color) ? input.color : GROUP_COLORS[0], ownerId: u.id, members: [u.id],
+        province: u.province, district: u.district ?? "", mahalla: u.mahalla ?? "", createdAt: t,
+      });
+      const code = makeGroupCode();
+      db.groupCodes.push({ id: code, groupId: id, createdAt: t });
+      db.groupMessages.push(systemMessage(id, u.id, "gm.created", { name: u.fullName }));
+      log(db, u, "group.create", "groups", id, name);
+    });
+    return { id };
+  },
+
+  async updateGroup(id: string, input: { name: string; description: string; color: string }) {
+    await ready();
+    const name = input.name.trim();
+    if (name.length < 2 || name.length > 40) throw new ValidationError({ name: "v.groupName" });
+    await commit((db) => {
+      const u = actor(db);
+      const g = db.groups.find((x) => x.id === id);
+      if (!g || g.ownerId !== u.id) throw new DomainError("forbidden", "e.groupOwner");
+      g.name = name;
+      g.description = input.description.trim().slice(0, 200);
+      if ((GROUP_COLORS as readonly string[]).includes(input.color)) g.color = input.color;
+    });
+  },
+
+  /** Joins a group with its invite code (typed, or read from the QR link /join/WFX-XXXXX). */
+  async joinGroup(rawCode: string) {
+    await ready();
+    const code = normaliseGroupCode(rawCode);
+    if (!/^WFX-[A-Z0-9]{5}$/.test(code)) throw new ValidationError({ code: "e.groupCode" });
+    const found = FIREBASE ? await cloud.fetchDoc<{ id: string; groupId: string }>("groupCodes", code) : getDB().groupCodes.find((c) => c.id === code) ?? null;
+    if (!found) throw new ValidationError({ code: "e.groupCode" });
+    await commit((db) => {
+      const u = actor(db);
+      if (u.role !== "volunteer") throw new DomainError("forbidden", "e.volunteersOnly");
+      const g = db.groups.find((x) => x.id === found.groupId);
+      if (!g) throw new ValidationError({ code: "e.groupCode" });
+      if (g.members.includes(u.id)) throw new DomainError("conflict", "e.alreadyMember");
+      if (groupOf(db, u.id)) throw new DomainError("conflict", "e.inGroup");
+      if (g.members.length >= GROUP_MAX_MEMBERS) throw new DomainError("conflict", "e.groupFull");
+      const joinId = `${g.id}_${u.id}`;
+      db.groupJoins = db.groupJoins.filter((j) => j.id !== joinId);
+      db.groupJoins.push({ id: joinId, groupId: g.id, userId: u.id, code, createdAt: nowIso() });
+      g.members = [...g.members, u.id];
+      db.groupMessages.push(systemMessage(g.id, u.id, "gm.joined", { name: u.fullName }));
+      notify(db, g.ownerId, "system", "n.groupJoined", { name: u.fullName, group: g.name }, `/app/groups/${g.id}`);
+      log(db, u, "group.join", "groups", g.id);
+    });
+    return { id: found.groupId };
+  },
+
+  /** Looks up a group by code without joining (for the invite page). */
+  async groupByCode(rawCode: string) {
+    await ready();
+    const code = normaliseGroupCode(rawCode);
+    const found = FIREBASE ? await cloud.fetchDoc<{ id: string; groupId: string }>("groupCodes", code) : getDB().groupCodes.find((c) => c.id === code) ?? null;
+    const g = found ? getDB().groups.find((x) => x.id === found.groupId) : null;
+    return g ? { id: g.id, name: g.name, description: g.description, color: g.color, members: g.members.length, mahalla: g.mahalla, district: g.district, code } : null;
+  },
+
+  async leaveGroup() {
+    await ready();
+    await commit((db) => {
+      const u = actor(db);
+      const g = groupOf(db, u.id);
+      if (!g) throw new DomainError("not_found", "e.notFound");
+      removeFromGroup(db, g, u.id);
+      log(db, u, "group.leave", "groups", g.id);
+    });
+  },
+
+  async removeGroupMember(userId: string) {
+    await ready();
+    await commit((db) => {
+      const u = actor(db);
+      const g = groupOf(db, u.id);
+      if (!g || g.ownerId !== u.id || userId === u.id) throw new DomainError("forbidden", "e.groupOwner");
+      if (!g.members.includes(userId)) throw new DomainError("not_found", "e.notFound");
+      removeFromGroup(db, g, userId, u.id);
+      notify(db, userId, "system", "n.groupRemoved", { group: g.name }, "/app/chat?tab=groups");
+    });
+  },
+
+  /** New invite code; the old one stops working. */
+  async newGroupCode() {
+    await ready();
+    await commit((db) => {
+      const u = actor(db);
+      const g = groupOf(db, u.id);
+      if (!g || g.ownerId !== u.id) throw new DomainError("forbidden", "e.groupOwner");
+      db.groupCodes = db.groupCodes.filter((c) => c.groupId !== g.id);
+      db.groupCodes.push({ id: makeGroupCode(), groupId: g.id, createdAt: nowIso() });
+    });
+  },
+
+  /* ───────────── v3: leaderboards ───────────── */
+  async leaderboard(opts: { entity: "volunteers" | "groups"; scope: Scope; period: "month" | "all" }) {
+    await ready();
+    const db = getDB();
+    const u = actor(db);
+    const now = nowIso();
+    const my = groupOf(db, u.id);
+    const res = opts.entity === "volunteers"
+      ? volunteerBoard({ viewer: u, users: db.users, submissions: db.submissions, missions: db.missions, scope: opts.scope, period: opts.period, now })
+      : groupBoard({ viewerPlace: my ?? u, myGroupId: my?.id ?? null, groups: db.groups, submissions: db.submissions, missions: db.missions, scope: opts.scope, period: opts.period, now });
+    const myIndex = res.rows.findIndex((r) => r.isMe);
+    const place = my && opts.entity === "groups" ? my : u;
+    const area = { country: place === u ? u.country || "Uzbekistan" : "Uzbekistan", province: place.province, district: place.district ?? "", mahalla: place.mahalla ?? "" };
+    return { ...res, rows: res.rows.slice(0, 100), myRank: myIndex >= 0 ? myIndex + 1 : null, total: res.rows.length, area, hasGroup: Boolean(my) };
+  },
+
+  /* ───────────── v3: help signals ───────────── */
+  async sendHelpSignal(input: { title: string; note: string; lat: number; lng: number; place: string; missionId?: string | null }) {
+    await ready();
+    const title = input.title.trim();
+    const errors: Errors = {};
+    if (title.length < 3 || title.length > 80) errors.title = "v.signalTitle";
+    if (input.note.trim().length > 300) errors.note = "v.tooLong";
+    if (!Number.isFinite(input.lat) || !Number.isFinite(input.lng)) errors.location = "e.gpsUnavailable";
+    if (Object.keys(errors).length) throw new ValidationError(errors);
+    let id = "";
+    await commit((db) => {
+      const u = actor(db);
+      if (u.role !== "volunteer") throw new DomainError("forbidden", "e.volunteersOnly");
+      const since = Date.now() - 86_400_000;
+      if (db.helpSignals.filter((x) => x.userId === u.id && Date.parse(x.createdAt) > since).length >= SIGNALS_PER_DAY) throw new DomainError("conflict", "e.signalLimit");
+      const g = groupOf(db, u.id);
+      id = uid();
+      const t = nowIso();
+      const sig: HelpSignal = {
+        id, userId: u.id, groupId: g?.id ?? null, missionId: input.missionId ?? null, title, note: input.note.trim(), location: { lat: input.lat, lng: input.lng },
+        place: input.place.trim().slice(0, 120), radiusKm: SIGNAL_RADIUS_KM, province: u.province, district: u.district ?? "", city: u.city, responders: [],
+        status: "open", createdAt: t, expiresAt: new Date(Date.now() + SIGNAL_HOURS * 3_600_000).toISOString(),
+      };
+      db.helpSignals.unshift(sig);
+      if (g) db.groupMessages.push({ id: uid(), groupId: g.id, from: u.id, text: title, kind: "signal", signalId: id, readBy: [u.id], createdAt: t, reactions: {}, replyTo: null, editedAt: null, deletedAt: null });
+      for (const to of signalAudience(u, db.users, g).slice(0, 200)) notify(db, to, "mission", "n.signal", { name: u.fullName, title }, `/app/signals/${id}`);
+      log(db, u, "signal.create", "helpSignals", id, title);
+    });
+    return { id };
+  },
+
+  /** Open signals for the volunteer: their own, their group's, their area's, and any within 2 km of `near`. */
+  async helpSignals(near: { lat: number; lng: number } | null = null) {
+    await ready();
+    const db = getDB();
+    const u = actor(db);
+    return openSignalsFor(db, u, near).map((x) => signalView(db, x, u, near));
+  },
+
+  async helpSignal(id: string) {
+    await ready();
+    const db = getDB();
+    const u = actor(db);
+    const x = db.helpSignals.find((s) => s.id === id);
+    return x ? signalView(db, x, u, null) : null;
+  },
+
+  async respondSignal(id: string, going: boolean) {
+    await ready();
+    await commit((db) => {
+      const u = actor(db);
+      const x = db.helpSignals.find((s) => s.id === id);
+      if (!x || x.status !== "open" || Date.parse(x.expiresAt) < Date.now()) throw new DomainError("invalid_state", "e.signalClosed");
+      if (x.userId === u.id) throw new DomainError("forbidden", "e.forbidden");
+      const had = x.responders.includes(u.id);
+      if (going && !had) {
+        x.responders = [...x.responders, u.id];
+        notify(db, x.userId, "mission", "n.signalGoing", { name: u.fullName, title: x.title }, `/app/signals/${x.id}`);
+      } else if (!going && had) x.responders = x.responders.filter((r) => r !== u.id);
+    });
+  },
+
+  async closeSignal(id: string) {
+    await ready();
+    await commit((db) => {
+      const u = actor(db);
+      const x = db.helpSignals.find((s) => s.id === id);
+      if (!x || (x.userId !== u.id && !isAdmin(u.role))) throw new DomainError("forbidden", "e.forbidden");
+      x.status = "closed";
+    });
+  },
+
+  /* ───────────── v3: personal report for the home page ───────────── */
+  async myReport() {
+    await ready();
+    const db = getDB();
+    const u = actor(db);
+    const now = nowIso();
+    const missions = new Map(db.missions.map((m) => [m.id, m]));
+    const approved = db.submissions.filter((s) => s.userId === u.id && s.verificationStatus === "approved" && s.reviewedAt);
+    const months = lastMonths(6);
+    const byMonth = months.map((mk) => {
+      const list = approved.filter((s) => monthKey(s.reviewedAt!) === mk);
+      return {
+        month: mk, xp: list.reduce((a, s) => a + earnedXp(s, missions.get(s.missionId)), 0), missions: list.length,
+        hours: Math.round(list.reduce((a, s) => a + (s.grant?.hours ?? (missions.get(s.missionId)?.duration ?? 0) / 60), 0) * 10) / 10,
+      };
+    });
+    const cats: Partial<Record<Category, { missions: number; hours: number }>> = {};
+    for (const s of approved) {
+      const m = missions.get(s.missionId);
+      if (!m) continue;
+      const c = (cats[m.category] ??= { missions: 0, hours: 0 });
+      c.missions += 1;
+      c.hours = Math.round((c.hours + m.duration / 60) * 10) / 10;
+    }
+    const ranks = SCOPES.map((scope) => {
+      const b = volunteerBoard({ viewer: u, users: db.users, submissions: db.submissions, missions: db.missions, scope, period: "all", now });
+      const i = b.rows.findIndex((r) => r.isMe);
+      return { scope, rank: i >= 0 ? i + 1 : null, total: b.rows.length, missing: b.missing };
+    });
+    const level = levelForXp(u.xp);
+    const rank = rankFor(level);
+    const nextRank = RANKS.find((r) => r.from > level) ?? null;
+    const g = groupOf(db, u.id);
+    const gxAll = g ? groupXp(db.submissions, db.missions).get(g.id) ?? 0 : 0;
+    const myInGroup = g ? approved.filter((s) => s.groupId === g.id).reduce((a, s) => a + earnedXp(s, missions.get(s.missionId)), 0) : 0;
+    const cur = byMonth[byMonth.length - 1];
+    const prev = byMonth[byMonth.length - 2];
+    return {
+      byMonth, thisMonth: cur, lastMonth: prev, categories: cats, impact: u.impact, totalImpact: u.totalImpact, hours: u.totalVolunteerHours,
+      missions: approved.length, ranks, rank, nextRank: nextRank ? { id: nextRank.id, from: nextRank.from, xpNeeded: Math.max(0, xpForLevel(nextRank.from) - u.xp) } : null,
+      group: g ? { id: g.id, name: g.name, color: g.color, xp: gxAll, level: groupLevel(gxAll), myShare: gxAll ? Math.round((myInGroup / gxAll) * 100) : 0, members: g.members.length } : null,
+      streak: u.streak, coins: u.points,
+    };
+  },
+
+  /* ───────────── v3: news ───────────── */
+  async newsFeed(limit = 6) {
+    await ready();
+    const db = getDB();
+    const u = readSession(db);
+    const now = Date.now();
+    return db.news
+      .filter((n) => n.status === "published" && Date.parse(n.publishAt) <= now && (n.audience === "all" || (u && (n.audience === u.role || isAdmin(u.role)))))
+      .sort((a, b) => Number(b.pinned) - Number(a.pinned) || Date.parse(b.publishAt) - Date.parse(a.publishAt))
+      .slice(0, limit);
+  },
+  async newsPost(id: string) {
+    await ready();
+    const db = getDB();
+    const u = readSession(db);
+    const n = db.news.find((x) => x.id === id);
+    if (!n) return null;
+    if (n.status !== "published" || Date.parse(n.publishAt) > Date.now()) return u && isAdmin(u.role) ? n : null;
+    return n;
+  },
+  async adminNews() {
+    await ready();
+    const db = getDB();
+    requireAdmin(db);
+    return [...db.news].sort((a, b) => Number(b.pinned) - Number(a.pinned) || Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  },
+  async saveNews(input: NewsInput, existingId?: string) {
+    await ready();
+    const errors: Errors = {};
+    const title = input.title.trim();
+    const summary = input.summary.trim();
+    const body = input.body.trim();
+    if (title.length < 3 || title.length > 120) errors.title = "v.newsTitle";
+    if (summary.length > 240) errors.summary = "v.tooLong";
+    if (body.length < 10) errors.body = "v.newsBody";
+    if (body.length > 8000) errors.body = "v.tooLong";
+    if (input.cover && input.cover.length > 300_000) errors.cover = "sh.v.image";
+    const at = input.publishAt ? Date.parse(input.publishAt) : Date.now();
+    if (Number.isNaN(at)) errors.publishAt = "v.date";
+    if (Object.keys(errors).length) throw new ValidationError(errors);
+    let id = existingId ?? "";
+    await commit((db) => {
+      const a = requireAdmin(db);
+      const t = nowIso();
+      const data = {
+        title, summary: summary || body.slice(0, 200), body, cover: input.cover || null, category: input.category, audience: input.audience, status: input.status,
+        pinned: input.pinned, publishAt: new Date(at).toISOString(), link: cleanLink(input.link), updatedAt: t,
+      };
+      if (existingId) {
+        const n = db.news.find((x) => x.id === existingId);
+        if (!n) throw new DomainError("not_found", "e.notFound");
+        Object.assign(n, data);
+      } else {
+        id = uid();
+        db.news.unshift({ id, ...data, authorId: a.id, createdAt: t });
+      }
+      log(db, a, existingId ? "news.update" : "news.create", "news", id, `${input.status}: ${title}`);
+    });
+    return { id };
+  },
+  async deleteNews(id: string) {
+    await ready();
+    await commit((db) => {
+      const a = requireAdmin(db);
+      db.news = db.news.filter((x) => x.id !== id);
+      log(db, a, "news.delete", "news", id);
+    });
+  },
+  async setNewsFlags(id: string, flags: { status?: NewsPost["status"]; pinned?: boolean }) {
+    await ready();
+    await commit((db) => {
+      const a = requireAdmin(db);
+      const n = db.news.find((x) => x.id === id);
+      if (!n) throw new DomainError("not_found", "e.notFound");
+      if (flags.status) { n.status = flags.status; if (flags.status === "published" && Date.parse(n.publishAt) > Date.now()) n.publishAt = nowIso(); }
+      if (flags.pinned !== undefined) n.pinned = flags.pinned;
+      n.updatedAt = nowIso();
+      log(db, a, "news.flags", "news", id, JSON.stringify(flags));
+    });
+  },
+
+  /* ───────────── v3: promo codes ───────────── */
+  async adminPromoCodes(itemId: string) {
+    await ready();
+    const db = getDB();
+    requireAdmin(db);
+    return db.promoCodes.filter((c) => c.itemId === itemId).sort((a, b) => Number(Boolean(a.orderId)) - Number(Boolean(b.orderId)) || a.code.localeCompare(b.code))
+      .map((c) => ({ ...c, buyer: c.userId ? db.users.find((u) => u.id === c.userId)?.fullName ?? "—" : null }));
+  },
+  /** Adds codes (one per line); duplicates are skipped. The item's stock follows the free codes. */
+  async addPromoCodes(itemId: string, text: string) {
+    await ready();
+    const codes = [...new Set(text.split(/[\s,;]+/).map((c) => c.trim()).filter((c) => c.length >= 4 && c.length <= 64))];
+    if (!codes.length) throw new ValidationError({ codes: "sh.v.codes" });
+    if (codes.length > 400) throw new ValidationError({ codes: "sh.v.codesMax" });
+    let added = 0;
+    await commit((db) => {
+      const a = requireAdmin(db);
+      const item = db.shopItems.find((i) => i.id === itemId);
+      if (!item) throw new DomainError("not_found", "e.notFound");
+      const have = new Set(db.promoCodes.filter((c) => c.itemId === itemId).map((c) => c.code));
+      for (const code of codes) {
+        if (have.has(code)) continue;
+        db.promoCodes.push({ id: uid(), itemId, code, orderId: null, userId: null, createdAt: nowIso(), issuedAt: null });
+        added++;
+      }
+      item.delivery = "promo";
+      item.stock += added;
+      log(db, a, "shop.promo_add", "shopItems", itemId, String(added));
+    });
+    // Orders that waited for codes get them now.
+    await api.issueWaitingCodes(itemId).catch(() => undefined);
+    return { added, skipped: codes.length - added };
+  },
+  async deletePromoCode(id: string) {
+    await ready();
+    await commit((db) => {
+      const a = requireAdmin(db);
+      const c = db.promoCodes.find((x) => x.id === id);
+      if (!c) throw new DomainError("not_found", "e.notFound");
+      if (c.orderId) throw new DomainError("invalid_state", "sh.e.codeUsed");
+      db.promoCodes = db.promoCodes.filter((x) => x.id !== id);
+      const item = db.shopItems.find((i) => i.id === c.itemId);
+      if (item) item.stock = Math.max(0, item.stock - 1);
+      log(db, a, "shop.promo_delete", "shopItems", c.itemId);
+    });
+  },
+  /** Gives free codes to paid orders that are still waiting (admin). */
+  async issueWaitingCodes(itemId?: string) {
+    await ready();
+    let issued = 0;
+    await commit((db) => {
+      requireAdmin(db);
+      for (const o of db.orders) {
+        if (o.status !== "placed" && o.status !== "processing") continue;
+        if (itemId && o.itemId !== itemId) continue;
+        const item = db.shopItems.find((i) => i.id === o.itemId);
+        if (item?.delivery !== "promo" || o.promoCode) continue;
+        if (issueCode(db, o)) issued++;
+      }
+    });
+    return { issued };
+  },
+  /** The promo code of one of my orders (also from the promoCodes collection, for orders delivered by an admin). */
+  async myPromoCodes() {
+    await ready();
+    const db = getDB();
+    const u = actor(db);
+    return db.orders.filter((o) => o.userId === u.id && (o.promoCode || db.promoCodes.some((c) => c.orderId === o.id)))
+      .map((o) => ({ orderId: o.id, title: o.itemTitle, itemId: o.itemId, code: o.promoCode ?? db.promoCodes.find((c) => c.orderId === o.id)!.code, at: o.updatedAt ?? o.createdAt }));
+  },
+
+  /* ───────────── v3: AI review of agent missions ───────────── */
+  /** Runs the AI reviewer on an agent-mission submission (the volunteer's own, or any for an admin). */
+  async runAiReview(submissionId: string) {
+    await ready();
+    const db0 = getDB();
+    const u = actor(db0);
+    const s0 = db0.submissions.find((x) => x.id === submissionId);
+    const m0 = s0 ? db0.missions.find((x) => x.id === s0.missionId) : null;
+    if (!s0 || !m0 || m0.source !== "agent") throw new DomainError("not_found", "e.notFound");
+    if (s0.userId !== u.id && !isAdmin(u.role)) throw new DomainError("forbidden", "e.forbidden");
+    if (s0.verificationStatus !== "pending" || s0.aiReview?.audit === "overturned") return { decision: s0.aiReview?.decision ?? null };
+    if (FIREBASE) {
+      // The server reviews and writes the result (the volunteer cannot grant themselves rewards).
+      const r = await callServer("ai-review", { submissionId }).catch(() => null);
+      if (r?.ok) return { decision: ((await r.json()) as { decision: AiReview["decision"] }).decision };
+      await commit((db) => {
+        for (const a of db.users.filter((x) => isAdmin(x.role) && x.status === "active")) notify(db, a.id, "submission", "n.toReview", { name: u.fullName, title: m0.title }, "/admin?tab=review");
+      });
+      return { decision: "escalated" as const };
+    }
+    let verdict: AiVerdict | null = null;
+    try {
+      const images = s0.images.slice(-4).map((i) => i.dataUrl.split(",")[1] ?? "");
+      const res = await postAi("verify", { images, title: m0.title, description: m0.description, category: m0.category, checklist: m0.checklist ?? [], language: u.language ?? "uz" });
+      if (res.ok) verdict = (await res.json()) as AiVerdict;
+    } catch { verdict = null; }
+    let decision: AiReview["decision"] = "escalated";
+    await commit((db) => {
+      const s = db.submissions.find((x) => x.id === submissionId)!;
+      if (s.verificationStatus !== "pending") return;
+      const review = decideAi(verdict, s.checks ?? [], s.fraudScore, nowIso());
+      decision = review.decision;
+      applyAiReview(db, s, review);
+    });
+    return { decision };
+  },
+
+  /** Admin: AI decisions waiting for a human check. */
+  async aiAuditQueue() {
+    await ready();
+    const db = getDB();
+    requireAdmin(db);
+    return db.submissions.filter((s) => s.aiReview && s.aiReview.decision !== "escalated").flatMap((s) => {
+      const mission = db.missions.find((m) => m.id === s.missionId);
+      const v = db.users.find((x) => x.id === s.userId);
+      if (!mission || !v) return [];
+      return [{ submission: s, mission, volunteer: person(v), participant: db.participants.find((p) => p.id === `${s.missionId}_${s.userId}`) ?? null }];
+    }).sort((a, b) => Number(b.submission.aiReview!.audit === "pending") - Number(a.submission.aiReview!.audit === "pending") || Date.parse(b.submission.aiReview!.at) - Date.parse(a.submission.aiReview!.at));
+  },
+
+  /**
+   * Admin confirms or overturns an AI decision.
+   * Overturning an approval takes the rewards back; overturning a rejection (or a request for more evidence)
+   * puts the submission back in the admins' queue for a normal review.
+   */
+  async auditAiReview(submissionId: string, verdict: "confirm" | "overturn", note = "") {
+    await ready();
+    if (verdict === "overturn" && note.trim().length < 5) throw new ValidationError({ note: "e.reasonNeeded" });
+    await commit((db) => {
+      const a = requireAdmin(db);
+      const s = db.submissions.find((x) => x.id === submissionId);
+      if (!s?.aiReview || s.aiReview.decision === "escalated") throw new DomainError("not_found", "e.notFound");
+      if (s.aiReview.audit === "confirmed" || s.aiReview.audit === "overturned") throw new DomainError("invalid_state", "e.auditDone");
+      const m = db.missions.find((x) => x.id === s.missionId);
+      const t = nowIso();
+      s.aiReview = { ...s.aiReview, audit: verdict === "confirm" ? "confirmed" : "overturned", auditedBy: a.id, auditedAt: t, auditNote: note.trim() };
+      if (verdict === "overturn") {
+        if (s.aiReview.decision === "approved" && s.verificationStatus === "approved") {
+          const v = db.users.find((x) => x.id === s.userId);
+          if (v && s.grant) {
+            const r = reverseGrant(v, s.grant, db.certificates, t);
+            Object.assign(v, r.volunteer);
+            for (const c of r.revoked) Object.assign(db.certificates.find((x) => x.id === c.id)!, c);
+          }
+          s.verificationStatus = "rejected";
+          s.reviewedBy = a.id;
+          s.reviewedAt = t;
+          s.reviewNote = note.trim();
+          s.rewardGrantedAt = null;
+          const p = db.participants.find((x) => x.id === `${s.missionId}_${s.userId}`);
+          if (p) p.completionStatus = "joined";
+          db.records.push({ id: uid(), submissionId: s.id, reviewerId: a.id, reviewerRole: a.role, decision: "rejected", note: note.trim(), createdAt: t });
+          notify(db, s.userId, "submission", "n.aiOverturnedApproval", { title: m?.title ?? "", note: note.trim() }, `/app/missions/${s.missionId}`);
+        } else {
+          s.verificationStatus = "pending";
+          s.reviewedBy = null;
+          s.reviewedAt = null;
+          notify(db, s.userId, "submission", "n.aiOverturnedRejection", { title: m?.title ?? "" }, `/app/missions/${s.missionId}`);
+        }
+      }
+      log(db, a, `ai_review.${verdict}`, "missionSubmissions", s.id, note);
+    });
+  },
+
+  /* ───────────── v3: review queues ───────────── */
+  /** Admin queue split by who should act: escalated agent missions, AI audit, and organizations' backlog (oversight). */
+  async adminQueues() {
+    await ready();
+    const db = getDB();
+    requireAdmin(db);
+    const all = await api.reviewQueue("admin");
+    const stale = Date.now() - 3 * 86_400_000;
+    return {
+      admin: all.filter((x) => needsAdmin(x.submission)),
+      orgs: all.filter((x) => !isAgentOrg(x.submission.organizationId) && x.submission.verificationStatus === "pending"),
+      orgsStale: all.filter((x) => !isAgentOrg(x.submission.organizationId) && x.submission.verificationStatus === "pending" && Date.parse(x.submission.timestamp) < stale).length,
+      history: all.filter((x) => x.submission.verificationStatus !== "pending").slice(0, 60),
+    };
+  },
+
   async adminAudit(limit = 200) {
     await ready();
     const db = getDB();
@@ -1541,12 +2212,14 @@ export interface ShopItemInput {
   art: ShopItem["art"];
   active: boolean;
   image: string | null;
+  /** v3: "promo" items are delivered as partner promo codes */
+  delivery?: "pickup" | "promo";
 }
 
 function joinInto(db: DB, u: UserProfile, missionId: string, teamId: string | null) {
   const m = db.missions.find((x) => x.id === missionId);
   if (!m || m.status !== "published") throw new DomainError("not_found", "e.missionClosed");
-  if (!u.emailVerified) throw new DomainError("unverified_email", "e.verifyFirst");
+  if (!isVerifiedAccount(u)) throw new DomainError("unverified_email", "e.verifyFirst");
   if (!u.onboarded) throw new DomainError("invalid_state", "e.profileFirst");
   if (u.role !== "volunteer") throw new DomainError("forbidden", "e.volunteersOnly");
   if (Date.parse(m.deadline) < Date.now()) throw new DomainError("invalid_state", "e.signupClosed");
@@ -1582,6 +2255,218 @@ async function createOrganization(data: OrganizationInput, ownerId: string) {
     for (const a of db.users.filter((x) => isAdmin(x.role) && x.status === "active")) notify(db, a.id, "organization", "n.orgPending", { name: data.name }, "/admin?tab=organizations");
   });
   return { id };
+}
+
+/* ───────────────────────── v3 helpers ───────────────────────── */
+
+let pendingPhone: string | null = null;
+
+/** +998 90 123 45 67 → +998901234567 (Uzbek numbers may be typed without the country code). */
+export function normalisePhone(raw: string) {
+  let d = raw.replace(/[^\d+]/g, "");
+  if (!d.startsWith("+")) d = d.length === 9 ? `+998${d}` : `+${d}`;
+  return /^\+\d{10,15}$/.test(d) ? d : null;
+}
+
+/** Email, SMS or Telegram: any confirmed way of reaching the person counts as a verified account. */
+export function isVerifiedAccount(u: Pick<UserProfile, "emailVerified" | "phoneVerified" | "telegramId">) {
+  return Boolean(u.emailVerified || u.phoneVerified || u.telegramId);
+}
+
+/** Profile for a phone or Telegram sign-in; created (as a volunteer) on the first sign-in only. */
+async function ensureProfile(id: string, init: { provider: "phone" | "telegram"; phone?: string; telegramId?: string; name: string }) {
+  const have = getDB().users.find((x) => x.id === id);
+  if (!have) {
+    if (FIREBASE && (await cloud.profileExists(id)) !== false) {
+      // The profile exists but is not loaded yet, or the server could not be asked: never create a second one.
+      for (let i = 0; i < 40 && !getDB().users.some((x) => x.id === id); i++) await new Promise((r) => setTimeout(r, 100));
+      if (!getDB().users.some((x) => x.id === id)) { await cloud.logOut(); throw new DomainError("invalid_state", "e.network"); }
+    } else {
+      await commit((db) => {
+        const t = nowIso();
+        db.users.push({
+          id, email: "", emailVerified: false, fullName: init.name.slice(0, 80), username: `user_${uid().slice(0, 8)}`, avatar: null, bio: "", country: "Uzbekistan",
+          province: "", city: "", feedVisible: true, languages: [], skills: [], interests: [], level: 1, xp: 0, points: 0, trustScore: 50, reputation: 0, streak: 0,
+          lastApprovedDay: null, totalVolunteerHours: 0, totalImpact: 0, impact: {}, onboarded: false, organizationId: null, role: "volunteer", status: "active",
+          createdAt: t, updatedAt: t, lastLogin: t, language: "uz", privacy: "public", phone: init.phone ?? "", birthYear: null, authProvider: init.provider,
+          phoneVerified: init.provider === "phone", telegramId: init.telegramId ?? null, district: "", mahalla: "",
+        });
+        log(db, { id, role: "volunteer" }, `user.register_${init.provider}`, "users", id);
+      });
+    }
+  }
+  const u = getDB().users.find((x) => x.id === id)!;
+  if (u.status !== "active") {
+    if (FIREBASE) await cloud.logOut();
+    throw new DomainError(u.status === "suspended" ? "suspended" : "forbidden", u.status === "suspended" ? "e.suspended" : "e.badLogin");
+  }
+  await commit((db) => {
+    const me = db.users.find((x) => x.id === id)!;
+    me.lastLogin = nowIso();
+    if (!FIREBASE) startSession(me);
+  });
+  return strip(getDB().users.find((x) => x.id === id)!);
+}
+
+/** The group a volunteer belongs to (one at a time). */
+function groupOf(db: DB, userId: string) {
+  return db.groups.find((g) => g.members.includes(userId)) ?? null;
+}
+
+function systemMessage(groupId: string, from: string, key: string, values: Record<string, string>): GroupMessage {
+  return { id: uid(), groupId, from, text: JSON.stringify({ key, values }), kind: "system", signalId: null, readBy: [from], createdAt: nowIso(), reactions: {}, replyTo: null, editedAt: null, deletedAt: null };
+}
+
+/** Removes a member; the oldest remaining member becomes the owner; an empty group is deleted with its codes. */
+function removeFromGroup(db: DB, g: Group, userId: string, actorId: string = userId) {
+  g.members = g.members.filter((m) => m !== userId);
+  const name = db.users.find((x) => x.id === userId)?.fullName ?? "—";
+  if (!g.members.length) {
+    db.groups = db.groups.filter((x) => x.id !== g.id);
+    db.groupCodes = db.groupCodes.filter((c) => c.groupId !== g.id);
+    return;
+  }
+  if (g.ownerId === userId) g.ownerId = g.members[0];
+  // Written by the person who acts; someone who left can no longer post in the group.
+  if (actorId !== userId) db.groupMessages.push(systemMessage(g.id, actorId, "gm.removed", { name }));
+}
+
+function groupView(db: DB, g: Group, viewer: UserProfile) {
+  const now = nowIso();
+  const isMember = g.members.includes(viewer.id);
+  const all = groupXp(db.submissions, db.missions).get(g.id) ?? 0;
+  const month = groupXp(db.submissions, db.missions, { month: monthKey(now) }).get(g.id) ?? 0;
+  const level = groupLevel(all);
+  const ranks = SCOPES.map((scope) => {
+    const b = groupBoard({ viewerPlace: g, myGroupId: g.id, groups: db.groups, submissions: db.submissions, missions: db.missions, scope, period: "all", now });
+    const i = b.rows.findIndex((r) => r.isMe);
+    return { scope, rank: i >= 0 ? i + 1 : null, total: b.rows.length };
+  });
+  const missions = new Map(db.missions.map((m) => [m.id, m]));
+  const contrib = new Map<string, number>();
+  for (const s of db.submissions) if (s.groupId === g.id && s.verificationStatus === "approved") contrib.set(s.userId, (contrib.get(s.userId) ?? 0) + earnedXp(s, missions.get(s.missionId)));
+  const members = g.members.flatMap((id) => {
+    const x = db.users.find((y) => y.id === id);
+    return x ? [{ ...person(x), isOwner: id === g.ownerId, groupXp: contrib.get(id) ?? 0, isMe: id === viewer.id }] : [];
+  }).sort((a, b) => b.groupXp - a.groupXp);
+  const recent = db.submissions.filter((s) => s.groupId === g.id && s.verificationStatus === "approved" && s.reviewedAt)
+    .sort((a, b) => Date.parse(b.reviewedAt!) - Date.parse(a.reviewedAt!)).slice(0, 8)
+    .flatMap((s) => { const m = missions.get(s.missionId); const x = db.users.find((y) => y.id === s.userId); return m && x ? [{ id: s.id, at: s.reviewedAt!, title: m.title, category: m.category, name: x.fullName, xp: earnedXp(s, m) }] : []; });
+  return {
+    group: g, isMember, isOwner: g.ownerId === viewer.id, members, xp: all, monthXp: month, level, levelStart: xpForLevel(level) * 3, levelNext: xpForLevel(level + 1) * 3,
+    ranks, recent, code: isMember ? db.groupCodes.find((c) => c.groupId === g.id)?.id ?? null : null,
+    signals: db.helpSignals.filter((x) => x.groupId === g.id && x.status === "open" && Date.parse(x.expiresAt) > Date.now()).map((x) => signalView(db, x, viewer, null)),
+  };
+}
+export type GroupView = ReturnType<typeof groupView>;
+
+type AnyMessage = Message | GroupMessage;
+function findMessage(db: DB, id: string): AnyMessage | null {
+  return db.messages.find((m) => m.id === id) ?? db.groupMessages.find((m) => m.id === id) ?? null;
+}
+
+function unreadFor(db: DB, userId: string) {
+  const groups = new Set(db.groups.filter((g) => g.members.includes(userId)).map((g) => g.id));
+  return db.messages.filter((m) => m.participants.includes(userId) && !m.readBy.includes(userId)).length
+    + db.groupMessages.filter((m) => groups.has(m.groupId) && !m.readBy.includes(userId)).length;
+}
+
+function openSignalsFor(db: DB, u: UserProfile, near: { lat: number; lng: number } | null) {
+  const now = Date.now();
+  const g = groupOf(db, u.id);
+  const d = scopeKey(u, "district");
+  return db.helpSignals.filter((x) => {
+    if (x.status !== "open" || Date.parse(x.expiresAt) < now) return false;
+    if (x.userId === u.id || (g && x.groupId === g.id)) return true;
+    if (near && km(near, x.location) <= x.radiusKm) return true;
+    if (d) return scopeKey({ country: "Uzbekistan", province: x.province, district: x.district }, "district") === d;
+    return Boolean(u.city) && u.city.toLowerCase() === x.city.toLowerCase();
+  });
+}
+
+function signalView(db: DB, x: HelpSignal, viewer: UserProfile, near: { lat: number; lng: number } | null) {
+  const author = db.users.find((y) => y.id === x.userId);
+  return {
+    ...x, author: author ? person(author) : null, isMine: x.userId === viewer.id, going: x.responders.includes(viewer.id),
+    distanceKm: near ? Math.round(km(near, x.location) * 10) / 10 : null,
+    open: x.status === "open" && Date.parse(x.expiresAt) > Date.now(),
+    people: x.responders.flatMap((id) => { const y = db.users.find((z) => z.id === id); return y ? [person(y)] : []; }),
+    groupName: x.groupId ? db.groups.find((gg) => gg.id === x.groupId)?.name ?? null : null,
+  };
+}
+export type SignalView = ReturnType<typeof signalView>;
+
+/** Keys "YYYY-MM" of the last n months, oldest first. */
+function lastMonths(n: number) {
+  const out: string[] = [];
+  const d = new Date();
+  d.setDate(1);
+  for (let i = n - 1; i >= 0; i--) {
+    const x = new Date(d.getFullYear(), d.getMonth() - i, 1);
+    out.push(`${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}`);
+  }
+  return out;
+}
+
+/** Gives an order the next free promo code of its item. False when none is left. */
+function issueCode(db: DB, o: Order) {
+  const c = db.promoCodes.find((x) => x.itemId === o.itemId && !x.orderId);
+  if (!c) return false;
+  const t = nowIso();
+  Object.assign(c, { orderId: o.id, userId: o.userId, issuedAt: t });
+  Object.assign(o, { promoCode: c.code, status: "fulfilled", updatedAt: t });
+  notify(db, o.userId, "reward", "n.promoIssued", { title: o.itemTitle }, "/app/shop?tab=codes");
+  return true;
+}
+
+/** Calls a Netlify server function as the signed-in user. */
+async function callServer(name: string, body: unknown) {
+  const token = await cloud.idToken();
+  const res = await fetch(`/.netlify/functions/${name}`, {
+    method: "POST", headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`server ${res.status}`);
+  return res;
+}
+
+/** Applies the AI reviewer's decision (local mode; the ai-review server function does the same with the Admin SDK). */
+function applyAiReview(db: DB, s: Submission, review: AiReview) {
+  const mission = db.missions.find((m) => m.id === s.missionId);
+  const volunteer = db.users.find((x) => x.id === s.userId);
+  if (!mission || !volunteer) return;
+  if (review.decision === "escalated") {
+    s.aiReview = review;
+    for (const a of db.users.filter((x) => isAdmin(x.role) && x.status === "active")) notify(db, a.id, "submission", "n.toReview", { name: volunteer.fullName, title: mission.title }, "/admin?tab=review");
+    return;
+  }
+  const now = nowIso();
+  const teamSize = s.teamId ? db.participants.filter((p) => p.missionId === s.missionId && p.teamId === s.teamId && p.status === "accepted").length : 1;
+  const res = reviewSubmission({
+    submission: s, mission, volunteer, reviewer: aiReviewer(now), organization: null, decision: review.decision, note: aiNote(review), now, newId: uid,
+    origin: typeof window === "undefined" ? "" : window.location.origin, team: teamSize > 1,
+  });
+  Object.assign(s, res.submission, { aiReview: review, reviewedBy: AI_REVIEWER_ID });
+  Object.assign(volunteer, res.volunteer);
+  db.records.push(res.record);
+  db.certificates.push(...res.certificates);
+  db.notifications.unshift(...res.notifications);
+  db.audits.unshift({ ...res.audit, actor: AI_REVIEWER_ID, actorRole: "system" });
+  const p = db.participants.find((x) => x.id === `${s.missionId}_${s.userId}`);
+  if (p) p.completionStatus = review.decision === "approved" ? "completed" : "joined";
+  if (review.decision === "approved" && p) p.attendance = true;
+}
+
+/** An agent-mission submission the AI could not decide (or never got to): an admin must review it. */
+function needsAdmin(s: Submission) {
+  if (s.verificationStatus !== "pending" || !isAgentOrg(s.organizationId)) return false;
+  // escalated by the AI, or an AI rejection an admin overturned: a person decides now
+  if (s.aiReview?.decision === "escalated" || s.aiReview?.audit === "overturned") return true;
+  return !s.aiReview && Date.parse(s.timestamp) < Date.now() - 2 * 60_000;
+}
+
+export interface NewsInput {
+  title: string; summary: string; body: string; cover: string | null; category: NewsPost["category"]; audience: NewsPost["audience"];
+  status: NewsPost["status"]; pinned: boolean; publishAt: string; link: string;
 }
 
 export { levelForXp };

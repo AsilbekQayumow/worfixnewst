@@ -53,14 +53,28 @@ export function nextCertificateLevel(level: number) {
   return CERTIFICATE_LEVELS.find((l) => l > level) ?? null;
 }
 
+/**
+ * Rank ladder shown to volunteers (as in the WORFIX video): Explorer → Volunteer → Protector → Guardian → Legend.
+ * `from` is the first level of the rank.
+ */
+export const RANKS = [
+  { id: "explorer", from: 1 },
+  { id: "volunteer", from: 3 },
+  { id: "protector", from: 4 },
+  { id: "guardian", from: 8 },
+  { id: "legend", from: 15 },
+] as const;
+export type RankId = (typeof RANKS)[number]["id"];
+
+export function rankFor(level: number): RankId {
+  let r: RankId = "explorer";
+  for (const x of RANKS) if (level >= x.from) r = x.id;
+  return r;
+}
+
 /** i18n key for the rank name of a level. */
 export function levelTitleKey(level: number) {
-  if (level >= 50) return "rank.legend";
-  if (level >= 30) return "rank.guardian";
-  if (level >= 15) return "rank.ranger";
-  if (level >= 10) return "rank.pathfinder";
-  if (level >= 5) return "rank.scout";
-  return "rank.newcomer";
+  return `rank.${rankFor(level)}`;
 }
 
 export function nextStreak(prevStreak: number, lastDay: string | null, today: string) {

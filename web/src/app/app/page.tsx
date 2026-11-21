@@ -7,9 +7,13 @@ import { MissionCard } from "@/components/mission-card";
 import { useMe } from "@/components/providers";
 import { PageHead } from "@/components/shell";
 import { Avatar, ButtonLink, Coins, Empty, Notice, Progress, Skeleton, Status, VerificationStatusTag } from "@/components/ui";
-import { levelProgress, levelTitleKey, xpForLevel } from "@/lib/domain/rewards";
+import { levelProgress } from "@/lib/domain/rewards";
+import { NewsStrip } from "@/components/news";
+import { RankLadder } from "@/components/rank";
+import { MyReport } from "@/components/report";
+import { SignalRow } from "@/components/signals";
 import { useFmt, useI18n } from "@/lib/i18n";
-import { api } from "@/lib/store/api";
+import { api, isVerifiedAccount } from "@/lib/store/api";
 import { useApi } from "@/lib/store/hooks";
 
 export default function Home() {
@@ -17,6 +21,7 @@ export default function Home() {
   const f = useFmt();
   const { me } = useMe();
   const q = useApi(() => api.myInsights());
+  const signals = useApi(() => api.helpSignals());
   if (!me) return null;
   const lp = levelProgress(me.xp);
   const d = q.data;
@@ -26,32 +31,26 @@ export default function Home() {
       <PageHead
         title={f.today().replace(/^./, (c) => c.toUpperCase())}
         sub={t("home.app.sub")}
-        actions={<ButtonLink href="/app/missions?agent=1" variant="primary" icon="radar">{t("home.app.agent")}</ButtonLink>}
+        actions={<>
+          <ButtonLink href="/app/signals?new=1" icon="zap">{t("sg.call")}</ButtonLink>
+          <ButtonLink href="/app/missions?agent=1" variant="primary" icon="radar">{t("home.app.agent")}</ButtonLink>
+        </>}
       />
 
       <AnnouncementBanner />
-      {!me.emailVerified && <Notice tone="warn">{t("home.app.verify")} <Link className="link" href="/verify-email?next=/app">{t("md.verifyLink")}</Link></Notice>}
-      {d && d.needsInfo > 0 && <Notice tone="info">{t("home.app.needsInfo", { n: d.needsInfo })} <Link className="link" href="/app/missions">{t("nav.myMissions")}</Link></Notice>}
+      {!isVerifiedAccount(me) && <Notice tone="warn">{t("home.app.verify")} <Link className="link" href="/verify-email?next=/app">{t("md.verifyLink")}</Link></Notice>}
+      {signals.data && signals.data.length > 0 && (
+        <section className="card signals-home">
+          <div className="row between g8" style={{ padding: "12px 16px 4px" }}><h2 className="t-h3 row g8"><Icon name="zap" size={18} />{t("sg.near")}</h2><Link href="/app/signals" className="t-small link">{t("a.all")}</Link></div>
+          <div className="rows">{signals.data.slice(0, 3).map((s) => <SignalRow key={s.id} s={s} />)}</div>
+        </section>
+      )}
+      {d && d.needsInfo > 0 && <Notice tone="info">{t("home.app.needsInfo", { n: d.needsInfo })} <Link className="link" href="/app/missions?tab=active">{t("nav.missions")}</Link></Notice>}
 
       <div className="grid home-top">
         <section className="card pad stack g16">
-          <div className="row between g12 wrap">
-            <div className="stack g4">
-              <span className="t-small secondary">{t(levelTitleKey(lp.level))}</span>
-              <span className="row g8" style={{ alignItems: "baseline" }}>
-                <span className="stat-value">{t("lvl.long", { n: lp.level })}</span>
-                <span className="t-meta">{f.num(me.xp)} XP</span>
-              </span>
-            </div>
-            {d?.nextCertificate && (
-              <span className="row g8 t-small secondary"><Icon name="award" size={16} />{t("home.app.nextCert", { n: d.nextCertificate })}</span>
-            )}
-          </div>
-          <Progress value={lp.fraction} label={t("home.app.toNext")} />
-          <span className="t-small secondary num">{t("home.app.xpToNext", { n: f.num(lp.next - me.xp), level: lp.level + 1 })}</span>
-          {d?.nextCertificate && (
-            <span className="t-small muted num">{t("home.app.certAt", { xp: f.num(xpForLevel(d.nextCertificate)) })}</span>
-          )}
+          <RankLadder xp={me.xp} />
+          <span className="t-small secondary num">{t("home.app.xpToNext", { n: f.num(lp.next - me.xp), level: lp.level + 1 })}{d?.nextCertificate ? ` · ${t("home.app.nextCert", { n: d.nextCertificate })}` : ""}</span>
         </section>
         <Link href="/app/shop" className="card pad stack g8">
           <span className="stat-label">{t("coin.balance")}</span>
@@ -65,12 +64,16 @@ export default function Home() {
         </div>
       </div>
 
+      <NewsStrip />
+
+      <MyReport />
+
       <div className="split-wide">
         <div className="stack g24" style={{ minWidth: 0 }}>
           <section>
-            <div className="section-title"><h2 className="t-h2">{t("home.app.active")}</h2><Link href="/app/missions" className="t-small link">{t("a.all")}</Link></div>
+            <div className="section-title"><h2 className="t-h2">{t("home.app.active")}</h2><Link href="/app/missions?tab=active" className="t-small link">{t("a.all")}</Link></div>
             {!d ? <Skeleton rows={2} /> : d.active.length === 0 ? (
-              <div className="card"><Empty icon="flag" title={t("home.app.noActive")} body={t("home.app.noActiveBody")} action={<ButtonLink href="/app/explore" variant="primary">{t("nav.explore")}</ButtonLink>} /></div>
+              <div className="card"><Empty icon="flag" title={t("home.app.noActive")} body={t("home.app.noActiveBody")} action={<ButtonLink href="/app/missions?tab=explore" variant="primary">{t("nav.explore")}</ButtonLink>} /></div>
             ) : (
               <div className="card rows">
                 {d.active.map(({ mission: m, participant: p, status }) => (
@@ -89,7 +92,7 @@ export default function Home() {
           </section>
 
           <section>
-            <div className="section-title"><h2 className="t-h2">{t("home.app.forYou")}</h2><Link href="/app/explore" className="t-small link">{t("a.all")}</Link></div>
+            <div className="section-title"><h2 className="t-h2">{t("home.app.forYou")}</h2><Link href="/app/missions?tab=explore" className="t-small link">{t("a.all")}</Link></div>
             {!d ? <Skeleton rows={2} height={160} /> : d.forYou.length === 0 ? (
               <div className="card"><Empty icon="radar" title={t("home.app.noneNear")} action={<ButtonLink href="/app/missions?agent=1" variant="primary" icon="radar">{t("home.app.agent")}</ButtonLink>} /></div>
             ) : (
@@ -111,7 +114,7 @@ export default function Home() {
             </Link>
           )}
           <section className="card pad stack g12">
-            <div className="row between"><h2 className="t-h3">{t("home.app.board")}</h2><Link href="/app/friends" className="t-small link">{t("nav.friends")}</Link></div>
+            <div className="row between"><h2 className="t-h3">{t("home.app.board")}</h2><Link href="/app/chat?tab=friends" className="t-small link">{t("nav.friends")}</Link></div>
             {!d ? <Skeleton rows={3} height={32} /> : d.board.length <= 1 ? <p className="t-small secondary">{t("home.app.boardEmpty")}</p> : (
               <ol className="stack g8">
                 {d.board.map((p, i) => (

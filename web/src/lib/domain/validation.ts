@@ -98,6 +98,8 @@ export function validateLogin(i: { email?: string; password?: string }): Result<
 export interface ProfileInput {
   fullName: string; username: string; bio: string; country: string; province: string; city: string;
   feedVisible: boolean; languages: string[]; skills: string[]; interests: Category[];
+  /** v3: tuman and mahalla, for the local leaderboards (optional) */
+  district?: string; mahalla?: string;
 }
 
 const list = (v: unknown, max: number) => (Array.isArray(v) ? v : []).map((x) => str(x)).filter(Boolean).slice(0, max);
@@ -108,7 +110,10 @@ export function validateProfile(i: Partial<ProfileInput>): Result<ProfileInput> 
     fullName: str(i.fullName), username: str(i.username).toLowerCase(), bio: str(i.bio), country: str(i.country), province: str(i.province),
     city: str(i.city), feedVisible: i.feedVisible !== false, languages: list(i.languages, 10), skills: list(i.skills, 20),
     interests: (Array.isArray(i.interests) ? i.interests : []).filter((c): c is Category => (CATEGORIES as readonly string[]).includes(c)),
+    district: str(i.district), mahalla: str(i.mahalla),
   };
+  if ((d.district ?? "").length > 80) e.district = "v.tooLong";
+  if ((d.mahalla ?? "").length > 80) e.mahalla = "v.tooLong";
   if (d.fullName.length < 2 || d.fullName.length > 80) e.fullName = "v.name";
   if (!/^[a-z0-9_]{3,24}$/.test(d.username)) e.username = "v.username";
   if (d.bio.length > 280) e.bio = "v.bio";

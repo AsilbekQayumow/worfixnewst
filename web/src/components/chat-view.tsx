@@ -4,38 +4,82 @@ import { useEffect, useRef, useState } from "react";
 import { useErrorText, useFmt, useI18n } from "@/lib/i18n";
 import { api, REACTIONS } from "@/lib/store/api";
 import { useApi } from "@/lib/store/hooks";
+import { GroupMark } from "./group-bits";
 import { Icon } from "./icons";
 import { Avatar, Button, ButtonLink, CategoryTag, Dialog, Empty, Skeleton, useToast } from "./ui";
 
 type Mode = { kind: "reply" | "edit"; id: string; text: string; from: string } | null;
+type ChatKind = "direct" | "group";
 
-export function ChatView({ friendId, base = "/app/chat" }: { friendId: string | null; base?: string }) {
+/**
+ * Two-pane chat. `kind` picks the list: personal chats (friends and the WORFIX team) or group chats.
+ * `openId` is a user id or "g_<groupId>".
+ */
+export function ChatView({ openId, base = "/app/chat", kind = "direct", onPickKind }: { openId: string | null; base?: string; kind?: ChatKind; onPickKind?: (k: ChatKind) => void }) {
   const { t } = useI18n();
   const f = useFmt();
-  const list = useApi(() => api.chats());
+  const direct = useApi(() => api.chats());
+  const groups = useApi(() => (base === "/app/chat" ? api.groupChats() : Promise.resolve([])), [base]);
   useEffect(() => {
-    if (!friendId) return;
+    if (!openId) return;
     document.body.dataset.chatOpen = "true";
     return () => { delete document.body.dataset.chatOpen; };
-  }, [friendId]);
+  }, [openId]);
+  const unreadDirect = (direct.data ?? []).reduce((a, c) => a + c.unread, 0);
+  const unreadGroups = (groups.data ?? []).reduce((a, c) => a + c.unread, 0);
 
   return (
-    <div className="card chat" data-open={Boolean(friendId)}>
+    <div className="card chat" data-open={Boolean(openId)}>
       <div className="chat-list">
-        <div style={{ padding: "16px 16px 8px" }}><h2 className="t-h3">{t("chat.title")}</h2></div>
-        {!list.data ? <div style={{ padding: 16 }}><Skeleton rows={4} height={48} /></div> : list.data.length === 0 ? (
-          <Empty icon="message" title={t("chat.noFriends")} action={<ButtonLink href="/app/friends" size="sm">{t("fr.find")}</ButtonLink>} />
+        <div className="row between g8" style={{ padding: "14px 16px 8px" }}>
+          <h2 className="t-h3">{kind === "group" ? t("chat.groups") : t("chat.title")}</h2>
+          {onPickKind && (
+            <div className="seg-mini" role="tablist" aria-label={t("chat.title")}>
+              <button type="button" role="tab" aria-selected={kind === "direct"} onClick={() => onPickKind("direct")}>{t("chat.personal")}{unreadDirect ? <span className="count-badge">{unreadDirect}</span> : null}</button>
+              <button type="button" role="tab" aria-selected={kind === "group"} onClick={() => onPickKind("group")}>{t("chat.groupsShort")}{unreadGroups ? <span className="count-badge">{unreadGroups}</span> : null}</button>
+            </div>
+          )}
+        </div>
+        {kind === "group" ? (
+          !groups.data ? <div style={{ padding: 16 }}><Skeleton rows={2} height={48} /></div> : groups.data.length === 0 ? (
+            <Empty icon="users" title={t("chat.noGroup")} body={t("chat.noGroupBody")} action={<ButtonLink href="/app/groups" size="sm" variant="primary">{t("gr.open")}</ButtonLink>} />
+          ) : (
+            <ul>
+              {groups.data.map((c) => {
+                const id = `g_${c.group.id}`;
+                return (
+                  <li key={id}>
+                    <Link href={`${base}/${id}`} className="row g12 chat-row" aria-current={openId === id ? "page" : undefined}>
+                      <GroupMark name={c.group.name} color={c.group.color} size={40} />
+                      <span className="stack grow" style={{ minWidth: 0 }}>
+                        <span className="row between g8"><span className="truncate" style={{ fontWeight: c.unread ? 600 : 500, fontSize: 14 }}>{c.group.name}</span>{c.last && <span className="t-meta">{f.relative(c.last.createdAt)}</span>}</span>
+                        <span className="row between g8">
+                          <span className="t-small secondary truncate">{c.last ? previewOf(c.last, t, c.lastFrom) : t("chat.startHint")}</span>
+                          {c.unread > 0 && <span className="count-badge">{c.unread}</span>}
+                        </span>
+                      </span>
+                    </Link>
+                  </li>
+                );
+              })}
+              <li style={{ padding: "8px 16px" }}><Link href="/app/groups" className="t-small link row g4"><Icon name="users" size={14} />{t("gr.myGroup")}</Link></li>
+            </ul>
+          )
+        ) : !direct.data ? <div style={{ padding: 16 }}><Skeleton rows={4} height={48} /></div> : direct.data.length === 0 ? (
+          <Empty icon="message" title={t("chat.noFriends")} action={base === "/app/chat" ? <ButtonLink href="/app/chat?tab=friends" size="sm">{t("fr.find")}</ButtonLink> : undefined} />
         ) : (
           <ul>
-            {list.data.map((c) => (
+            {direct.data.map((c) => (
               <li key={c.person.id}>
-                <Link href={`${base}/${c.person.id}`} className="row g12" aria-current={friendId === c.person.id ? "page" : undefined}
-                  style={{ padding: "10px 16px", background: friendId === c.person.id ? "var(--raised)" : undefined }}>
+                <Link href={`${base}/${c.person.id}`} className="row g12 chat-row" aria-current={openId === c.person.id ? "page" : undefined}>
                   <Avatar name={c.person.fullName} src={c.person.avatar} size={40} />
                   <span className="stack grow" style={{ minWidth: 0 }}>
-                    <span className="row between g8"><span className="truncate" style={{ fontWeight: c.unread ? 600 : 500, fontSize: 14 }}>{c.person.fullName}</span>{c.last && <span className="t-meta">{f.relative(c.last.createdAt)}</span>}</span>
                     <span className="row between g8">
-                      <span className="t-small secondary truncate">{c.last ? (c.last.deletedAt ? t("chat.deleted") : c.last.kind === "invite" ? t("chat.inviteShort", { title: c.last.text }) : c.last.text) : t("chat.startHint")}</span>
+                      <span className="truncate row g4" style={{ fontWeight: c.unread ? 600 : 500, fontSize: 14 }}>{c.person.fullName}{c.isTeam && <Icon name="shield" size={12} className="accent-text" />}</span>
+                      {c.last && <span className="t-meta">{f.relative(c.last.createdAt)}</span>}
+                    </span>
+                    <span className="row between g8">
+                      <span className="t-small secondary truncate">{c.last ? previewOf(c.last, t) : t("chat.startHint")}</span>
                       {c.unread > 0 && <span className="count-badge">{c.unread}</span>}
                     </span>
                   </span>
@@ -46,18 +90,30 @@ export function ChatView({ friendId, base = "/app/chat" }: { friendId: string | 
         )}
       </div>
       <div className="chat-pane">
-        {friendId ? <Thread friendId={friendId} base={base} /> : <div style={{ margin: "auto" }}><Empty icon="message" title={t("chat.pick")} body={t("chat.pickBody")} /></div>}
+        {openId ? <Thread id={openId} base={base} /> : <div style={{ margin: "auto" }}><Empty icon="message" title={t("chat.pick")} body={t("chat.pickBody")} /></div>}
       </div>
     </div>
   );
 }
 
-function Thread({ friendId, base }: { friendId: string; base: string }) {
+function previewOf(m: { kind: string; text: string; deletedAt?: string | null }, t: (k: string, v?: Record<string, string | number>) => string, from = "") {
+  if (m.deletedAt) return t("chat.deleted");
+  if (m.kind === "invite") return t("chat.inviteShort", { title: m.text });
+  if (m.kind === "signal") return `${t("sg.short")}: ${m.text}`;
+  if (m.kind === "system") return systemText(m.text, t);
+  return from ? `${from}: ${m.text}` : m.text;
+}
+
+function systemText(raw: string, t: (k: string, v?: Record<string, string | number>) => string) {
+  try { const x = JSON.parse(raw) as { key: string; values: Record<string, string> }; return t(x.key, x.values); } catch { return raw; }
+}
+
+function Thread({ id, base }: { id: string; base: string }) {
   const { t } = useI18n();
   const f = useFmt();
   const toast = useToast();
   const errText = useErrorText();
-  const q = useApi(() => api.thread(friendId), [friendId]);
+  const q = useApi(() => api.thread(id), [id]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [pick, setPick] = useState(false);
@@ -68,9 +124,9 @@ function Thread({ friendId, base }: { friendId: string; base: string }) {
   const field = useRef<HTMLTextAreaElement>(null);
   const count = q.data?.messages.length ?? 0;
 
-  useEffect(() => { void api.markChatRead(friendId); }, [friendId, count]);
-  useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight }); }, [count, friendId]);
-  useEffect(() => { setSelected(null); setMode(null); setText(""); }, [friendId]);
+  useEffect(() => { void api.markChatRead(id); }, [id, count]);
+  useEffect(() => { scroller.current?.scrollTo({ top: scroller.current.scrollHeight }); }, [count, id]);
+  useEffect(() => { setSelected(null); setMode(null); setText(""); }, [id]);
   useEffect(() => {
     if (!selected) return;
     const close = (e: KeyboardEvent) => { if (e.key === "Escape") setSelected(null); };
@@ -78,8 +134,10 @@ function Thread({ friendId, base }: { friendId: string; base: string }) {
     return () => window.removeEventListener("keydown", close);
   }, [selected]);
 
+  if (q.data === null) return <div style={{ margin: "auto" }}><Empty icon="message" title={t("chat.gone")} action={<ButtonLink href={base} size="sm">{t("a.back")}</ButtonLink>} /></div>;
   if (!q.data) return <div style={{ padding: 20 }}><Skeleton rows={5} height={36} /></div>;
   const d = q.data;
+  const group = d.kind === "group";
 
   const send = async (e?: React.FormEvent) => {
     e?.preventDefault();
@@ -87,47 +145,55 @@ function Thread({ friendId, base }: { friendId: string; base: string }) {
     setSending(true);
     try {
       if (mode?.kind === "edit") await api.editMessage(mode.id, text);
-      else await api.sendMessage(friendId, text, mode?.kind === "reply" ? mode.id : null);
+      else await api.sendMessage(id, text, mode?.kind === "reply" ? mode.id : null);
       setText("");
       setMode(null);
     } catch (err) { toast(errText(err), "error"); } finally { setSending(false); }
   };
   const act = async (fn: () => Promise<unknown>) => { try { await fn(); } catch (err) { toast(errText(err), "error"); } };
-  const nameOf = (id: string) => (id === d.me ? t("chat.you") : d.person.fullName.split(" ")[0]);
+  const nameOf = (uid: string) => (uid === d.me ? t("chat.you") : (d.names[uid]?.name ?? "—").split(" ")[0]);
   const startMode = (m: Mode) => {
     setMode(m);
     setSelected(null);
     if (m?.kind === "edit") setText(m.text);
     requestAnimationFrame(() => field.current?.focus());
   };
-  const jumpTo = (id: string) => {
-    const el = document.getElementById(`msg-${id}`);
+  const jumpTo = (mid: string) => {
+    const el = document.getElementById(`msg-${mid}`);
     if (!el) return;
     el.scrollIntoView({ block: "center", behavior: "smooth" });
     el.dataset.flash = "true";
     setTimeout(() => { delete el.dataset.flash; }, 1200);
   };
 
+  const head = group ? (
+    <>
+      <GroupMark name={d.title} color={d.color ?? undefined} size={36} />
+      <span className="stack" style={{ minWidth: 0 }}>
+        <span className="truncate" style={{ fontWeight: 500 }}>{d.title}</span>
+        <span className="t-small muted">{t("gr.members", { n: d.group?.members ?? 0 })}</span>
+      </span>
+    </>
+  ) : (
+    <>
+      <Avatar name={d.title} src={d.avatar} size={36} />
+      <span className="stack" style={{ minWidth: 0 }}>
+        <span className="truncate" style={{ fontWeight: 500 }}>{d.title}</span>
+        <span className="t-small muted">{d.otherIsAdmin ? t("chat.fromTeam") : d.person ? t("lvl.short", { n: d.person.level }) : ""}</span>
+      </span>
+    </>
+  );
+  const headHref = group ? `/app/groups/${d.group!.id}` : base === "/app/chat" && !d.otherIsAdmin && d.person ? `/app/people/${d.person.id}` : null;
+
   let lastDay = "";
+  let lastFrom = "";
   return (
     <>
       <div className="row g12" style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)" }}>
-        <Link href={base} className="btn btn-ghost btn-sm btn-icon chat-back" aria-label={t("a.back")}><Icon name="arrowLeft" size={16} /></Link>
-        {(() => {
-          const head = (
-            <>
-              <Avatar name={d.person.fullName} src={d.person.avatar} size={36} />
-              <span className="stack" style={{ minWidth: 0 }}>
-                <span className="truncate" style={{ fontWeight: 500 }}>{d.person.fullName}</span>
-                <span className="t-small muted">{d.otherIsAdmin ? t("chat.fromTeam") : t("lvl.short", { n: d.person.level })}</span>
-              </span>
-            </>
-          );
-          return base === "/app/chat" && !d.otherIsAdmin
-            ? <Link href={`/app/people/${d.person.id}`} className="row g12 grow" style={{ minWidth: 0 }}>{head}</Link>
-            : <span className="row g12 grow" style={{ minWidth: 0 }}>{head}</span>;
-        })()}
+        <Link href={base + (group ? "?tab=groups" : "")} className="btn btn-ghost btn-sm btn-icon chat-back" aria-label={t("a.back")}><Icon name="arrowLeft" size={16} /></Link>
+        {headHref ? <Link href={headHref} className="row g12 grow" style={{ minWidth: 0 }}>{head}</Link> : <span className="row g12 grow" style={{ minWidth: 0 }}>{head}</span>}
         {d.isFriend && <Button size="sm" icon="flag" onClick={() => setPick(true)}>{t("chat.inviteBtn")}</Button>}
+        {group && <ButtonLink size="sm" icon="zap" href="/app/signals?new=1">{t("sg.call")}</ButtonLink>}
       </div>
       <div ref={scroller} className="chat-scroll">
         {d.messages.length === 0 && <p className="t-small muted" style={{ margin: "auto", textAlign: "center" }}>{t("chat.empty")}</p>}
@@ -136,10 +202,29 @@ function Thread({ friendId, base }: { friendId: string; base: string }) {
           const day = f.date(m.createdAt);
           const sep = day !== lastDay;
           lastDay = day;
+          const showName = group && !mine && m.kind !== "system" && (sep || lastFrom !== m.from);
+          lastFrom = m.kind === "system" ? "" : m.from;
+          if (m.kind === "system") {
+            return (
+              <div key={m.id} id={`msg-${m.id}`} className="msg stack" style={{ alignItems: "center" }}>
+                {sep && <span className="t-meta" style={{ margin: "12px 0 6px" }}>{day}</span>}
+                <span className="t-small muted chat-system">{systemText(m.text, t)}</span>
+              </div>
+            );
+          }
           return (
             <div key={m.id} id={`msg-${m.id}`} className="msg stack" style={{ alignItems: mine ? "flex-end" : "flex-start" }}>
               {sep && <span className="t-meta" style={{ alignSelf: "center", margin: "12px 0 6px" }}>{day}</span>}
-              {m.kind === "invite" && m.mission ? (
+              {showName && <span className="t-meta msg-name">{d.names[m.from]?.name ?? "—"}</span>}
+              {m.kind === "signal" && m.signal ? (
+                <Link href={`/app/signals/${m.signal.id}`} className="card pad stack g8 signal-card" style={{ maxWidth: 360, width: "100%" }}>
+                  <span className="row g8 t-small" style={{ fontWeight: 600 }}><Icon name="zap" size={16} />{t("sg.title")}</span>
+                  <span style={{ fontWeight: 500 }}>{m.signal.title}</span>
+                  <span className="t-small secondary">{m.signal.place}</span>
+                  <span className="row g8 t-small secondary">{t("sg.going", { n: m.signal.responders })}{m.signal.going ? ` · ${t("sg.youGo")}` : ""}</span>
+                  <span className="bubble-time">{f.time(m.createdAt)}</span>
+                </Link>
+              ) : m.kind === "invite" && m.mission ? (
                 <div className="card pad stack g8" style={{ maxWidth: 360, width: "100%" }}>
                   <span className="t-small secondary row g8"><Icon name="hands" size={16} />{mine ? t("chat.youInvited") : t("chat.invitedYou")}</span>
                   <Link href={`/app/missions/${m.mission.id}`} style={{ fontWeight: 500 }}>{m.mission.title}</Link>
@@ -160,7 +245,7 @@ function Thread({ friendId, base }: { friendId: string; base: string }) {
                 <>
                   <button type="button" className={`bubble ${mine ? "bubble-me" : "bubble-them"}`} data-selected={selected === m.id || undefined}
                     aria-haspopup="menu" aria-expanded={selected === m.id} onClick={() => setSelected((x) => (x === m.id ? null : m.id))}>
-                    {m.via === "admin" && !mine && <span className="bubble-admin"><Icon name="shield" size={12} />{t("chat.fromTeam")}</span>}
+                    {"via" in m && m.via === "admin" && !mine && <span className="bubble-admin"><Icon name="shield" size={12} />{t("chat.fromTeam")}</span>}
                     {m.replyTo && (
                       <span className="bubble-quote" role="link" tabIndex={-1} onClick={(e) => { e.stopPropagation(); jumpTo(m.replyTo!.id); }}>
                         <span className="bubble-quote-name">{nameOf(m.replyTo.from)}</span>
@@ -169,14 +254,14 @@ function Thread({ friendId, base }: { friendId: string; base: string }) {
                     )}
                     <span className="bubble-text">{m.text}</span>
                     <span className="bubble-time" style={{ textAlign: "right" }}>
-                      {m.editedAt ? `${t("chat.edited")} · ` : ""}{f.time(m.createdAt)}{mine && m.readBy.length > 1 ? ` · ${t("chat.read")}` : ""}
+                      {m.editedAt ? `${t("chat.edited")} · ` : ""}{f.time(m.createdAt)}{mine && m.readBy.length > 1 ? ` · ${group ? t("chat.readN", { n: m.readBy.length - 1 }) : t("chat.read")}` : ""}
                     </span>
                   </button>
                   {Object.keys(m.reactions ?? {}).length > 0 && (
                     <span className="reactions">
                       {Object.entries(m.reactions ?? {}).map(([e, ids]) => (
                         <button key={e} type="button" className="reaction" data-mine={ids.includes(d.me) || undefined} onClick={() => act(() => api.reactToMessage(m.id, e))}
-                          aria-label={t("chat.reactionLabel", { e, n: ids.length })}>
+                          aria-label={t("chat.reactionLabel", { e, n: ids.length })} title={ids.map((x) => nameOf(x)).join(", ")}>
                           {e}{ids.length > 1 && <span className="num">{ids.length}</span>}
                         </button>
                       ))}
@@ -193,7 +278,7 @@ function Thread({ friendId, base }: { friendId: string; base: string }) {
                       <div className="msg-cmds">
                         {d.canWrite && <button type="button" role="menuitem" onClick={() => startMode({ kind: "reply", id: m.id, text: m.text, from: m.from })}><Icon name="arrowLeft" size={16} />{t("chat.reply")}</button>}
                         <button type="button" role="menuitem" onClick={() => { void navigator.clipboard?.writeText(m.text); setSelected(null); toast(t("chat.copied")); }}><Icon name="copy" size={16} />{t("chat.copy")}</button>
-                        {mine && <button type="button" role="menuitem" onClick={() => startMode({ kind: "edit", id: m.id, text: m.text, from: m.from })}><Icon name="edit" size={16} />{t("chat.edit")}</button>}
+                        {mine && m.kind === "text" && <button type="button" role="menuitem" onClick={() => startMode({ kind: "edit", id: m.id, text: m.text, from: m.from })}><Icon name="edit" size={16} />{t("chat.edit")}</button>}
                         {mine && <button type="button" role="menuitem" className="danger" onClick={() => { setSelected(null); setConfirmDel(m.id); }}><Icon name="trash" size={16} />{t("chat.delete")}</button>}
                       </div>
                     </div>
@@ -227,18 +312,18 @@ function Thread({ friendId, base }: { friendId: string; base: string }) {
 
       <Dialog open={Boolean(confirmDel)} onClose={() => setConfirmDel(null)} title={t("chat.deleteTitle")} footer={<>
         <Button variant="ghost" onClick={() => setConfirmDel(null)}>{t("a.cancel")}</Button>
-        <Button variant="danger" onClick={() => { const id = confirmDel!; setConfirmDel(null); if (mode?.id === id) { setMode(null); setText(""); } void act(() => api.deleteMessage(id)); }}>{t("chat.delete")}</Button>
+        <Button variant="danger" onClick={() => { const mid = confirmDel!; setConfirmDel(null); if (mode?.id === mid) { setMode(null); setText(""); } void act(() => api.deleteMessage(mid)); }}>{t("chat.delete")}</Button>
       </>}>
         <p className="t-small secondary">{t("chat.deleteBody")}</p>
       </Dialog>
 
       <Dialog open={pick} onClose={() => setPick(false)} title={t("chat.inviteTitle")}>
-        {d.myActive.length === 0 ? <Empty icon="flag" title={t("chat.noActive")} action={<ButtonLink href="/app/explore" variant="primary">{t("nav.explore")}</ButtonLink>} /> : (
+        {d.myActive.length === 0 ? <Empty icon="flag" title={t("chat.noActive")} action={<ButtonLink href="/app/missions?tab=explore" variant="primary">{t("nav.explore")}</ButtonLink>} /> : (
           <div className="stack g8">
             <p className="t-small secondary" style={{ marginBottom: 8 }}>{t("md.inviteBody")}</p>
             {d.myActive.map((m) => (
               <button key={m.id} type="button" className="radio-card" style={{ textAlign: "left" }} onClick={async () => {
-                try { await api.inviteToMission(friendId, m.id); toast(t("md.inviteSent")); setPick(false); } catch (e) { toast(errText(e), "error"); }
+                try { await api.inviteToMission(id, m.id); toast(t("md.inviteSent")); setPick(false); } catch (e) { toast(errText(e), "error"); }
               }}>
                 <Icon name="flag" />
                 <span className="stack"><span style={{ fontWeight: 500 }}>{m.title}</span><span className="t-small secondary">{f.dayTime(m.date)}</span></span>

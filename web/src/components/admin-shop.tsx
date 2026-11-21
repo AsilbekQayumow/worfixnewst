@@ -16,13 +16,12 @@ const blank = (): ShopItemInput => ({
 });
 
 /** Shrinks a product photo to a small JPEG data URL (kept inside the Firestore document, no Storage needed). */
-async function productPhoto(file: File): Promise<string> {
+export async function productPhoto(file: File, W = 600, H = 510): Promise<string> {
   if (!/^image\/(jpeg|png|webp)$/.test(file.type)) throw new Error("sh.v.imageType");
   if (file.size > 12 * 1024 * 1024) throw new Error("e.photoBig");
   const bmp = await createImageBitmap(file);
   const canvas = document.createElement("canvas");
-  // 4:3.4 tile, cropped to the centre.
-  const W = 600, H = 510;
+  // Cropped to the centre (shop tiles 600×510, news covers 960×540).
   canvas.width = W; canvas.height = H;
   const scale = Math.max(W / bmp.width, H / bmp.height);
   const w = bmp.width * scale, h = bmp.height * scale;
@@ -96,13 +95,58 @@ function ItemDialog({ item, onClose }: { item: (ShopItemInput & { id?: string })
             onChange={(e) => setV((s) => ({ ...s, description: { ...s.description, [lang]: e.target.value } }))} />
           <div className="grid cols-2">
             <TextInput label={t("sh.price")} inputMode="numeric" value={String(v.price)} onChange={(e) => setV((s) => ({ ...s, price: Number(e.target.value.replace(/\D/g, "")) || 0 }))} error={fields.price} />
-            <TextInput label={t("sh.stock")} inputMode="numeric" value={String(v.stock)} onChange={(e) => setV((s) => ({ ...s, stock: Number(e.target.value.replace(/\D/g, "")) || 0 }))} error={fields.stock} />
+            <TextInput label={t("sh.stock")} inputMode="numeric" value={String(v.stock)} disabled={v.delivery === "promo"} hint={v.delivery === "promo" ? t("sh.stockPromo") : undefined}
+              onChange={(e) => setV((s) => ({ ...s, stock: Number(e.target.value.replace(/\D/g, "")) || 0 }))} error={fields.stock} />
           </div>
+          <Select label={t("sh.delivery")} value={v.delivery ?? "pickup"} onChange={(e) => setV((s) => ({ ...s, delivery: e.target.value as "pickup" | "promo" }))} hint={v.delivery === "promo" ? t("sh.deliveryPromoHint") : t("sh.deliveryPickupHint")}>
+            <option value="pickup">{t("sh.delivery.pickup")}</option>
+            <option value="promo">{t("sh.delivery.promo")}</option>
+          </Select>
           <Select label={t("sh.kind")} value={v.kind} onChange={(e) => setV((s) => ({ ...s, kind: e.target.value as ShopItem["kind"] }))}>
             {KINDS.map((k) => <option key={k} value={k}>{t(`sh.kind.${k}`)}</option>)}
           </Select>
           <Checkbox checked={v.active} onChange={(x) => setV((s) => ({ ...s, active: x }))}>{t("sh.active")}</Checkbox>
         </div>
+      </div>
+    </Dialog>
+  );
+}
+
+/** Partner promo codes of one item: add (one per line), see which were issued, delete unused ones. */
+function PromoCodesDialog({ item, onClose }: { item: { id: string; title: string }; onClose: () => void }) {
+  const { t } = useI18n();
+  const f = useFmt();
+  const toast = useToast();
+  const errText = useErrorText();
+  const q = useApi(() => api.adminPromoCodes(item.id), [item.id]);
+  const [text, setText] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const free = (q.data ?? []).filter((c) => !c.orderId).length;
+  return (
+    <Dialog open onClose={onClose} wide title={t("sh.codesTitle", { title: item.title })}>
+      <div className="stack g16">
+        <p className="t-small secondary">{t("sh.codesBody")}</p>
+        <TextArea label={t("sh.codesAdd")} rows={4} value={text} onChange={(e) => setText(e.target.value)} placeholder={"WRFX-7Q2K-BOOK\nWRFX-9M4D-BOOK"} error={err ?? undefined} spellCheck={false} />
+        <div className="row g8">
+          <Button variant="primary" icon="plus" loading={busy} disabled={!text.trim()} onClick={async () => {
+            setBusy(true); setErr(null);
+            try { const r = await api.addPromoCodes(item.id, text); setText(""); toast(t("sh.codesAdded", { n: r.added, skipped: r.skipped })); }
+            catch (e) { setErr(e instanceof ValidationError ? Object.values(e.fields)[0] : errText(e)); } finally { setBusy(false); }
+          }}>{t("sh.codesSave")}</Button>
+          <span className="t-small secondary">{t("sh.codesFree", { n: free, total: q.data?.length ?? 0 })}</span>
+        </div>
+        {!q.data ? <Skeleton rows={2} /> : q.data.length > 0 && (
+          <div className="card rows" style={{ maxHeight: 300, overflow: "auto" }}>
+            {q.data.map((c) => (
+              <div key={c.id} className="row-item t-small">
+                <code className="grow">{c.code}</code>
+                {c.orderId ? <span className="secondary">{c.buyer} · {c.issuedAt ? f.date(c.issuedAt) : ""}</span> : <Status tone="ok">{t("sh.codeFree")}</Status>}
+                {!c.orderId && <Button size="sm" variant="ghost" iconOnly icon="trash" aria-label={t("a.delete")} onClick={async () => { try { await api.deletePromoCode(c.id); } catch (e) { toast(errText(e), "error"); } }} />}
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </Dialog>
   );
@@ -123,6 +167,7 @@ export function AdminShop() {
   const [change, setChange] = useState<{ id: string; code: string; status: Order["status"] } | null>(null);
   const [note, setNote] = useState("");
   const [filter, setFilter] = useState<"open" | "all">("open");
+  const [codes, setCodes] = useState<{ id: string; title: string } | null>(null);
 
   if (!q.data) return <Skeleton rows={4} />;
   const { items, orders } = q.data;
@@ -149,9 +194,10 @@ export function AdminShop() {
                   <ShopArt art={i.art} image={i.image} />
                   <span style={{ fontWeight: 500 }}>{i.title[lang] || i.title.uz}</span>
                   <span className="row between t-small"><Coins value={i.price} size={14} /><span className={i.stock ? "muted" : "danger-text"}>{t("ad.stock", { n: i.stock })}</span></span>
-                  <span className="row between t-small secondary"><span>{t("sh.sold", { n: i.sold })}</span>{!i.active && <Status tone="neutral">{t("sh.hidden")}</Status>}</span>
+                  <span className="row between t-small secondary"><span>{t("sh.sold", { n: i.sold })}</span>{!i.active ? <Status tone="neutral">{t("sh.hidden")}</Status> : i.delivery === "promo" ? <Status tone="info">{t("sh.delivery.promo")}</Status> : null}</span>
                   <div className="row g8">
-                    <Button size="sm" icon="edit" onClick={() => setEdit({ id: i.id, title: i.title, description: i.description, price: i.price, stock: i.stock, kind: i.kind, art: i.art, active: i.active, image: i.image ?? null })}>{t("chat.edit")}</Button>
+                    <Button size="sm" icon="edit" onClick={() => setEdit({ id: i.id, title: i.title, description: i.description, price: i.price, stock: i.stock, kind: i.kind, art: i.art, active: i.active, image: i.image ?? null, delivery: i.delivery ?? "pickup" })}>{t("chat.edit")}</Button>
+                    {i.delivery === "promo" && <Button size="sm" icon="ticket" onClick={() => setCodes({ id: i.id, title: i.title[lang] || i.title.uz })}>{t("sh.codes")}</Button>}
                     <Button size="sm" variant="ghost" icon="trash" iconOnly aria-label={t("chat.delete")} onClick={() => setDel(i.id)} />
                   </div>
                 </article>
@@ -163,7 +209,12 @@ export function AdminShop() {
 
       {tab === "orders" && (
         <>
-          <Segmented label={t("sh.filter")} value={filter} onChange={setFilter} items={[{ value: "open", label: t("sh.open") }, { value: "all", label: t("sh.all") }]} />
+          <div className="row between g12 wrap">
+            <Segmented label={t("sh.filter")} value={filter} onChange={setFilter} items={[{ value: "open", label: t("sh.open") }, { value: "all", label: t("sh.all") }]} />
+            {open.some((o) => items.find((i) => i.id === o.itemId)?.delivery === "promo") && (
+              <Button icon="ticket" onClick={async () => { try { const r = await api.issueWaitingCodes(); toast(t("sh.issued", { n: r.issued })); } catch (e) { toast(errText(e), "error"); } }}>{t("sh.issueWaiting")}</Button>
+            )}
+          </div>
           {shown.length === 0 ? <div className="card"><Empty icon="bag" title={t("shop.noOrders")} /></div> : (
             <div className="card rows">
               {shown.map((o) => (
@@ -172,6 +223,7 @@ export function AdminShop() {
                     <span style={{ fontWeight: 500 }}>{o.itemTitle}</span>
                     <span className="t-small secondary">{o.buyer} · {o.buyerEmail} · {f.dayTime(o.createdAt)}</span>
                     {o.note && <span className="t-small secondary">{o.note}</span>}
+                    {o.promoCode && <span className="t-small row g4"><Icon name="ticket" size={14} /><code>{o.promoCode}</code></span>}
                   </span>
                   <span className="t-meta">{o.code}</span>
                   <Coins value={o.price} size={14} />
@@ -190,6 +242,7 @@ export function AdminShop() {
       )}
 
       {edit && <ItemDialog key={edit.id ?? "new"} item={edit} onClose={() => setEdit(null)} />}
+      {codes && <PromoCodesDialog item={codes} onClose={() => setCodes(null)} />}
       <Dialog open={Boolean(del)} onClose={() => setDel(null)} title={t("sh.deleteTitle")} footer={<>
         <Button variant="ghost" onClick={() => setDel(null)}>{t("a.cancel")}</Button>
         <Button variant="danger" onClick={async () => { const id = del!; setDel(null); try { await api.deleteShopItem(id); toast(t("sh.deleted")); } catch (e) { toast(errText(e), "error"); } }}>{t("chat.delete")}</Button>

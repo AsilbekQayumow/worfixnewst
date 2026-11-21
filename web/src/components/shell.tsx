@@ -12,27 +12,25 @@ import { useMe, useTheme } from "./providers";
 import { Avatar, Coins, Skeleton } from "./ui";
 import { LangSwitch } from "./lang-switch";
 import { DemoBanner } from "./demo-banner";
+import { LevelUp } from "./level-up";
+import { levelForXp, levelTitleKey } from "@/lib/domain/rewards";
 
-interface NavItem { href: string; label: string; icon: IconName; badge?: number; mobile?: boolean; exact?: boolean }
+interface NavItem { href: string; label: string; icon: IconName; badge?: number; mobile?: boolean; exact?: boolean; also?: string[] }
+type Badges = Awaited<ReturnType<typeof api.badges>>;
 
-function useNav(area: Area): { main: NavItem[]; extra: NavItem[]; b?: { messages: number } } {
+function useNav(area: Area): { main: NavItem[]; extra: NavItem[]; b?: Badges } {
   const { t } = useI18n();
   const b = useApi(() => api.badges()).data;
-  return withBadges(area, t, b);
-}
-
-function withBadges(area: Area, t: (k: string) => string, b: { notifications: number; messages: number; friends: number } | undefined) {
   return { ...navItems(area, t, b), b };
 }
 
-function navItems(area: Area, t: (k: string) => string, b: { notifications: number; messages: number; friends: number } | undefined): { main: NavItem[]; extra: NavItem[] } {
+function navItems(area: Area, t: (k: string) => string, b: Badges | undefined): { main: NavItem[]; extra: NavItem[] } {
   if (area === "volunteer") return {
     main: [
-      { href: "/app", label: t("nav.home"), icon: "home", mobile: true, exact: true },
-      { href: "/app/explore", label: t("nav.explore"), icon: "compass", mobile: true },
-      { href: "/app/missions", label: t("nav.myMissions"), icon: "flag", mobile: true },
-      { href: "/app/friends", label: t("nav.friends"), icon: "users", badge: b?.friends },
-      { href: "/app/chat", label: t("nav.chat"), icon: "message", badge: b?.messages, mobile: true },
+      { href: "/app", label: t("nav.home"), icon: "home", mobile: true, exact: true, badge: b?.signals },
+      { href: "/app/missions", label: t("nav.missions"), icon: "flag", mobile: true, also: ["/app/explore"] },
+      { href: "/app/chat", label: t("nav.chat"), icon: "message", badge: (b?.messages ?? 0) + (b?.friends ?? 0), mobile: true, also: ["/app/friends", "/app/groups", "/app/people", "/app/join"] },
+      { href: "/app/rating", label: t("nav.rating"), icon: "trophy", mobile: true },
       { href: "/app/shop", label: t("nav.shop"), icon: "bag" },
       { href: "/app/profile", label: t("nav.profile"), icon: "user", mobile: true },
     ],
@@ -45,27 +43,23 @@ function navItems(area: Area, t: (k: string) => string, b: { notifications: numb
     main: [
       { href: "/org", label: t("nav.overview"), icon: "home", mobile: true, exact: true },
       { href: "/org/missions", label: t("nav.orgMissions"), icon: "flag", mobile: true },
-      { href: "/org/missions/new", label: t("nav.newMission"), icon: "plus", mobile: true, exact: true },
-      { href: "/org/review", label: t("nav.review"), icon: "shield", mobile: true },
+      { href: "/org/review", label: t("nav.review"), icon: "shield", mobile: true, badge: b?.reviews },
+      { href: "/org/chat", label: t("nav.chat"), icon: "message", badge: b?.messages, mobile: true },
       { href: "/org/profile", label: t("nav.orgProfile"), icon: "building", mobile: true },
     ],
     extra: [
       { href: "/org/notifications", label: t("nav.notifications"), icon: "bell", badge: b?.notifications },
       { href: "/org/settings", label: t("nav.settings"), icon: "settings" },
-      { href: "/org/chat", label: t("nav.chat"), icon: "message", badge: b?.messages },
     ],
   };
   return {
     main: [
-      { href: "/admin", label: t("nav.overview"), icon: "home", mobile: true, exact: true },
-      { href: "/admin?tab=organizations", label: t("nav.organizations"), icon: "building", mobile: true },
-      { href: "/admin?tab=review", label: t("nav.review"), icon: "shield", mobile: true },
-      { href: "/admin?tab=users", label: t("nav.users"), icon: "users", mobile: true },
-      { href: "/admin?tab=missions", label: t("nav.missions"), icon: "flag" },
-      { href: "/admin?tab=comms", label: t("nav.comms"), icon: "send", mobile: true },
-      { href: "/admin/chat", label: t("nav.chat"), icon: "message", badge: b?.messages },
-      { href: "/admin?tab=shop", label: t("nav.shop"), icon: "bag" },
-      { href: "/admin?tab=audit", label: t("nav.audit"), icon: "list" },
+      { href: "/admin", label: t("nav.dashboard"), icon: "home", mobile: true, exact: true },
+      { href: "/admin?tab=review", label: t("nav.review"), icon: "shield", mobile: true, badge: (b?.adminQueue ?? 0) + (b?.aiAudit ?? 0) },
+      { href: "/admin?tab=moderation", label: t("nav.moderation"), icon: "building", mobile: true },
+      { href: "/admin?tab=users", label: t("nav.users"), icon: "users" },
+      { href: "/admin?tab=comms", label: t("nav.comms"), icon: "send", mobile: true, badge: b?.messages, also: ["/admin/chat"] },
+      { href: "/admin?tab=shop", label: t("nav.shop"), icon: "bag", mobile: true },
     ],
     extra: [
       { href: "/admin/notifications", label: t("nav.notifications"), icon: "bell", badge: b?.notifications },
@@ -75,6 +69,7 @@ function navItems(area: Area, t: (k: string) => string, b: { notifications: numb
 }
 
 function isCurrent(item: NavItem, path: string, tab: string | null) {
+  if (item.also?.some((x) => path === x || path.startsWith(`${x}/`))) return true;
   const [p, q] = item.href.split("?");
   if (q) return path === p && `tab=${tab}` === q;
   if (item.href === "/admin") return path === "/admin" && !tab;
@@ -116,7 +111,8 @@ function ShellInner({ area, children }: { area: Area; children: ReactNode }) {
     return <div className="container" style={{ paddingTop: 80, maxWidth: 560 }}><Skeleton rows={4} /></div>;
   }
 
-  const logout = async () => { await api.logout(); router.replace("/"); };
+  // A full navigation: the shell must not redirect to /login while the session ends.
+  const logout = async () => { await api.logout(); window.location.replace("/"); };
   const profileHref = area === "volunteer" ? "/app/profile" : area === "organization" ? "/org/settings" : "/admin/settings";
 
   return (
@@ -143,7 +139,7 @@ function ShellInner({ area, children }: { area: Area; children: ReactNode }) {
             <span className="stack grow" style={{ minWidth: 0 }}>
               <span className="truncate" style={{ fontSize: 14, fontWeight: 500 }}>{me.fullName}</span>
               {area === "volunteer"
-                ? <span className="row g8 t-small secondary"><span className="num">{t("lvl.short", { n: me.level })}</span><Coins value={me.points} size={12} /></span>
+                ? <span className="row g8 t-small secondary"><span className="num">{t("lvl.short", { n: levelForXp(me.xp) })} · {t(levelTitleKey(levelForXp(me.xp)))}</span><Coins value={me.points} size={12} /></span>
                 : <span className="t-small secondary">{t(`role.${me.role}`)}</span>}
             </span>
           </Link>
@@ -169,6 +165,7 @@ function ShellInner({ area, children }: { area: Area; children: ReactNode }) {
           </div>
         </header>
         <DemoBanner />
+        {area === "volunteer" && <LevelUp />}
         <main className="main" id="main">
           <div className="main-inner">{children}</div>
         </main>

@@ -1,11 +1,12 @@
-# WORFIX v2.1: ishga tushirish
+# WORFIX v3: ishga tushirish
 
 Bu qo'llanma saytni Netlify'ga (yangi yoki eski hisobga) chiqarish uchun. Foydalanuvchilar, missiyalar va boshqa
 ma'lumotlar Firebase'da (`worfix3` loyihasi) saqlanadi. Netlify'ga qayta deploy qilish ularga tegmaydi.
 
 ## 1. Firestore qoidalarini yangilash (bir marta, deploydan oldin)
 
-Yangi funksiyalar (xabar reaksiyalari, javob, tahrirlash, o'chirish, admin xabarlari, e'lonlar) yangi qoidalarni talab qiladi.
+v3 funksiyalari (guruhlar va guruh chati, yordam signallari, yangiliklar, promo-kodlar, telefon/Telegram orqali kirish,
+AI tekshiruvi) yangi qoidalarni talab qiladi. **Qoidalarni yangilamasangiz, bu funksiyalar "server ruxsat bermadi" xatosini beradi.**
 
 **Brauzer orqali:** Firebase console → `worfix3` → Firestore Database → **Rules** → ichidagini `firestore.rules`
 faylining to'liq matni bilan almashtiring → **Publish**.
@@ -36,6 +37,16 @@ npx firebase-tools deploy --only firestore:rules,firestore:indexes --project wor
 | `NEXT_PUBLIC_FIREBASE_APP_ID` | `1:351884326312:web:3c6a2e4f5eab119167199d` |
 | `GEMINI_API_KEY` | Google AI Studio kaliti (**Secret** deb belgilang) |
 | `ORS_API_KEY` | openrouteservice.org kaliti (**Secret** deb belgilang) |
+| `FIREBASE_SERVICE_ACCOUNT` | **v3, tavsiya etiladi.** Firebase console → Project settings → Service accounts → **Generate new private key** → yuklangan JSON faylning to'liq matni (**Secret**) |
+| `TELEGRAM_BOT_TOKEN` | v3, ixtiyoriy: @BotFather bergan bot tokeni (**Secret**) |
+| `NEXT_PUBLIC_TELEGRAM_BOT` | v3, ixtiyoriy: botning username'i, `@` siz (masalan `worfix_uz_bot`) |
+
+Firebase qiymatlari `netlify.toml` ichida allaqachon bor, ularni qayta kiritish shart emas.
+
+**`FIREBASE_SERVICE_ACCOUNT` nima beradi:** agent missiyalarini AI serverda tekshiradi va mukofotni o'zi yozadi;
+promo-kodlar xariddan so'ng darhol beriladi; Telegram orqali kirish ishlaydi. U bo'lmasa sayt ishlayveradi:
+agent missiyalarini admin tekshiradi, promo-kodni admin "Kutayotganlarga kod berish" tugmasi bilan beradi,
+Telegram tugmasi ko'rinmaydi.
 
 Firebase qiymatlari maxfiy emas, ular brauzerga ochiq beriladi. Himoyani Firestore qoidalari ta'minlaydi.
 `GEMINI_API_KEY` va `ORS_API_KEY` esa faqat serverda ishlaydi va brauzerga chiqmaydi.
@@ -48,13 +59,23 @@ tasodifan bo'sh "demo rejim"da ochilib qolmaydi.
 Firebase console → Authentication → Settings → **Authorized domains** → **Add domain** → Netlify bergan manzil
 (masalan `worfix-uz.netlify.app`) va o'zingizning domeningiz. Bu qilinmasa, kirish va ro'yxatdan o'tish ishlamaydi.
 
+## 3a. Telefon (SMS) va Telegram orqali kirish
+
+- **Telefon:** Firebase console → Authentication → Sign-in method → **Phone** → Enable. SMS uchun Firebase loyihasi
+  **Blaze** (to'lovli) tarifda bo'lishi kerak. Test uchun shu sahifada "Phone numbers for testing" ga raqam va kod qo'shish mumkin.
+- **Telegram:** @BotFather → `/newbot` → token → Netlify'ga `TELEGRAM_BOT_TOKEN` va `NEXT_PUBLIC_TELEGRAM_BOT`.
+  Keyin @BotFather → `/setdomain` → saytingiz domeni (masalan `worfix.uz`). `FIREBASE_SERVICE_ACCOUNT` ham kerak.
+
 ## 4. Admin
 
 Admin bo'lishi kerak bo'lgan hisob bilan ro'yxatdan o'ting. Keyin Firebase console → Firestore → `users` →
 o'sha hujjat → `role` = `admin`. Admin panelida:
-- **Aloqa:** bitta foydalanuvchiga yozish yoki hammaga e'lon.
-- **Do'kon:** tovar qo'shish/tahrirlash, buyurtmalar holati. Bekor qilinganda Fixcoin avtomatik qaytadi.
-- **Xabarlar:** foydalanuvchilar bilan suhbat.
+- **Boshqaruv paneli:** bugungi vazifalar, statistika, faollik jurnali.
+- **Tekshiruv:** AI auditi (AI qarorlarini tasdiqlash yoki bekor qilish), admin navbati, tashkilotlar nazorati, tarix.
+  Tashkilot missiyalarini tashkilotlarning o'zi tekshiradi.
+- **Moderatsiya:** tashkilotlarni tasdiqlash va missiyalar.
+- **Aloqa:** yangiliklar (muqova, rejalashtirish, mahkamlash), hammaga e'lon, bitta foydalanuvchiga xabar, chat.
+- **Do'kon:** tovarlar, buyurtmalar, promo-kod tovarlari uchun kodlar to'plami.
 
 ## 5. Tekshirish ro'yxati
 
@@ -69,7 +90,8 @@ o'sha hujjat → `role` = `admin`. Admin panelida:
 - Firestore qoidalari profil, xabar va buyurtma hujjatlarini o'chirishni hech kimga (admin ham) ruxsat bermaydi.
 - Baza yaratilishidan oldin ro'yxatdan o'tgan, lekin profili yo'q hisoblar kirishda avtomatik tiklanadi.
   Bunda server avval profil haqiqatan yo'qligini tekshiradi, shuning uchun mavjud profil hech qachon ustidan yozilmaydi.
-- Qoidalar testlari: `tests/firestore-rules` (`npm install && npm test`, Java 21 kerak).
+- Qoidalar testlari: `tests/firestore-rules` (`npm install && npm test`, Java 21 kerak) — 21 ta test.
+- Server funksiyalari testi (emulyator): `web/scripts/fn-test.mts`.
 
 ## Ma'lum cheklovlar
 

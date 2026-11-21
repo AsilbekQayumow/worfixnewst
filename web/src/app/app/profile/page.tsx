@@ -12,6 +12,7 @@ import type { Certificate } from "@/lib/domain/types";
 import { useFmt, useI18n } from "@/lib/i18n";
 import { api } from "@/lib/store/api";
 import { useApi } from "@/lib/store/hooks";
+import { RankLadder } from "@/components/rank";
 
 type Tab = "overview" | "achievements" | "certificates";
 
@@ -55,6 +56,10 @@ function Profile() {
             <Stat label={t("home.app.hours")} value={Math.round(me.totalVolunteerHours * 10) / 10} />
             <Stat label={t("home.app.done")} value={ins.data?.approved ?? "—"} />
           </div>
+          <section className="card pad stack g16">
+            <h3 className="t-h3">{t("rk.title")}</h3>
+            <RankLadder xp={me.xp} />
+          </section>
           <section className="card pad stack g16">
             <h3 className="t-h3">{t("pf.levelPath")}</h3>
             <Progress value={lp.fraction} />

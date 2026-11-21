@@ -2,17 +2,19 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useMemo, useState } from "react";
 import { AgentPanel } from "@/components/agent-panel";
+import { Explore } from "@/components/explore";
 import { CATEGORY_ICON, Icon } from "@/components/icons";
 import { MissionCard } from "@/components/mission-card";
 import { useMe } from "@/components/providers";
 import { PageHead } from "@/components/shell";
-import { Button, ButtonLink, Empty, Skeleton, Status, Tabs, VerificationStatusTag } from "@/components/ui";
+import { Button, Empty, Skeleton, Status, Tabs, VerificationStatusTag } from "@/components/ui";
 import { CATEGORIES, type Category } from "@/lib/domain/types";
 import { useI18n } from "@/lib/i18n";
 import { api } from "@/lib/store/api";
 import { useApi } from "@/lib/store/hooks";
 
-type Tab = "active" | "review" | "done";
+type Tab = "explore" | "active" | "review" | "done";
+const TABS: Tab[] = ["explore", "active", "review", "done"];
 
 function MyMissions() {
   const { t } = useI18n();
@@ -20,11 +22,13 @@ function MyMissions() {
   const router = useRouter();
   const params = useSearchParams();
   const [agentOpen, setAgentOpen] = useState(params.get("agent") === "1");
-  const [tab, setTab] = useState<Tab>("active");
+  const initial = params.get("tab") as Tab | null;
+  const [tab, setTabState] = useState<Tab>(initial && TABS.includes(initial) ? initial : "explore");
+  const setTab = (v: Tab) => { setTabState(v); router.replace(`/app/missions?tab=${v}`, { scroll: false }); };
   const q = useApi(() => api.myParticipations());
 
   const buckets = useMemo(() => {
-    const out: Record<Tab, NonNullable<typeof q.data>> = { active: [], review: [], done: [] };
+    const out: Record<Tab, NonNullable<typeof q.data>> = { explore: [], active: [], review: [], done: [] };
     for (const x of q.data ?? []) {
       const s = x.submission?.verificationStatus;
       if (s === "approved" || s === "rejected" || x.mission.status === "closed" && !s) out.done.push(x);
@@ -44,23 +48,24 @@ function MyMissions() {
   return (
     <div className="stack g24 enter">
       <PageHead
-        title={t("nav.myMissions")}
-        sub={t("my.sub")}
+        title={t("nav.missions")}
+        sub={t("my.subMerged")}
         actions={!agentOpen && <Button variant="primary" icon="radar" onClick={() => setAgentOpen(true)}>{t("home.app.agent")}</Button>}
       />
 
       {agentOpen && <AgentPanel onClose={() => setAgentOpen(false)} onSaved={(ids) => { setAgentOpen(false); setTab("active"); if (ids[0]) router.push(`/app/missions/${ids[0]}`); }} />}
 
       <Tabs value={tab} onChange={setTab} items={[
+        { value: "explore", label: t("my.explore") },
         { value: "active", label: t("my.active"), count: buckets.active.length },
         { value: "review", label: t("my.review"), count: buckets.review.length },
         { value: "done", label: t("my.done"), count: buckets.done.length },
       ]} />
 
-      {!q.data ? <Skeleton rows={3} height={160} /> : groups.length === 0 ? (
+      {tab === "explore" ? <Explore base="/app/missions" /> : !q.data ? <Skeleton rows={3} height={160} /> : groups.length === 0 ? (
         <div className="card">
           <Empty icon="flag" title={t(`my.empty.${tab}`)} body={tab === "active" ? t("my.emptyBody") : undefined}
-            action={tab === "active" ? <div className="row g8"><ButtonLink href="/app/explore" variant="secondary" icon="compass">{t("nav.explore")}</ButtonLink><Button variant="primary" icon="radar" onClick={() => setAgentOpen(true)}>{t("home.app.agent")}</Button></div> : undefined} />
+            action={tab === "active" ? <div className="row g8"><Button variant="secondary" icon="compass" onClick={() => setTab("explore")}>{t("nav.explore")}</Button><Button variant="primary" icon="radar" onClick={() => setAgentOpen(true)}>{t("home.app.agent")}</Button></div> : undefined} />
         </div>
       ) : (
         <div className="stack g32">

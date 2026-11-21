@@ -1,8 +1,8 @@
 "use client";
 import { useParams } from "next/navigation";
-import { ChatView } from "@/components/chat-view";
+import { ChatHub } from "@/components/chat-hub";
 
 export default function ChatThread() {
   const { id } = useParams<{ id: string }>();
-  return <ChatView friendId={id} />;
+  return <ChatHub openId={decodeURIComponent(id)} />;
 }

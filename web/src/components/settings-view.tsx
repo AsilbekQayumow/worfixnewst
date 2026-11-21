@@ -121,7 +121,9 @@ export function SettingsView() {
 
       <Section id="personal" title={t("set.personal")} sub={t("set.personalSub")}>
         <form className="stack g16" onSubmit={(e) => { e.preventDefault(); void savePersonal(); }} noValidate>
-          <TextInput label={t("auth.email")} value={me.email} readOnly hint={me.emailVerified ? t("set.emailVerified") : t("set.emailNotVerified")} />
+          {me.email
+            ? <TextInput label={t("auth.email")} value={me.email} readOnly hint={me.emailVerified ? t("set.emailVerified") : t("set.emailNotVerified")} />
+            : <TextInput label={me.telegramId ? "Telegram" : t("auth.phone")} value={me.telegramId ? `ID ${me.telegramId}` : me.phone ?? ""} readOnly hint={t("set.signInWith", { m: me.telegramId ? "Telegram" : t("auth.byPhone") })} />}
           <div className="grid cols-2">
             <TextInput label={t("set.phone")} type="tel" placeholder="+998 90 123 45 67" value={personal.phone} onChange={(e) => setPersonal({ ...personal, phone: e.target.value })} error={pFields.phone} autoComplete="tel" />
             <TextInput label={t("auth.birthYear")} inputMode="numeric" value={personal.birthYear} onChange={(e) => setPersonal({ ...personal, birthYear: e.target.value.replace(/\D/g, "").slice(0, 4) })} error={pFields.birthYear} />
@@ -151,6 +153,7 @@ export function SettingsView() {
         </Section>
       )}
 
+      {me.email && (
       <Section id="password" title={t("set.password")} sub={t("set.passwordSub")}>
         <div className="stack g20">
           <form className="stack g16" onSubmit={changePw} noValidate>
@@ -171,6 +174,7 @@ export function SettingsView() {
           </div>
         </div>
       </Section>
+      )}
 
       <Section id="data" title={t("set.data")} sub={t("set.dataSub")}>
         <div className="row g12 wrap">

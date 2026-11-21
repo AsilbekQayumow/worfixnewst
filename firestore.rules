@@ -1,6 +1,8 @@
 rules_version = '2';
 // WORFIX Firestore security rules (web app, Firebase mode — web/src/lib/store/cloud.ts).
 //
+// v3 adds groups (invite codes, group chat), help signals, news, promo codes, phone/Telegram sign-in fields and
+// AI review results (written only by the ai-review server function with the Admin SDK, which bypasses these rules).
 // v2.1 adds message reactions, replies, edits and deletes, admin messages and announcements.
 // v2 keeps every v1 collection and rule, and adds: agent missions (made by the GPS mission agent for one
 // volunteer), the Fixcoin shop (shopItems, orders), direct messages and team invites (messages).
@@ -29,6 +31,11 @@ service cloud.firestore {
           || (exists(/databases/$(db)/documents/friendships/$(b + '_' + a)) && get(/databases/$(db)/documents/friendships/$(b + '_' + a)).data.status == 'accepted');
     }
     // XP and Fixcoin by difficulty (web/src/lib/domain/rewards.ts).
+    // v3: a phone number counts as verified only when this sign-in was by SMS; a Telegram id only from the telegram-auth token.
+    function phoneClaimOk() { return request.resource.data.get('phoneVerified', false) != true || request.auth.token.get('phone_number', null) != null; }
+    function telegramClaimOk() {
+      return request.resource.data.get('telegramId', null) == null || request.resource.data.telegramId == request.auth.token.get('tg', '');
+    }
     function xpFor(d) { return {'easy': 60, 'medium': 140, 'hard': 300}[d]; }
     function coinsFor(d) { return {'easy': 15, 'medium': 35, 'hard': 75}[d]; }
 
@@ -40,7 +47,8 @@ service cloud.firestore {
         && request.resource.data.role in ['volunteer', 'organization']
         && request.resource.data.status == 'active'
         && request.resource.data.xp == 0 && request.resource.data.points == 0 && request.resource.data.level == 1
-        && request.resource.data.emailVerified == false;
+        && request.resource.data.emailVerified == false
+        && phoneClaimOk() && telegramClaimOk();
       allow update: if
         // Owner: profile, personal info, language and privacy. Never role or rewards. Fixcoin may only go down
         // (spent in the shop — the order rule below checks the amount).
@@ -49,8 +57,10 @@ service cloud.firestore {
           && (!touches(['points']) || (request.resource.data.points >= 0 && request.resource.data.points < resource.data.points))
           && (!touches(['status']) || request.resource.data.status == 'deleted')
           && (!touches(['emailVerified']) || request.auth.token.email_verified == true)
-          && (!touches(['organizationId']) || resource.data.role == 'organization'))
-        || (isReviewer() && !touches(['id', 'email', 'role', 'status', 'organizationId', 'emailVerified', 'phone', 'birthYear']))
+          && (!touches(['organizationId']) || resource.data.role == 'organization')
+          && (!touches(['phoneVerified']) || phoneClaimOk())
+          && (!touches(['telegramId']) || telegramClaimOk()))
+        || (isReviewer() && !touches(['id', 'email', 'role', 'status', 'organizationId', 'emailVerified', 'phone', 'birthYear', 'phoneVerified', 'telegramId']))
         || (isAdmin() && !touches(['id', 'email']));
       allow delete: if false;
     }
@@ -104,11 +114,15 @@ service cloud.firestore {
       allow read: if signedIn();
       allow create: if active() && request.resource.data.userId == uid()
         && request.resource.data.verificationStatus == 'pending'
-        && request.resource.data.rewardGrantedAt == null && request.resource.data.certificateId == null;
+        && request.resource.data.rewardGrantedAt == null && request.resource.data.certificateId == null
+        && request.resource.data.get('aiReview', null) == null && request.resource.data.get('grant', null) == null
+        && (request.resource.data.get('groupId', null) == null || uid() in get(/databases/$(db)/documents/groups/$(request.resource.data.groupId)).data.members);
       allow update: if
         (signedIn() && resource.data.userId == uid()
-          && !touches(['userId', 'missionId', 'organizationId', 'rewardGrantedAt', 'certificateId', 'reviewedBy'])
-          && (!touches(['verificationStatus']) || request.resource.data.verificationStatus == 'pending'))
+          && !touches(['userId', 'missionId', 'organizationId', 'rewardGrantedAt', 'certificateId', 'reviewedBy', 'grant', 'groupId'])
+          && (!touches(['verificationStatus']) || request.resource.data.verificationStatus == 'pending')
+          // the AI's decision can only be cleared when the volunteer answers a request for more evidence
+          && (!touches(['aiReview']) || (request.resource.data.aiReview == null && resource.data.verificationStatus == 'needs_more_info')))
         || isAdmin()
         || (isReviewer() && me().organizationId == resource.data.organizationId && !touches(['userId', 'missionId', 'organizationId']));
       allow delete: if false;
@@ -197,9 +211,95 @@ service cloud.firestore {
       // The price must match the catalog and the buyer's balance must drop by exactly that price in the same batch.
       allow create: if active() && request.resource.data.userId == uid()
         && request.resource.data.status == 'placed'
+        && request.resource.data.get('promoCode', null) == null
         && request.resource.data.price == get(/databases/$(db)/documents/shopItems/$(request.resource.data.itemId)).data.price
         && getAfter(/databases/$(db)/documents/users/$(uid())).data.points == me().points - request.resource.data.price;
       allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // ── v3: promo codes (partner subscriptions): admins manage them; a buyer reads only the code issued to them ──
+    match /promoCodes/{id} {
+      allow read: if isAdmin() || (signedIn() && resource.data.userId == uid());
+      allow write: if isAdmin();
+    }
+
+    // ── v3: news posts (admins write; everyone signed in reads published ones) ──
+    match /news/{id} {
+      allow read: if isAdmin() || (signedIn() && resource.data.status == 'published');
+      allow write: if isAdmin();
+    }
+
+    // ── v3: groups ──
+    function memberOf(gid) { return uid() in get(/databases/$(db)/documents/groups/$(gid)).data.members; }
+    function memberAfter(gid) { return uid() in getAfter(/databases/$(db)/documents/groups/$(gid)).data.members; }
+    function groupOwner(gid) { return getAfter(/databases/$(db)/documents/groups/$(gid)).data.ownerId == uid(); }
+    // A join must carry a valid invite code of this group (groupJoins/{gid_uid}, written in the same batch).
+    function joinedWithCode(gid) {
+      let j = getAfter(/databases/$(db)/documents/groupJoins/$(gid + '_' + uid()));
+      return j != null && j.data.userId == uid() && j.data.groupId == gid
+        && exists(/databases/$(db)/documents/groupCodes/$(j.data.code))
+        && get(/databases/$(db)/documents/groupCodes/$(j.data.code)).data.groupId == gid;
+    }
+    match /groups/{gid} {
+      allow read: if signedIn();
+      allow create: if active() && me().role == 'volunteer' && request.resource.data.ownerId == uid()
+        && request.resource.data.members == [uid()] && request.resource.data.id == gid;
+      allow update: if active() && (
+        // the owner: name, description, colour, members (removing people), passing ownership on
+        (resource.data.ownerId == uid() && !touches(['id', 'createdAt'])
+          && request.resource.data.members.size() <= 30 && request.resource.data.members.toSet().hasAll([request.resource.data.ownerId])
+          && request.resource.data.members.toSet().difference(resource.data.members.toSet()).size() == 0)
+        // a member leaving (ownership passes to the oldest member when the owner leaves)
+        || (uid() in resource.data.members && onlyTouches(['members', 'ownerId'])
+          && request.resource.data.members.toSet() == resource.data.members.toSet().difference([uid()].toSet())
+          && (resource.data.ownerId != uid() ? request.resource.data.ownerId == resource.data.ownerId : request.resource.data.ownerId in request.resource.data.members))
+        // joining with a code
+        || (!(uid() in resource.data.members) && onlyTouches(['members'])
+          && request.resource.data.members.toSet() == resource.data.members.toSet().union([uid()].toSet())
+          && request.resource.data.members.size() <= 30 && joinedWithCode(gid)));
+      allow delete: if active() && resource.data.members.size() <= 1 && uid() in resource.data.members;
+    }
+    match /groupCodes/{code} {
+      // Looked up by the code itself (a typed or scanned code); never listed by strangers.
+      allow get: if signedIn();
+      allow list: if signedIn() && memberOf(resource.data.groupId);
+      allow create: if active() && groupOwner(request.resource.data.groupId) && request.resource.data.id == code;
+      // the owner replaces the code; the last member leaving deletes the group and its code together
+      allow delete: if active() && (getAfter(/databases/$(db)/documents/groups/$(resource.data.groupId)) == null
+        ? memberOf(resource.data.groupId) : groupOwner(resource.data.groupId));
+      allow update: if false;
+    }
+    match /groupJoins/{id} {
+      allow read: if signedIn() && resource.data.userId == uid();
+      allow create, update: if active() && request.resource.data.userId == uid() && id == request.resource.data.groupId + '_' + uid();
+      allow delete: if false;
+    }
+    match /groupMessages/{id} {
+      allow read: if signedIn() && memberOf(resource.data.groupId);
+      allow create: if active() && request.resource.data.from == uid() && memberAfter(request.resource.data.groupId)
+        && request.resource.data.text.size() <= 2200 && request.resource.data.get('deletedAt', null) == null
+        && request.resource.data.kind in ['text', 'signal', 'system'];
+      allow update: if signedIn() && memberOf(resource.data.groupId) && (
+        onlyTouches(['readBy', 'reactions'])
+        || (resource.data.from == uid() && resource.data.kind == 'text'
+            && onlyTouches(['text', 'editedAt', 'deletedAt', 'reactions', 'readBy']) && request.resource.data.text.size() <= 2200));
+      allow delete: if false;
+    }
+
+    // ── v3: help signals ──
+    match /helpSignals/{id} {
+      allow read: if signedIn();
+      allow create: if active() && me().role == 'volunteer' && request.resource.data.userId == uid()
+        && request.resource.data.status == 'open' && request.resource.data.responders.size() == 0
+        && (request.resource.data.groupId == null || memberOf(request.resource.data.groupId));
+      allow update: if active() && (
+        (resource.data.userId == uid() && onlyTouches(['status']) && request.resource.data.status == 'closed')
+        || (isAdmin() && onlyTouches(['status']))
+        // anyone else: add or remove themselves as "going"
+        || (resource.data.userId != uid() && onlyTouches(['responders'])
+            && (request.resource.data.responders.toSet() == resource.data.responders.toSet().union([uid()].toSet())
+                || request.resource.data.responders.toSet() == resource.data.responders.toSet().difference([uid()].toSet()))));
       allow delete: if false;
     }
   }

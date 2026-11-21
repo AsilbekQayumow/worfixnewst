@@ -79,3 +79,101 @@ test("shop items with a photo: admin only", async () => {
   await assertSucceeds(setDoc(doc(as("admin"), "shopItems/i9"), item));
   await assertFails(setDoc(doc(as("bob"), "shopItems/i10"), { ...item, id: "i10" }));
 });
+
+/* ───────────── v3 ───────────── */
+const group = (id, owner, members, extra = {}) => ({ id, name: "G", description: "", color: "#0a6a2c", ownerId: owner, members, province: "Samarqand Region", district: "Samarqand", mahalla: "Registon", createdAt: "2026-11-20T00:00:00Z", ...extra });
+const gmsg = (id, gid, from, extra = {}) => ({ id, groupId: gid, from, text: "salom", kind: "text", signalId: null, readBy: [from], createdAt: "2026-11-20T00:00:00Z", reactions: {}, replyTo: null, editedAt: null, deletedAt: null, ...extra });
+
+test("v3 setup", async () => {
+  await env.withSecurityRulesDisabled(async (c) => {
+    const db = c.firestore();
+    await setDoc(doc(db, "groups/g1"), group("g1", "alice", ["alice", "bob"]));
+    await setDoc(doc(db, "groupCodes/WFX-ABCDE"), { id: "WFX-ABCDE", groupId: "g1", createdAt: "x" });
+    await setDoc(doc(db, "groupMessages/gm1"), gmsg("gm1", "g1", "alice"));
+    await setDoc(doc(db, "news/pub"), { id: "pub", status: "published", title: "t" });
+    await setDoc(doc(db, "news/draft"), { id: "draft", status: "draft", title: "t" });
+    await setDoc(doc(db, "promoCodes/p1"), { id: "p1", itemId: "i1", code: "SECRET-1", orderId: null, userId: null });
+    await setDoc(doc(db, "promoCodes/p2"), { id: "p2", itemId: "i1", code: "SECRET-2", orderId: "o1", userId: "alice" });
+    await setDoc(doc(db, "helpSignals/s1"), { id: "s1", userId: "alice", groupId: "g1", status: "open", responders: [], title: "Yordam" });
+    await setDoc(doc(db, "submissions/sub1"), { id: "sub1", userId: "carol", missionId: "m1", organizationId: "agent_carol", verificationStatus: "approved", rewardGrantedAt: "x", certificateId: null, reviewedBy: "worfix-ai", aiReview: { decision: "approved", audit: "pending" }, grant: { xp: 60 } });
+    await setDoc(doc(db, "submissions/sub2"), { id: "sub2", userId: "carol", missionId: "m2", organizationId: "agent_carol", verificationStatus: "needs_more_info", rewardGrantedAt: null, certificateId: null, reviewedBy: "worfix-ai", aiReview: { decision: "needs_more_info", audit: "pending" } });
+  });
+});
+
+test("groups: create as yourself only; strangers cannot add themselves without a code", async () => {
+  await assertSucceeds(setDoc(doc(as("carol"), "groups/g2"), group("g2", "carol", ["carol"])));
+  await assertFails(setDoc(doc(as("carol"), "groups/g3"), group("g3", "carol", ["carol", "bob"])));
+  await assertFails(updateDoc(doc(as("dave"), "groups/g1"), { members: ["alice", "bob", "dave"] }));
+});
+test("groups: joining with a valid code works; a wrong code does not", async () => {
+  const d0 = as("dave");
+  const bad = writeBatch(d0);
+  bad.set(doc(d0, "groupJoins/g1_dave"), { id: "g1_dave", groupId: "g1", userId: "dave", code: "WFX-ZZZZZ", createdAt: "x" });
+  bad.update(doc(d0, "groups/g1"), { members: ["alice", "bob", "dave"] });
+  await assertFails(bad.commit());
+  const db = as("dave");
+  const ok = writeBatch(db);
+  ok.set(doc(db, "groupJoins/g1_dave"), { id: "g1_dave", groupId: "g1", userId: "dave", code: "WFX-ABCDE", createdAt: "x" });
+  ok.update(doc(db, "groups/g1"), { members: ["alice", "bob", "dave"] });
+  ok.set(doc(db, "groupMessages/gm-join"), gmsg("gm-join", "g1", "dave", { kind: "system" }));
+  await assertSucceeds(ok.commit());
+});
+test("group codes: looked up by code, not listed by strangers", async () => {
+  await assertSucceeds(getDoc(doc(as("erin"), "groupCodes/WFX-ABCDE")));
+  const { collection, query, where, getDocs } = await import("firebase/firestore");
+  await assertFails(getDocs(query(collection(as("erin"), "groupCodes"), where("groupId", "==", "g1"))));
+  await assertSucceeds(getDocs(query(collection(as("bob"), "groupCodes"), where("groupId", "==", "g1"))));
+});
+test("group chat: members only", async () => {
+  await assertSucceeds(getDoc(doc(as("bob"), "groupMessages/gm1")));
+  await assertFails(getDoc(doc(as("carol"), "groupMessages/gm1")));
+  await assertSucceeds(setDoc(doc(as("bob"), "groupMessages/gm2"), gmsg("gm2", "g1", "bob")));
+  await assertFails(setDoc(doc(as("carol"), "groupMessages/gm3"), gmsg("gm3", "g1", "carol")));
+  await assertFails(setDoc(doc(as("bob"), "groupMessages/gm4"), gmsg("gm4", "g1", "alice")));
+  await assertSucceeds(updateDoc(doc(as("bob"), "groupMessages/gm1"), { reactions: { "👍": ["bob"] } }));
+  await assertFails(updateDoc(doc(as("bob"), "groupMessages/gm1"), { text: "forged" }));
+});
+test("groups: a member leaves; the owner cannot add people directly", async () => {
+  await assertSucceeds(updateDoc(doc(as("bob"), "groups/g1"), { members: ["alice", "dave"] }));
+  await assertFails(updateDoc(doc(as("alice"), "groups/g1"), { members: ["alice", "dave", "carol"] }));
+  await assertSucceeds(updateDoc(doc(as("alice"), "groups/g1"), { members: ["alice"], name: "Yangi nom" }));
+});
+test("help signals: others can only add or remove themselves", async () => {
+  await assertSucceeds(updateDoc(doc(as("bob"), "helpSignals/s1"), { responders: ["bob"] }));
+  await assertFails(updateDoc(doc(as("bob"), "helpSignals/s1"), { responders: ["bob", "carol"] }));
+  await assertFails(updateDoc(doc(as("bob"), "helpSignals/s1"), { status: "closed" }));
+  await assertSucceeds(updateDoc(doc(as("alice"), "helpSignals/s1"), { status: "closed" }));
+});
+test("news: drafts are for admins; only admins write", async () => {
+  await assertSucceeds(getDoc(doc(as("bob"), "news/pub")));
+  await assertFails(getDoc(doc(as("bob"), "news/draft")));
+  await assertSucceeds(getDoc(doc(as("admin"), "news/draft")));
+  await assertFails(setDoc(doc(as("bob"), "news/x"), { id: "x", status: "published" }));
+  await assertSucceeds(setDoc(doc(as("admin"), "news/x"), { id: "x", status: "published" }));
+});
+test("promo codes: unissued codes are secret; the buyer sees their own", async () => {
+  await assertFails(getDoc(doc(as("bob"), "promoCodes/p1")));
+  await assertSucceeds(getDoc(doc(as("alice"), "promoCodes/p2")));
+  await assertFails(getDoc(doc(as("bob"), "promoCodes/p2")));
+  await assertFails(updateDoc(doc(as("bob"), "promoCodes/p1"), { userId: "bob", orderId: "x" }));
+  await assertSucceeds(getDoc(doc(as("admin"), "promoCodes/p1")));
+});
+test("phone and Telegram: verified flags come only from the sign-in token", async () => {
+  const phoneUser = env.authenticatedContext("ph1", { phone_number: "+998901234567" }).firestore();
+  await assertSucceeds(setDoc(doc(phoneUser, "users/ph1"), user("ph1", { phoneVerified: true, authProvider: "phone" })));
+  await assertFails(setDoc(doc(as("ph2"), "users/ph2"), user("ph2", { phoneVerified: true })));
+  const tg = env.authenticatedContext("tg_77", { tg: "77" }).firestore();
+  await assertSucceeds(setDoc(doc(tg, "users/tg_77"), user("tg_77", { telegramId: "77" })));
+  await assertFails(setDoc(doc(as("tg_78"), "users/tg_78"), user("tg_78", { telegramId: "78" })));
+  await assertFails(updateDoc(doc(as("bob"), "users/bob"), { phoneVerified: true }));
+});
+test("AI review: the volunteer cannot hide or forge the AI decision", async () => {
+  await assertFails(updateDoc(doc(as("carol"), "submissions/sub1"), { aiReview: null }));
+  await assertFails(updateDoc(doc(as("carol"), "submissions/sub1"), { grant: null }));
+  await assertSucceeds(updateDoc(doc(as("carol"), "submissions/sub2"), { aiReview: null, verificationStatus: "pending" }));
+  await assertFails(setDoc(doc(as("carol"), "submissions/sub3"), { id: "sub3", userId: "carol", missionId: "m3", organizationId: "agent_carol", verificationStatus: "pending", rewardGrantedAt: null, certificateId: null, aiReview: { decision: "approved" } }));
+  await assertFails(setDoc(doc(as("carol"), "submissions/sub4"), { id: "sub4", userId: "carol", missionId: "m3", organizationId: "agent_carol", verificationStatus: "pending", rewardGrantedAt: null, certificateId: null, groupId: "g1" }));
+});
+test("orders cannot be created with a promo code", async () => {
+  await assertFails(setDoc(doc(as("alice"), "orders/o9"), { id: "o9", userId: "alice", itemId: "i1", price: 50, status: "placed", code: "Y", promoCode: "SECRET-1" }));
+});

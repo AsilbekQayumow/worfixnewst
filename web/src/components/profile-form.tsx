@@ -6,7 +6,8 @@ import { useErrorText, useI18n } from "@/lib/i18n";
 import { api, ValidationError, type SelfUser } from "@/lib/store/api";
 import { avatarFromFile } from "@/lib/store/media";
 import { CATEGORY_ICON, Icon } from "./icons";
-import { Avatar, Button, Field, Notice, Select, TextArea, TextInput, useToast } from "./ui";
+import { Avatar, Button, Checkbox, Field, Notice, Select, TextArea, TextInput, useToast } from "./ui";
+import { UZ_DISTRICTS } from "@/lib/geo/uz-districts";
 
 /** Comma-separated tags input. */
 function TagsInput({ label, value, onChange, placeholder, error }: { label: string; value: string[]; onChange: (v: string[]) => void; placeholder?: string; error?: string }) {
@@ -26,8 +27,12 @@ export function ProfileForm({ me, onboarding, onSaved }: { me: SelfUser; onboard
   const [form, setForm] = useState({
     fullName: me.fullName, username: me.username.startsWith("user_") && onboarding ? "" : me.username, bio: me.bio, country: me.country || "Uzbekistan",
     province: me.province, city: me.city, feedVisible: me.feedVisible, languages: me.languages.length ? me.languages : ["O'zbek"], skills: me.skills,
-    interests: me.interests as Category[],
+    interests: me.interests as Category[], district: me.district ?? "", mahalla: me.mahalla ?? "",
   });
+  const needAge = Boolean(onboarding && me.role === "volunteer" && !me.birthYear);
+  const [birthYear, setBirthYear] = useState("");
+  const [guardian, setGuardian] = useState(false);
+  const age = birthYear ? new Date().getFullYear() - Number(birthYear) : null;
   const [avatar, setAvatar] = useState<string | null>(me.avatar);
   const [geo, setGeo] = useState<GeoCountry[]>([]);
   const [fields, setFields] = useState<Record<string, string>>({});
@@ -44,7 +49,7 @@ export function ProfileForm({ me, onboarding, onSaved }: { me: SelfUser; onboard
     e.preventDefault();
     setBusy(true); setError(null); setFields({});
     try {
-      await api.updateProfile(form, { avatar, onboarded: onboarding });
+      await api.updateProfile(form, { avatar, onboarded: onboarding, ...(needAge ? { birthYear: Number(birthYear) || 0, guardianConsent: guardian } : {}) });
       toast(t("pf.saved"));
       onSaved?.();
     } catch (err) {
@@ -96,7 +101,19 @@ export function ProfileForm({ me, onboarding, onSaved }: { me: SelfUser; onboard
           </Select>
           <TextInput label={t("org.city")} value={form.city} onChange={(e) => set("city", e.target.value)} error={fields.city} />
         </div>
+        <div className="grid cols-2">
+          <TextInput label={t("pf.district")} value={form.district} list="uz-districts" onChange={(e) => set("district", e.target.value)} error={fields.district} hint={t("pf.districtHint")} />
+          <TextInput label={t("pf.mahalla")} value={form.mahalla} onChange={(e) => set("mahalla", e.target.value)} error={fields.mahalla} placeholder={t("pf.mahallaPh")} />
+          <datalist id="uz-districts">{(UZ_DISTRICTS[form.province] ?? []).map((d) => <option key={d} value={d} />)}</datalist>
+        </div>
+        <p className="t-small muted">{t("pf.areaWhy")}</p>
       </div>
+      {needAge && (
+        <div className="grid cols-2">
+          <TextInput label={t("auth.birthYear")} type="number" inputMode="numeric" min={1900} max={new Date().getFullYear()} value={birthYear} onChange={(e) => setBirthYear(e.target.value)} error={fields.birthYear} />
+          {age !== null && age >= 15 && age < 18 && <Checkbox checked={guardian} onChange={setGuardian} error={fields.guardianConsent}>{t("auth.guardian")}</Checkbox>}
+        </div>
+      )}
 
       <Field label={t("pf.interests")} hint={t("pf.interestsHint")} error={fields.interests}>
         <div className="row g8 wrap">

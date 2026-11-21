@@ -1,51 +1,143 @@
 "use client";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { AdminComms, ContactDialog } from "@/components/admin-comms";
+import { AdminCommsTabs, AdminNews } from "@/components/admin-news";
+import { AiAudit } from "@/components/ai-audit";
+import { monthShort } from "@/components/report";
 import { AdminShop } from "@/components/admin-shop";
 import { Icon } from "@/components/icons";
 import { ReviewQueue } from "@/components/review-queue";
 import { PageHead } from "@/components/shell";
 import { ShopArt } from "@/components/shop-art";
 import {
-  Avatar, Button, Coins, Dialog, Empty, MISSION_STATUS_TONE, Skeleton, Stat, Status, TextArea, TextInput, useToast,
+  Avatar, Button, Coins, Dialog, Empty, MISSION_STATUS_TONE, Notice, Skeleton, Stat, Status, Tabs, TextArea, TextInput, useToast,
 } from "@/components/ui";
 import { useErrorText, useFmt, useI18n } from "@/lib/i18n";
 import { api } from "@/lib/store/api";
 import { useApi } from "@/lib/store/hooks";
 
+function MiniBars({ data, label }: { data: { month: string; n: number }[]; label: string }) {
+  const { locale, lang } = useI18n();
+  const max = Math.max(1, ...data.map((d) => d.n));
+  return (
+    <div className="stack g8">
+      <span className="t-small secondary">{label}</span>
+      <div className="mini-bars" role="img" aria-label={`${label}: ${data.map((d) => d.n).join(", ")}`}>
+        {data.map((d, i) => (
+          <span key={d.month} className="mini-bar" title={`${d.month}: ${d.n}`}>
+            <span style={{ height: `${Math.max(d.n ? 6 : 2, (d.n / max) * 100)}%` }} data-now={i === data.length - 1 || undefined} />
+            <em>{monthShort(d.month, lang, locale)}</em>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function Overview() {
   const { t } = useI18n();
   const f = useFmt();
   const q = useApi(() => api.adminOverview());
+  const [showLog, setShowLog] = useState(false);
   if (!q.data) return <Skeleton rows={3} />;
   const d = q.data;
+  const todo = [
+    { n: d.aiAudit, label: t("ad.todo.ai"), href: "/admin?tab=review&sub=ai", icon: "scan" as const },
+    { n: d.adminQueue, label: t("ad.todo.queue"), href: "/admin?tab=review&sub=admin", icon: "shield" as const },
+    { n: d.pendingOrganizations, label: t("ad.todo.orgs"), href: "/admin?tab=moderation", icon: "building" as const },
+    { n: d.ordersOpen, label: t("ad.todo.orders"), href: "/admin?tab=shop", icon: "bag" as const },
+  ];
   return (
     <div className="stack g24">
-      <div className="grid cols-4">
-        <Stat label={t("ad.users")} value={d.users} sub={t("ad.volunteers", { n: d.volunteers })} />
-        <Stat label={t("ad.orgs")} value={d.organizations} sub={d.pendingOrganizations ? <Link className="link" href="/admin?tab=organizations">{t("ad.pendingOrgs", { n: d.pendingOrganizations })}</Link> : undefined} />
-        <Stat label={t("ad.toReview")} value={d.pendingSubmissions} sub={t("ad.flagged", { n: d.flagged })} />
-        <Stat label={t("ad.missions")} value={d.missions} sub={t("ad.agentMissions", { n: d.agentMissions })} />
-      </div>
-      <nav className="mobile-only grid" style={{ gridTemplateColumns: "repeat(3, minmax(0, 1fr))" }} aria-label={t("nav.main")}>
-        {([["missions", "flag", t("nav.missions")], ["shop", "bag", t("nav.shop")], ["audit", "list", t("nav.audit")]] as const).map(([tab, icon, label]) => (
-          <Link key={tab} href={`/admin?tab=${tab}`} className="card pad stack g8" style={{ alignItems: "flex-start" }}><Icon name={icon} />{label}</Link>
-        ))}
-      </nav>
       <section className="stack g12">
-        <h2 className="t-h2">{t("ad.activity")}</h2>
-        <div className="card rows">
-          {d.recentActivity.map((a) => (
-            <div key={a.id} className="row-item t-small">
-              <span className="t-meta" style={{ width: 120, flex: "none" }}>{f.relative(a.timestamp)}</span>
-              <span className="grow" style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{a.action}</span>
-              <span className="secondary truncate" style={{ maxWidth: 320 }}>{a.detail}</span>
-            </div>
+        <h2 className="t-h2">{t("ad.todo")}</h2>
+        <div className="grid cols-4">
+          {todo.map((x) => (
+            <Link key={x.href} href={x.href} className="card pad stack g8 todo-tile" data-hot={x.n > 0 || undefined}>
+              <span className="row between"><Icon name={x.icon} size={20} />{x.n > 0 && <span className="count-badge">{x.n}</span>}</span>
+              <span className="stat-value num">{x.n}</span>
+              <span className="t-small secondary">{x.label}</span>
+            </Link>
           ))}
         </div>
       </section>
+      <div className="grid cols-4">
+        <Stat label={t("ad.users")} value={d.users} sub={t("ad.volunteers", { n: d.volunteers })} />
+        <Stat label={t("ad.orgs")} value={d.organizations} sub={t("ad.pendingOrgs", { n: d.pendingOrganizations })} />
+        <Stat label={t("ad.missions")} value={d.missions} sub={t("ad.agentMissions", { n: d.agentMissions })} />
+        <Stat label={t("ad.groupsNews")} value={d.groups} sub={t("ad.newsLive", { n: d.news })} />
+      </div>
+      <div className="grid cols-2">
+        <div className="card pad"><MiniBars data={d.volunteersByMonth} label={t("ad.newVolunteers")} /></div>
+        <div className="card pad"><MiniBars data={d.approvalsByMonth} label={t("ad.approvals")} /></div>
+      </div>
+      <section className="stack g12">
+        <div className="section-title"><h2 className="t-h2">{t("ad.activity")}</h2><button type="button" className="t-small link" style={{ background: "none", border: 0 }} onClick={() => setShowLog((x) => !x)}>{showLog ? t("ad.logLess") : t("ad.logAll")}</button></div>
+        {showLog ? <Audit /> : (
+          <div className="card rows">
+            {d.recentActivity.map((a) => (
+              <div key={a.id} className="row-item t-small">
+                <span className="t-meta" style={{ width: 120, flex: "none" }}>{f.relative(a.timestamp)}</span>
+                <span className="grow" style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{a.action}</span>
+                <span className="secondary truncate" style={{ maxWidth: 320 }}>{a.detail}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function ReviewSection() {
+  const { t } = useI18n();
+  const router = useRouter();
+  const raw = useSearchParams().get("sub");
+  const sub = raw === "admin" || raw === "orgs" || raw === "history" ? raw : "ai";
+  const b = useApi(() => api.badges()).data;
+  const q = useApi(() => api.adminQueues());
+  return (
+    <div className="stack g16">
+      <Tabs value={sub} onChange={(v) => router.replace(`/admin?tab=review&sub=${v}`, { scroll: false })} items={[
+        { value: "ai", label: t("ad.rv.ai"), count: b?.aiAudit || undefined },
+        { value: "admin", label: t("ad.rv.admin"), count: b?.adminQueue || undefined },
+        { value: "orgs", label: t("ad.rv.orgs"), count: q.data?.orgs.length || undefined },
+        { value: "history", label: t("ad.rv.history") },
+      ]} />
+      {sub === "ai" && <AiAudit />}
+      {sub === "admin" && (<><p className="t-small secondary">{t("ad.rv.adminNote")}</p>{q.data ? <ReviewQueue scope="admin" items={q.data.admin} /> : <Skeleton rows={3} />}</>)}
+      {sub === "orgs" && (<>
+        <p className="t-small secondary">{t("ad.rv.orgsNote")}</p>
+        {q.data && q.data.orgsStale > 0 && <Notice tone="warn">{t("ad.rv.stale", { n: q.data.orgsStale })}</Notice>}
+        {q.data ? <ReviewQueue scope="admin" items={q.data.orgs} /> : <Skeleton rows={3} />}
+      </>)}
+      {sub === "history" && (q.data ? <ReviewQueue scope="admin" items={q.data.history} /> : <Skeleton rows={3} />)}
+    </div>
+  );
+}
+
+function Moderation() {
+  const { t } = useI18n();
+  const router = useRouter();
+  const sub = useSearchParams().get("sub") === "missions" ? "missions" : "organizations";
+  return (
+    <div className="stack g16">
+      <Tabs value={sub} onChange={(v) => router.replace(`/admin?tab=moderation&sub=${v}`, { scroll: false })} items={[
+        { value: "organizations", label: t("nav.organizations") }, { value: "missions", label: t("nav.missions") },
+      ]} />
+      {sub === "organizations" ? <Organizations /> : <Missions />}
+    </div>
+  );
+}
+
+function Comms() {
+  const sub = useSearchParams().get("sub") === "announce" ? "announce" : "news";
+  return (
+    <div className="stack g16">
+      <AdminCommsTabs current={sub} />
+      {sub === "news" ? <AdminNews /> : <AdminComms />}
     </div>
   );
 }
@@ -104,7 +196,7 @@ function Users() {
   const [suspend, setSuspend] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [contact, setContact] = useState<{ id: string; fullName: string; email: string } | null>(null);
-  const list = (users.data ?? []).filter((u) => `${u.fullName} ${u.email} ${u.username}`.toLowerCase().includes(q.toLowerCase()));
+  const list = (users.data ?? []).filter((u) => `${u.fullName} ${u.email} ${u.username} ${u.phone ?? ""}`.toLowerCase().includes(q.toLowerCase()));
   return (
     <div className="stack g16">
       <TextInput placeholder={t("ad.searchUsers")} aria-label={t("ad.searchUsers")} value={q} onChange={(e) => setQ(e.target.value)} style={{ maxWidth: 360 }} />
@@ -115,7 +207,7 @@ function Users() {
               <Avatar name={u.fullName} src={u.avatar} size={32} />
               <span className="stack grow" style={{ minWidth: 0 }}>
                 <span className="truncate" style={{ fontWeight: 500 }}>{u.fullName}</span>
-                <span className="t-small secondary truncate">{u.email} · {t(`role.${u.role}`)} · {t("lvl.short", { n: u.level })}</span>
+                <span className="t-small secondary truncate">{u.email || u.phone || (u.telegramId ? "Telegram" : "—")} · {t(`role.${u.role}`)} · {t("lvl.short", { n: u.level })}</span>
               </span>
               <Status tone={u.status === "active" ? "ok" : u.status === "suspended" ? "bad" : "neutral"}>{t(`us.${u.status}`)}</Status>
               <Button size="sm" variant="ghost" icon="send" iconOnly aria-label={t("ad.write")} onClick={() => setContact(u)} />
@@ -194,28 +286,28 @@ function Audit() {
   );
 }
 
-const TABS = ["overview", "organizations", "review", "users", "missions", "comms", "shop", "audit"] as const;
+const TABS = ["overview", "review", "moderation", "users", "comms", "shop"] as const;
+/** Old links (?tab=organizations, missions, audit) still land in the right section. */
+const OLD: Record<string, Tab> = { organizations: "moderation", missions: "moderation", audit: "overview" };
 type Tab = (typeof TABS)[number];
 
 function Admin() {
   const { t } = useI18n();
   const raw = useSearchParams().get("tab");
-  const tab: Tab = (TABS as readonly string[]).includes(raw ?? "") ? (raw as Tab) : "overview";
+  const tab: Tab = (TABS as readonly string[]).includes(raw ?? "") ? (raw as Tab) : OLD[raw ?? ""] ?? "overview";
   const title: Record<Tab, string> = {
-    overview: t("nav.overview"), organizations: t("nav.organizations"), review: t("nav.review"), users: t("nav.users"),
-    missions: t("nav.missions"), comms: t("nav.comms"), shop: t("nav.shop"), audit: t("nav.audit"),
+    overview: t("nav.dashboard"), review: t("nav.review"), moderation: t("nav.moderation"), users: t("nav.users"), comms: t("nav.comms"), shop: t("nav.shop"),
   };
+  const sub: Partial<Record<Tab, string>> = { review: t("ad.rv.sub"), moderation: t("ad.mod.sub"), comms: t("ad.comms.sub") };
   return (
     <div className="stack g24 enter" key={tab}>
-      <PageHead title={title[tab]} sub={tab === "review" ? t("rv.subAdmin") : undefined} />
+      <PageHead title={title[tab]} sub={sub[tab]} />
       {tab === "overview" && <Overview />}
-      {tab === "organizations" && <Organizations />}
-      {tab === "review" && <ReviewQueue scope="admin" />}
+      {tab === "review" && <ReviewSection />}
+      {tab === "moderation" && <Moderation />}
       {tab === "users" && <Users />}
-      {tab === "missions" && <Missions />}
-      {tab === "comms" && <AdminComms />}
+      {tab === "comms" && <Comms />}
       {tab === "shop" && <AdminShop />}
-      {tab === "audit" && <Audit />}
     </div>
   );
 }

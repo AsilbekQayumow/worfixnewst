@@ -85,6 +85,7 @@ export function reviewSubmission(input: ReviewInput): ReviewResult {
       notifications.push(note(input.newId(), volunteer.id, "reward", "n.certificate", { level }, "/app/profile?tab=certificates", now));
     }
     next.rewardGrantedAt = now;
+    next.grant = { xp: grant.xp, points: grant.points, hours: grant.hours, impact: grant.impact };
     next.certificateId = certificates[0]?.id ?? null;
     notifications.push(note(input.newId(), volunteer.id, "reward", "n.approved", { title: mission.title, xp: grant.xp, coins: grant.points }, `/app/missions/${mission.id}`, now));
   } else {

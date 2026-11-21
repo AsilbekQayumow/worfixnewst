@@ -92,6 +92,15 @@ export interface UserProfile {
   birthYear?: number | null;
   /** v2.1: announcements created before this time count as read */
   announcementsSeenAt?: string | null;
+  /** v3: district (tuman) and neighbourhood (mahalla), for the local leaderboards */
+  district?: string;
+  mahalla?: string;
+  /** v3: how the account signs in */
+  authProvider?: "email" | "phone" | "telegram";
+  /** v3: set when the phone number was confirmed by SMS (Firebase phone sign-in) */
+  phoneVerified?: boolean;
+  /** v3: Telegram account id when signed in with Telegram */
+  telegramId?: string | null;
 }
 
 export interface Organization {
@@ -230,6 +239,28 @@ export interface Submission {
   checklistDone?: string[];
   /** EXTRA (v2) */
   teamId?: string | null;
+  /** v3: what approval granted, so an overturned decision can be reversed exactly */
+  grant?: { xp: number; points: number; hours: number; impact: Record<string, number> } | null;
+  /** v3: automatic review of agent missions by the AI, and the admins' audit of it */
+  aiReview?: AiReview | null;
+  /** v3: the volunteer's group when the mission was done, for group XP */
+  groupId?: string | null;
+}
+
+/** v3: the AI reviewer's decision on an agent-mission submission. */
+export interface AiReview {
+  /** "escalated": the AI could not decide (or was unavailable); an admin reviews it like any other submission */
+  decision: "approved" | "rejected" | "needs_more_info" | "escalated";
+  confidence: number;
+  summary: string;
+  reasons: string[];
+  model: string;
+  at: string;
+  /** the admins' check of the AI decision */
+  audit: "pending" | "confirmed" | "overturned" | "not_needed";
+  auditedBy?: string | null;
+  auditedAt?: string | null;
+  auditNote?: string;
 }
 
 export interface VerificationRecord {
@@ -261,6 +292,8 @@ export interface Certificate {
   xp: number;
   /** EXTRA (v2): level reached */
   level?: number | null;
+  /** v3: set when the approval behind it was overturned */
+  revokedAt?: string | null;
 }
 
 export interface Notification {
@@ -318,6 +351,19 @@ export interface ShopItem {
   createdAt: string;
   /** v2.1: a product photo (small JPEG data URL); the drawn art is shown when there is none */
   image?: string | null;
+  /** v3: the item is delivered as a partner promo code (subscriptions, vouchers) */
+  delivery?: "pickup" | "promo";
+}
+
+/** v3: one partner promo code for a "promo" shop item. Only admins and the buyer it was issued to can read it. */
+export interface PromoCode {
+  id: string;
+  itemId: string;
+  code: string;
+  orderId: string | null;
+  userId: string | null;
+  createdAt: string;
+  issuedAt: string | null;
 }
 
 /** EXTRA (v2): a Fixcoin purchase. */
@@ -333,6 +379,8 @@ export interface Order {
   /** v2.1: admin's note to the buyer (pick-up place, reason for cancelling) */
   note?: string | null;
   updatedAt?: string | null;
+  /** v3: the partner code delivered for a promo item */
+  promoCode?: string | null;
 }
 
 /** EXTRA (v2): a direct message between two friends. chatId = the two user ids sorted and joined by "_". */
@@ -367,4 +415,74 @@ export interface Announcement {
   link: string | null;
   authorId: string;
   createdAt: string;
+}
+
+/** v3: a news post written by the admins, shown on the home pages. */
+export interface NewsPost {
+  id: string;
+  title: string;
+  summary: string;
+  body: string;
+  /** small JPEG data URL */
+  cover: string | null;
+  category: "news" | "event" | "update" | "story" | "partner";
+  audience: "all" | "volunteer" | "organization";
+  status: "draft" | "published";
+  pinned: boolean;
+  /** shown from this time (lets admins schedule a post) */
+  publishAt: string;
+  link: string | null;
+  authorId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** v3: a volunteer group (team). Members read and write its chat. */
+export interface Group {
+  id: string;
+  name: string;
+  description: string;
+  color: string;
+  ownerId: string;
+  members: string[];
+  province: string;
+  district: string;
+  mahalla: string;
+  createdAt: string;
+}
+
+/** v3: a message in a group chat. */
+export interface GroupMessage {
+  id: string;
+  groupId: string;
+  from: string;
+  text: string;
+  kind: "text" | "signal" | "system";
+  signalId: string | null;
+  readBy: string[];
+  createdAt: string;
+  reactions?: Record<string, string[]>;
+  replyTo?: { id: string; from: string; text: string } | null;
+  editedAt?: string | null;
+  deletedAt?: string | null;
+}
+
+/** v3: a call for help: nearby volunteers and the group are asked to come. */
+export interface HelpSignal {
+  id: string;
+  userId: string;
+  groupId: string | null;
+  missionId: string | null;
+  title: string;
+  note: string;
+  location: GeoPoint;
+  place: string;
+  radiusKm: number;
+  province: string;
+  district: string;
+  city: string;
+  responders: string[];
+  status: "open" | "closed";
+  createdAt: string;
+  expiresAt: string;
 }

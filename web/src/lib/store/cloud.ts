@@ -9,9 +9,10 @@
 import { getApps, initializeApp } from "firebase/app";
 import {
   connectAuthEmulator, createUserWithEmailAndPassword, deleteUser, EmailAuthProvider, getAuth, onAuthStateChanged, reauthenticateWithCredential,
-  sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, signOut, updatePassword, type Auth, type User,
+  RecaptchaVerifier, sendEmailVerification, sendPasswordResetEmail, signInWithCustomToken, signInWithEmailAndPassword, signInWithPhoneNumber, signOut,
+  updatePassword, type Auth, type ConfirmationResult, type User,
 } from "firebase/auth";
-import { collection, connectFirestoreEmulator, doc, getDocFromServer, getFirestore, onSnapshot, query, where, writeBatch, type Firestore, type Unsubscribe } from "firebase/firestore";
+import { collection, connectFirestoreEmulator, doc, getDocFromServer, getFirestore, onSnapshot, query, where, writeBatch, type Firestore, type Query, type Unsubscribe } from "firebase/firestore";
 
 const config = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -26,8 +27,13 @@ export const FIREBASE_ENABLED = Boolean(config.apiKey && config.projectId && con
 
 /** Readable while signed out: what the public website shows. */
 const PUBLIC = ["missions", "organizations", "certificates", "shopItems"] as const;
-const PRIVATE = ["users", "participants", "submissions", "records", "notifications", "audits", "friendships", "cheers", "orders", "messages", "announcements"] as const;
-export const SYNCED = [...PUBLIC, ...PRIVATE] as const;
+const PRIVATE = [
+  "users", "participants", "submissions", "records", "notifications", "audits", "friendships", "cheers", "orders", "messages", "announcements",
+  "news", "groups", "groupJoins", "helpSignals", "promoCodes",
+] as const;
+/** v3: read per group the signed-in user belongs to (see followGroups). */
+const PER_GROUP = ["groupMessages", "groupCodes"] as const;
+export const SYNCED = [...PUBLIC, ...PRIVATE, ...PER_GROUP] as const;
 export type SyncedName = (typeof SYNCED)[number];
 type Doc = { id: string };
 export type Snapshot = Record<SyncedName, Doc[]>;
@@ -54,45 +60,102 @@ let privateUnsubs: Unsubscribe[] = [];
 let privateReady: Promise<void> = Promise.resolve();
 let handlers: { onData: (name: SyncedName, docs: Doc[]) => void; onError: (message: string) => void };
 
-function refFor(name: SyncedName, uid?: string) {
+/**
+ * The query for a collection. Some collections are read whole by admins and filtered for everyone else:
+ * the whole-collection query is tried first and, when the rules deny it, the filtered one is used.
+ */
+function refsFor(name: SyncedName, uid?: string): Query[] {
   const c = collection(fs, name);
-  if (!uid) return c;
-  if (name === "notifications" || name === "orders") return query(c, where("userId", "==", uid));
-  if (name === "messages") return query(c, where("participants", "array-contains", uid));
-  return c;
+  if (!uid) return [c];
+  if (name === "notifications" || name === "groupJoins") return [query(c, where("userId", "==", uid))];
+  if (name === "orders" || name === "promoCodes") return [c, query(c, where("userId", "==", uid))];
+  if (name === "news") return [c, query(c, where("status", "==", "published"))];
+  if (name === "messages") return [query(c, where("participants", "array-contains", uid))];
+  return [c];
 }
 
-function listen(name: SyncedName, uid?: string) {
+function listen(name: SyncedName, uid?: string, refs: Query[] = refsFor(name, uid)) {
   let done!: () => void;
   const first = new Promise<void>((r) => (done = r));
-  const unsub = onSnapshot(
-    refFor(name, uid),
-    (snap) => { handlers.onData(name, snap.docs.map((d) => d.data() as Doc)); done(); },
-    (err) => {
-      if (err.code !== "permission-denied") console.warn(`[worfix] listener "${name}" failed:`, err.message);
-      handlers.onData(name, []);
-      done();
-    },
-  );
-  return { unsub, first };
+  let unsub: Unsubscribe = () => {};
+  const attempt = (i: number) => {
+    unsub = onSnapshot(
+      refs[i],
+      (snap) => { handlers.onData(name, snap.docs.map((d) => d.data() as Doc)); done(); },
+      (err) => {
+        if (err.code === "permission-denied" && i + 1 < refs.length) { attempt(i + 1); return; }
+        if (err.code !== "permission-denied") console.warn(`[worfix] listener "${name}" failed:`, err.message);
+        handlers.onData(name, []);
+        done();
+      },
+    );
+  };
+  attempt(0);
+  return { unsub: () => unsub(), first };
+}
+
+/* v3: group chats and invite codes are readable by members only, one query per group. */
+let groupSubs = new Map<string, Unsubscribe[]>();
+const perGroup: Record<(typeof PER_GROUP)[number], Map<string, Doc[]>> = { groupMessages: new Map(), groupCodes: new Map() };
+function emitPerGroup() {
+  for (const name of PER_GROUP) handlers.onData(name, [...perGroup[name].values()].flat());
+}
+function followGroups(groups: Doc[]) {
+  const uid = authUser?.uid;
+  const mine = new Set(uid ? (groups as unknown as { id: string; members: string[] }[]).filter((g) => g.members?.includes(uid)).map((g) => g.id) : []);
+  for (const [id, subs] of groupSubs) {
+    if (mine.has(id)) continue;
+    subs.forEach((f) => f());
+    groupSubs.delete(id);
+    for (const name of PER_GROUP) perGroup[name].delete(id);
+  }
+  for (const id of mine) {
+    if (groupSubs.has(id)) continue;
+    groupSubs.set(id, PER_GROUP.map((name) => onSnapshot(
+      query(collection(fs, name), where("groupId", "==", id)),
+      (snap) => { perGroup[name].set(id, snap.docs.map((d) => d.data() as Doc)); emitPerGroup(); },
+      () => { perGroup[name].set(id, []); emitPerGroup(); },
+    )));
+  }
+  emitPerGroup();
+}
+function stopGroups() {
+  groupSubs.forEach((subs) => subs.forEach((f) => f()));
+  groupSubs = new Map();
+  for (const name of PER_GROUP) perGroup[name].clear();
+}
+
+/** One document straight from the server (null when missing or not readable). */
+export async function fetchDoc<T>(name: string, id: string): Promise<T | null> {
+  init();
+  try { const d = await getDocFromServer(doc(fs, name, id)); return d.exists() ? (d.data() as T) : null; } catch { return null; }
+}
+
+/** The signed-in user's ID token, for the server functions. */
+export async function idToken() {
+  return authUser ? authUser.getIdToken() : null;
 }
 
 export function start(h: typeof handlers) {
   started ??= (async () => {
     init();
-    handlers = h;
+    handlers = {
+      ...h,
+      onData(name, docs) { h.onData(name, docs); if (name === "groups") followGroups(docs); },
+    };
     const pub = PUBLIC.map((n) => listen(n));
     const authKnown = new Promise<void>((resolve) => {
       onAuthStateChanged(auth, (u) => {
         authUser = u;
         privateUnsubs.forEach((f) => f());
         privateUnsubs = [];
+        stopGroups();
         if (u) {
           const ls = PRIVATE.map((n) => listen(n, u.uid));
           privateUnsubs = ls.map((l) => l.unsub);
           privateReady = Promise.all(ls.map((l) => l.first)).then(() => undefined);
         } else {
-          PRIVATE.forEach((n) => handlers.onData(n, []));
+          [...PRIVATE, ...PER_GROUP].forEach((n) => handlers.onData(n, []));
           privateReady = Promise.resolve();
         }
         resolve();
@@ -133,6 +196,14 @@ const AUTH_KEYS: Record<string, string> = {
   "auth/network-request-failed": "e.network",
   "auth/requires-recent-login": "e.recentLogin",
   "auth/operation-not-allowed": "e.authDisabled",
+  "auth/invalid-phone-number": "e.phoneInvalid",
+  "auth/invalid-verification-code": "e.codeInvalid",
+  "auth/code-expired": "e.codeExpired",
+  "auth/missing-verification-code": "e.codeInvalid",
+  "auth/quota-exceeded": "e.smsQuota",
+  "auth/captcha-check-failed": "e.captcha",
+  "auth/billing-not-enabled": "e.phoneBilling",
+  "auth/invalid-custom-token": "e.authFailed",
 };
 export class CloudAuthError extends Error {
   constructor(public code: string) {
@@ -156,6 +227,36 @@ export async function signIn(email: string, password: string) {
   await synced(cred.user.uid);
   return cred.user.uid;
 }
+/* v3: phone (SMS) and Telegram sign-in */
+let confirmation: ConfirmationResult | null = null;
+let verifier: RecaptchaVerifier | null = null;
+/** Sends the SMS code. `container` is the id of an element for the invisible reCAPTCHA. */
+export async function startPhone(phone: string, container: string) {
+  init();
+  verifier?.clear();
+  verifier = new RecaptchaVerifier(auth, container, { size: "invisible" });
+  confirmation = await wrap(signInWithPhoneNumber(auth, phone, verifier));
+}
+export async function confirmPhone(code: string) {
+  if (!confirmation) throw new CloudAuthError("auth/code-expired");
+  const cred = await wrap(confirmation.confirm(code));
+  confirmation = null;
+  await synced(cred.user.uid);
+  return cred.user.uid;
+}
+/** Signs in with a custom token made by the telegram-auth server function. */
+export async function signInWithToken(token: string) {
+  init();
+  const cred = await wrap(signInWithCustomToken(auth, token));
+  await synced(cred.user.uid);
+  return cred.user.uid;
+}
+export const currentPhone = () => authUser?.phoneNumber ?? null;
+export async function currentClaims(): Promise<Record<string, unknown>> {
+  if (!authUser) return {};
+  return (await authUser.getIdTokenResult()).claims as Record<string, unknown>;
+}
+
 export async function logOut() {
   init();
   await signOut(auth);

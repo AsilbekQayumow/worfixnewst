@@ -1,4 +1,5 @@
 import type { Lang } from "../domain/types";
+import { R3 } from "./dict-v3";
 
 /** [O‘zbekcha, Русский, English] */
 type Row = [string, string, string];
@@ -118,7 +119,7 @@ const R: Record<string, Row> = {
   "nav.explore": ["Missiyalar", "Миссии", "Explore"],
   "nav.myMissions": ["Mening missiyalarim", "Мои миссии", "My missions"],
   "nav.friends": ["Do‘stlar", "Друзья", "Friends"],
-  "nav.chat": ["Xabarlar", "Сообщения", "Messages"],
+  "nav.chat": ["Chat", "Чат", "Chat"],
   "nav.shop": ["Do‘kon", "Магазин", "Shop"],
   "nav.profile": ["Profil", "Профиль", "Profile"],
   "nav.notifications": ["Bildirishnomalar", "Уведомления", "Notifications"],
@@ -1003,6 +1004,8 @@ const R: Record<string, Row> = {
   "ai.badRequest": ["So‘rov noto‘g‘ri", "Неверный запрос", "Invalid request"],
   "ai.noPlaces": ["Yaqin atrofda xaritada belgilangan ochiq joy topilmadi", "Рядом не нашлось отмеченных на карте мест", "No mapped public places were found nearby"],
 };
+
+Object.assign(R, R3);
 
 function build(i: 0 | 1 | 2): Record<string, string> {
   const out: Record<string, string> = {};

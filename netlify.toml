@@ -5,6 +5,10 @@
 #   NEXT_PUBLIC_FIREBASE_*         already set below for project worfix3 (public values); change them there for another project
 #   GEMINI_API_KEY                 server-only: GPS mission agent and photo check
 #   ORS_API_KEY                    server-only: walking routes and place search (openrouteservice.org)
+#   FIREBASE_SERVICE_ACCOUNT       server-only (v3): service-account JSON; lets the AI review agent missions and write
+#                                  rewards, deliver promo codes instantly and sign people in with Telegram
+#   TELEGRAM_BOT_TOKEN             server-only (v3): the bot token from @BotFather (Telegram sign-in)
+#   NEXT_PUBLIC_TELEGRAM_BOT       public (v3): the bot's username without @ (shows the Telegram button)
 # A production deploy without the Firebase values stops with a clear message (web/scripts/check-env.mjs),
 # so the live site never opens in demo mode by accident. Step-by-step guide: DEPLOY.md.
 [build]
@@ -36,6 +40,8 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
+  # The Admin SDK (ai-review, shop-fulfil, telegram-auth) is installed as a normal dependency, not bundled.
+  external_node_modules = ["firebase-admin"]
 
 # Next.js runtime (server-rendered pages and /api routes). Declared explicitly so it also runs
 # for deploys uploaded through the API/CLI, not only for Git-triggered builds.

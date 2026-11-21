@@ -3,6 +3,7 @@ import { AnnouncementBanner } from "@/components/admin-comms";
 import Link from "next/link";
 import { Icon } from "@/components/icons";
 import { OrgForm } from "@/components/org-form";
+import { NewsStrip } from "@/components/news";
 import { PageHead } from "@/components/shell";
 import { ButtonLink, Empty, Notice, Skeleton, Stat, Status } from "@/components/ui";
 import { useFmt, useI18n } from "@/lib/i18n";
@@ -31,9 +32,11 @@ export default function OrgHome() {
         actions={<ButtonLink href="/org/missions/new" variant="primary" icon="plus">{t("nav.newMission")}</ButtonLink>} />
 
       <AnnouncementBanner />
+      {s && s.pending > 0 && <Notice tone="warn">{t("org.toReview", { n: s.pending })} <Link className="link" href="/org/review">{t("nav.review")}</Link></Notice>}
       {o.verificationStatus === "pending" && <Notice tone="warn">{t("org.pendingNote")}</Notice>}
       {o.verificationStatus === "rejected" && <Notice tone="bad"><strong>{t("org.rejected")}</strong> {o.verificationNote}</Notice>}
       {o.verificationStatus === "approved" && <Notice tone="ok">{t("org.approvedNote")}</Notice>}
+      <NewsStrip limit={3} />
 
       {!s ? <Skeleton rows={1} height={100} /> : (
         <>

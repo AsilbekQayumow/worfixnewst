@@ -1,6 +1,7 @@
 "use client";
-import { ChatView } from "@/components/chat-view";
+import { Suspense } from "react";
+import { ChatHub } from "@/components/chat-hub";
 
 export default function Chat() {
-  return <ChatView friendId={null} />;
+  return <Suspense fallback={null}><ChatHub openId={null} /></Suspense>;
 }

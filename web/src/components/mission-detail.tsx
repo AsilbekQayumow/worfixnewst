@@ -9,6 +9,8 @@ import { api } from "@/lib/store/api";
 import { useApi } from "@/lib/store/hooks";
 import { getPosition } from "@/lib/store/media";
 import { EvidenceForm } from "./evidence-form";
+import { AiReviewBox } from "./review-queue";
+import { SignalDialog } from "./signals";
 import { Icon } from "./icons";
 import { useMe } from "./providers";
 import { RoutePanel } from "./route-panel";
@@ -27,10 +29,11 @@ export function MissionDetail({ id, inApp }: { id: string; inApp: boolean }) {
   const st = useApi(() => api.missionState(id), [id]);
   const [busy, setBusy] = useState<string | null>(null);
   const [invite, setInvite] = useState(false);
+  const [signal, setSignal] = useState(false);
   const [fix, setFix] = useState<GpsFix | null>(null);
 
   if (q.loading && !q.data) return <Skeleton rows={4} height={120} />;
-  if (!q.data) return <div className="card"><Empty icon="flag" title={t("md.notFound")} action={<ButtonLink href={inApp ? "/app/explore" : "/missions"}>{t("md.back")}</ButtonLink>} /></div>;
+  if (!q.data) return <div className="card"><Empty icon="flag" title={t("md.notFound")} action={<ButtonLink href={inApp ? "/app/missions?tab=explore" : "/missions"}>{t("md.back")}</ButtonLink>} /></div>;
 
   const m = q.data.mission;
   const s = st.data;
@@ -57,7 +60,7 @@ export function MissionDetail({ id, inApp }: { id: string; inApp: boolean }) {
   return (
     <div className="stack g24 enter">
       <div className="stack g12">
-        <Link href={inApp ? (joined ? "/app/missions" : "/app/explore") : "/missions"} className="row g8 t-small secondary" style={{ width: "fit-content" }}>
+        <Link href={inApp ? (joined ? "/app/missions" : "/app/missions?tab=explore") : "/missions"} className="row g8 t-small secondary" style={{ width: "fit-content" }}>
           <Icon name="arrowLeft" size={16} /> {inApp && joined ? t("nav.myMissions") : t("md.back")}
         </Link>
         <div className="row g12 wrap">
@@ -168,7 +171,14 @@ export function MissionDetail({ id, inApp }: { id: string; inApp: boolean }) {
             ) : sub ? (
               <div className="stack g12">
                 <div className="row between"><span className="t-small secondary">{t("md.yourEvidence")}</span><VerificationStatusTag status={sub.verificationStatus} /></div>
-                {sub.verificationStatus === "pending" && <p className="t-small secondary">{m.source === "agent" ? t("md.pendingAgent") : t("md.pendingOrg")}</p>}
+                {sub.verificationStatus === "pending" && m.source === "agent" && !sub.aiReview && (
+                  <div className="stack g8">
+                    <p className="t-small secondary row g8"><span className="spinner" aria-hidden />{t("md.aiChecking")}</p>
+                    <Button size="sm" variant="ghost" icon="refresh" loading={busy === "ai"} onClick={() => act("ai", () => api.runAiReview(sub.id))}>{t("md.aiRetry")}</Button>
+                  </div>
+                )}
+                {sub.verificationStatus === "pending" && (m.source !== "agent" || sub.aiReview?.decision === "escalated" || sub.aiReview?.audit === "overturned") && <p className="t-small secondary">{m.source === "agent" ? t("md.pendingAgent") : t("md.pendingOrg")}</p>}
+                {sub.aiReview && sub.aiReview.decision !== "escalated" && <AiReviewBox r={sub.aiReview} />}
                 {sub.verificationStatus === "approved" && <Notice tone="ok">{t("md.approvedNote")}</Notice>}
                 {sub.verificationStatus === "rejected" && <Notice tone="bad">{sub.reviewNote}</Notice>}
               </div>
@@ -178,7 +188,10 @@ export function MissionDetail({ id, inApp }: { id: string; inApp: boolean }) {
                 <span className="t-small muted">{canStart ? t("md.startHint") : t("md.startsIn", { when: f.relative(m.date) })}</span>
               </div>
             ) : (
-              <a href="#evidence" className="btn btn-primary btn-lg btn-block"><Icon name="camera" />{t("md.goEvidence")}</a>
+              <div className="stack g8">
+                <a href="#evidence" className="btn btn-primary btn-lg btn-block"><Icon name="camera" />{t("md.goEvidence")}</a>
+                <Button icon="zap" block onClick={() => setSignal(true)}>{t("sg.call")}</Button>
+              </div>
             )}
 
             {inApp && joined && !sub && (
@@ -207,6 +220,7 @@ export function MissionDetail({ id, inApp }: { id: string; inApp: boolean }) {
       </div>
 
       <InviteDialog open={invite} onClose={() => setInvite(false)} missionId={m.id} friends={s?.friends ?? []} />
+      {inApp && <SignalDialog open={signal} onClose={() => setSignal(false)} missionId={m.id} presetPlace={m.location} />}
     </div>
   );
 }

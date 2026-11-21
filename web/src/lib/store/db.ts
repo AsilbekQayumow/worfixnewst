@@ -10,9 +10,15 @@ import { makeVerificationCode } from "../domain/certificates";
 import { sampleCatalog } from "../domain/shop";
 import * as cloud from "./cloud";
 import type {
-  Announcement, AuditLog, Certificate, Cheer, Friendship, Message, Mission, MissionParticipant, Notification, Order, Organization, ShopItem,
-  Submission, UserProfile, VerificationRecord,
+  Announcement, AuditLog, Certificate, Cheer, Friendship, Group, GroupMessage, HelpSignal, Message, Mission, MissionParticipant, NewsPost, Notification,
+  Order, Organization, PromoCode, ShopItem, Submission, UserProfile, VerificationRecord,
 } from "../domain/types";
+import { makeGroupCode } from "../domain/community";
+
+/** v3: invite code → group (the code is the document id, so it cannot be listed, only looked up). */
+export interface GroupCode { id: string; groupId: string; createdAt: string }
+/** v3: proof that a member joined with a valid code (checked by the security rules). */
+export interface GroupJoin { id: string; groupId: string; userId: string; code: string; createdAt: string }
 
 export interface Credential { userId: string; salt: string; hash: string }
 export interface Token { token: string; userId: string; kind: "verify" | "reset"; expiresAt: string }
@@ -34,6 +40,13 @@ export interface DB {
   orders: Order[];
   messages: Message[];
   announcements: Announcement[];
+  news: NewsPost[];
+  groups: Group[];
+  groupCodes: GroupCode[];
+  groupJoins: GroupJoin[];
+  groupMessages: GroupMessage[];
+  helpSignals: HelpSignal[];
+  promoCodes: PromoCode[];
   credentials: Credential[];
   tokens: Token[];
   loginAttempts: Record<string, { count: number; first: number }>;
@@ -74,7 +87,8 @@ export async function hashPassword(password: string, salt = b64(crypto.getRandom
 function empty(): DB {
   return {
     version: 2, users: [], organizations: [], missions: [], participants: [], submissions: [], records: [], certificates: [], notifications: [],
-    audits: [], friendships: [], cheers: [], shopItems: [], orders: [], messages: [], announcements: [], credentials: [], tokens: [], loginAttempts: {},
+    audits: [], friendships: [], cheers: [], shopItems: [], orders: [], messages: [], announcements: [],
+    news: [], groups: [], groupCodes: [], groupJoins: [], groupMessages: [], helpSignals: [], promoCodes: [], credentials: [], tokens: [], loginAttempts: {},
   };
 }
 
@@ -137,6 +151,7 @@ function startCloud() {
       const db = load() as unknown as Record<string, unknown[]>;
       if (name === "notifications") (docs as unknown as Record<string, string>[]).sort(newestFirst("createdAt"));
       if (name === "audits") (docs as unknown as Record<string, string>[]).sort(newestFirst("timestamp"));
+      if (name === "news" || name === "helpSignals") (docs as unknown as Record<string, string>[]).sort(newestFirst("createdAt"));
       db[name] = docs;
       version++;
       listeners.forEach((l) => l());
@@ -180,11 +195,11 @@ async function seed(db: DB) {
     province: "Samarqand Region", city: "Samarkand", feedVisible: true, languages: ["O'zbek", "Русский"], skills: [], interests: ["environment"],
     level: 1, xp: 0, points: 0, trustScore: 50, reputation: 0, streak: 0, lastApprovedDay: null, totalVolunteerHours: 0, totalImpact: 0,
     impact: {}, onboarded: true, organizationId: null, role: "volunteer", status: "active", createdAt: ago(60), updatedAt: t, lastLogin: null,
-    language: "uz", privacy: "public", phone: "", birthYear: null, ...over,
+    language: "uz", privacy: "public", phone: "", birthYear: null, district: "Samarqand shahri", mahalla: "Registon", authProvider: "email", ...over,
   });
 
   const orgId = uid();
-  const vol = person({ email: DEMO_ACCOUNTS[0].email, fullName: "Dilnoza Rahimova", username: "dilnoza", bio: "Hafta oxirlari daraxt ekaman va daryo bo'yini tozalayman.", interests: ["environment", "water", "animals"], skills: ["Birinchi yordam", "Ingliz tili"], birthYear: 2004 });
+  const vol = person({ email: DEMO_ACCOUNTS[0].email, fullName: "Dilnoza Rahimova", username: "dilnoza", bio: "Hafta oxirlari daraxt ekaman va daryo bo'yini tozalayman.", interests: ["environment", "water", "animals"], skills: ["Birinchi yordam", "Ingliz tili"], birthYear: 2004, mahalla: "Bog‘ishamol" });
   const orgUser = person({ email: DEMO_ACCOUNTS[1].email, fullName: "Bekzod Tursunov", username: "bekzod_org", role: "organization", organizationId: orgId });
   const admin = person({ email: DEMO_ACCOUNTS[2].email, fullName: "WORFIX moderatori", username: "moderator", role: "admin" });
   db.users.push(vol, orgUser, admin);
@@ -236,10 +251,10 @@ async function seed(db: DB) {
   const p5 = past("Dashtda tog' yo'lini tiklash", "environment", "hard", 300, "Ohalik tog' yo'li", 39.5890, 66.8790, 16, ["metr yo'lak", 20]);
 
   const friends = [
-    person({ email: "aziza@demo.worfix.uz", fullName: "Aziza Karimova", username: "aziza_k", bio: "Ko'chat ekishni yaxshi ko'raman.", interests: ["environment", "water"] }),
+    person({ email: "aziza@demo.worfix.uz", fullName: "Aziza Karimova", username: "aziza_k", bio: "Ko'chat ekishni yaxshi ko'raman.", interests: ["environment", "water"], mahalla: "Bog‘ishamol" }),
     person({ email: "timur@demo.worfix.uz", fullName: "Timur Rahimov", username: "timur", bio: "Ariqlar va qayta ishlash.", interests: ["water", "recycling"] }),
-    person({ email: "malika@demo.worfix.uz", fullName: "Malika Yusupova", username: "malika", province: "Tashkent", city: "Tashkent", bio: "Bolalar bilan kitob o'qiyman.", interests: ["education", "community"], privacy: "friends" }),
-    person({ email: "jasur@demo.worfix.uz", fullName: "Jasur Aliyev", username: "jasur", province: "Bukhara Region", city: "Bukhara", bio: "Boshpanadagi itlar bilan sayr.", interests: ["animals"] }),
+    person({ email: "malika@demo.worfix.uz", fullName: "Malika Yusupova", username: "malika", province: "Tashkent", city: "Tashkent", district: "Chilonzor", mahalla: "Navro‘z", bio: "Bolalar bilan kitob o'qiyman.", interests: ["education", "community"], privacy: "friends" }),
+    person({ email: "jasur@demo.worfix.uz", fullName: "Jasur Aliyev", username: "jasur", province: "Bukhara Region", city: "Bukhara", district: "Buxoro shahri", mahalla: "Ko‘hna shahar", bio: "Boshpanadagi itlar bilan sayr.", interests: ["animals"] }),
   ];
   db.users.push(...friends);
   const [aziza, timur, malika, jasur] = friends;
@@ -306,5 +321,38 @@ async function seed(db: DB) {
     { id: uid(), userId: vol.id, type: "system", title: "n.friendRequest", message: JSON.stringify({ name: aziza.fullName }), link: "/app/friends", read: false, createdAt: ago(1) },
   );
   db.shopItems.push(...sampleCatalog(t));
+
+  // v3: a group with a chat, a help signal, news and a promo-code item.
+  const groupId = uid();
+  const code = makeGroupCode();
+  db.groups.push({
+    id: groupId, name: "Yashil Bog‘ishamol", description: "Mahallamizdagi bog‘ va ariqlarni birga parvarish qilamiz.", color: "#0a6a2c", ownerId: timur.id,
+    members: [timur.id, vol.id, aziza.id], province: "Samarqand Region", district: "Samarqand shahri", mahalla: "Bog‘ishamol", createdAt: ago(25),
+  });
+  db.groupCodes.push({ id: code, groupId, createdAt: ago(25) });
+  for (const s of db.submissions) if ([vol.id, timur.id, aziza.id].includes(s.userId)) s.groupId = groupId;
+  const gmsg = (from: string, text: string, minsAgo: number) => db.groupMessages.push({
+    id: uid(), groupId, from, text, kind: "text", signalId: null, readBy: [from], createdAt: new Date(Date.now() - minsAgo * 60_000).toISOString(),
+    reactions: {}, replyTo: null, editedAt: null, deletedAt: null,
+  });
+  gmsg(timur.id, "Bu hafta ariq bo‘yini tozalashga chiqamiz, kim bor?", 300);
+  gmsg(aziza.id, "Men boraman, qoplarni olaman", 240);
+  db.helpSignals.push({
+    id: uid(), userId: timur.id, groupId, missionId: null, title: "Ariq bo‘yi — qo‘l kerak", note: "Plastik ko‘p, yana 2–3 kishi kerak.",
+    location: { lat: 39.6626, lng: 66.9851 }, place: "Siyob ariqi", radiusKm: 2, province: "Samarqand Region", district: "Samarqand shahri", city: "Samarkand",
+    responders: [aziza.id], status: "open", createdAt: new Date(Date.now() - 40 * 60_000).toISOString(), expiresAt: new Date(Date.now() + 5 * 3_600_000).toISOString(),
+  });
+  db.news.push({
+    id: uid(), title: "WORFIX endi guruhlar bilan", summary: "Do‘stlaringiz bilan guruh tuzing, mahalla ligasida birga ko‘tariling.",
+    body: "Endi ko‘ngillilar guruh tuzib, QR kod orqali do‘stlarini taklif qilishi mumkin. Guruh a’zolari bajargan missiyalar guruh XP siga qo‘shiladi va mahalla, tuman, viloyat hamda respublika reytinglarida ko‘rinadi.\n\nYordam kerak bo‘lsa, “Yordam chaqirish” tugmasi yaqin atrofdagi ko‘ngillilarga signal yuboradi.",
+    cover: null, category: "update", audience: "all", status: "published", pinned: true, publishAt: ago(1), link: "/app/chat?tab=groups", authorId: admin.id, createdAt: ago(1), updatedAt: ago(1),
+  });
+  const promoItem: ShopItem = {
+    id: "promo-books-1y", title: { uz: "Kitob obunasi · 1 yil", ru: "Подписка на книги · 1 год", en: "Book subscription · 1 year" },
+    description: { uz: "Hamkor kutubxonaning onlayn obunasi. Xariddan keyin promo-kod beriladi.", ru: "Онлайн-подписка партнёрской библиотеки. После покупки выдаётся промокод.", en: "A partner library's online subscription. You get a promo code after buying." },
+    price: 100, kind: "digital", art: "ticket", stock: 3, active: true, createdAt: t, image: null, delivery: "promo",
+  };
+  db.shopItems.push(promoItem);
+  for (const c of ["WRFX-7Q2K-BOOK", "WRFX-9M4D-BOOK", "WRFX-3H8T-BOOK"]) db.promoCodes.push({ id: uid(), itemId: promoItem.id, code: c, orderId: null, userId: null, createdAt: t, issuedAt: null });
   db.audits.push({ id: uid(), actor: "system", actorRole: "system", action: "seed.demo", resource: "system", resourceId: "demo", timestamp: t, detail: "Demo data", ipAddress: null, device: null });
 }

@@ -1,6 +1,6 @@
 {
   "name": "worfix-web",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "firebase": "^13.4.0",
+    "firebase-admin": "^13.10.0",
     "maplibre-gl": "^5.24.1",
     "next": "15.5.29",
     "qrcode": "^1.5.4",

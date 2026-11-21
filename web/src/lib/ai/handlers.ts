@@ -30,6 +30,7 @@ export async function handleMissions(req: Request): Promise<Response> {
   if (limited(req, 5)) return Response.json({ error: "ai.tooMany" }, { status: 429 });
   const r = parseAgentRequest(await req.json().catch(() => null));
   if (!r) return Response.json({ error: "ai.badRequest" }, { status: 400 });
+  if (aiMock()) return Response.json(mockPlan(r.lat, r.lng));
   if (!process.env.GEMINI_API_KEY) return Response.json({ error: "ai.notConfigured" }, { status: 503 });
 
   const t0 = Date.now();
@@ -83,6 +84,46 @@ Be strict but fair: phone photos are often imperfect. Signs of real work: the pl
 studio photos, watermarks, scenes unrelated to the task, indoor photos for an outdoor task, no visible work at all.
 Never identify people. Write the summary and concerns in the requested language.`;
 
+/** Gemini photo check, shared by the ai-verify route and the ai-review server function. */
+export async function verifyPhotos(o: { images: string[]; title: string; description: string; category: Category; checklist: string[]; language: Lang; deadline: number; mock?: boolean }): Promise<VerifyResult> {
+  if (o.mock) return { confidence: 0.86, summary: "Mock: the photos show the described work.", concerns: [], model: "mock" };
+  const text = [
+    `Mission: ${o.title.slice(0, 120)}`,
+    `Category: ${o.category}`,
+    `Description: ${o.description.slice(0, 800)}`,
+    o.checklist.length ? `Steps the volunteer should have done:\n- ${o.checklist.join("\n- ")}` : "",
+    `Language: ${LANG_NAME[o.language]}`,
+    `There are ${o.images.length} photo(s) attached.`,
+  ].filter(Boolean).join("\n");
+  const { data, model } = await gemini({
+    system: VERIFY_SYSTEM, schema: VERIFY_SCHEMA, temperature: 0.2, deadline: o.deadline,
+    parts: [{ text }, ...o.images.map((data) => ({ inline_data: { mime_type: "image/jpeg", data } }))],
+  });
+  const d = data as { confidence?: unknown; summary?: unknown; concerns?: unknown };
+  return {
+    confidence: Math.min(1, Math.max(0, Number(d.confidence) || 0)),
+    summary: String(d.summary ?? "").slice(0, 400),
+    concerns: (Array.isArray(d.concerns) ? d.concerns : []).map((x) => String(x).slice(0, 160)).slice(0, 5),
+    model,
+  };
+}
+
+/** Test/dev only: AI_MOCK=1 answers without calling Gemini (never on a Netlify production deploy). */
+export function aiMock() { return process.env.AI_MOCK === "1" && process.env.CONTEXT !== "production"; }
+
+function mockPlan(lat: number, lng: number): AgentPlan {
+  const m = (id: string, title: string, category: Category, difficulty: "easy" | "medium", dl: number): AgentPlan["missions"][number] => ({
+    title, description: "Mock mission for automated tests: tidy the spot and take before/after photos.", category, difficulty, durationMinutes: 60, placeId: id,
+    location: `Mock place ${id}`, safety: "Wear gloves.", requirements: "", equipment: "Gloves, bags", impactLabel: "kg collected", impactAmount: 3,
+    checklist: ["Photo before", "Did the work", "Photo after"], whyHere: "Close to you.", matchesInterest: true, lat: lat + dl, lng: lng + dl, distanceM: 300,
+  });
+  return {
+    areaName: "Mock area", areaSummary: "Mock plan for tests.", model: "mock",
+    places: [{ id: "p1", name: "Mock park", kind: "park", lat: lat + 0.002, lng: lng + 0.002, distanceM: 300 }],
+    missions: [m("p1", "Mock: park clean-up", "environment", "easy", 0.002), m("p2", "Mock: canal bank", "water", "medium", -0.002)],
+  };
+}
+
 export async function handleVerify(req: Request): Promise<Response> {
   const deadline = Date.now() + BUDGET_MS;
   if (limited(req, 10)) return Response.json({ error: "ai.tooMany" }, { status: 429 });
@@ -91,30 +132,12 @@ export async function handleVerify(req: Request): Promise<Response> {
   const category = (CATEGORIES as readonly string[]).includes(b?.category as string) ? (b!.category as Category) : null;
   const language = (LANGS as readonly string[]).includes(b?.language as string) ? (b!.language as Lang) : "uz";
   if (!b || !images.length || !category) return Response.json({ error: "ai.badRequest" }, { status: 400 });
-  if (!process.env.GEMINI_API_KEY) return Response.json({ error: "ai.notConfigured" }, { status: 503 });
-
-  const checklist = (Array.isArray(b.checklist) ? b.checklist : []).map((x) => String(x).slice(0, 120)).slice(0, 6);
-  const text = [
-    `Mission: ${String(b.title ?? "").slice(0, 120)}`,
-    `Category: ${category}`,
-    `Description: ${String(b.description ?? "").slice(0, 800)}`,
-    checklist.length ? `Steps the volunteer should have done:\n- ${checklist.join("\n- ")}` : "",
-    `Language: ${LANG_NAME[language]}`,
-    `There are ${images.length} photo(s) attached.`,
-  ].filter(Boolean).join("\n");
-
+  if (!process.env.GEMINI_API_KEY && !aiMock()) return Response.json({ error: "ai.notConfigured" }, { status: 503 });
   try {
-    const { data, model } = await gemini({
-      system: VERIFY_SYSTEM, schema: VERIFY_SCHEMA, temperature: 0.2, deadline,
-      parts: [{ text }, ...images.map((data) => ({ inline_data: { mime_type: "image/jpeg", data } }))],
+    const out = await verifyPhotos({
+      images, title: String(b.title ?? ""), description: String(b.description ?? ""), category, language, deadline, mock: aiMock(),
+      checklist: (Array.isArray(b.checklist) ? b.checklist : []).map((x) => String(x).slice(0, 120)).slice(0, 6),
     });
-    const d = data as { confidence?: unknown; summary?: unknown; concerns?: unknown };
-    const out: VerifyResult = {
-      confidence: Math.min(1, Math.max(0, Number(d.confidence) || 0)),
-      summary: String(d.summary ?? "").slice(0, 400),
-      concerns: (Array.isArray(d.concerns) ? d.concerns : []).map((x) => String(x).slice(0, 160)).slice(0, 5),
-      model,
-    };
     return Response.json(out);
   } catch (e) {
     if (e instanceof AiError) return Response.json({ error: e.key }, { status: e.status });
