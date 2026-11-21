@@ -5,8 +5,9 @@ import { useEffect, useState } from "react";
 import { GROUP_COLORS } from "@/lib/domain/community";
 import { useErrorText, useI18n } from "@/lib/i18n";
 import { api, ValidationError } from "@/lib/store/api";
+import { useApi as useApiHook } from "@/lib/store/hooks";
 import { Icon } from "./icons";
-import { Button, Dialog, Notice, TextArea, TextInput, useToast } from "./ui";
+import { Avatar, Button, Dialog, Notice, TextArea, TextInput, useToast } from "./ui";
 
 /** Round group mark: initials on the group colour. */
 export function GroupMark({ name, color = GROUP_COLORS[0], size = 40 }: { name: string; color?: string; size?: number }) {
@@ -31,7 +32,7 @@ export function GroupDialog({ open, onClose, initial }: { open: boolean; onClose
     setBusy(true); setFields({}); setError(null);
     try {
       if (initial) { await api.updateGroup(initial.id, v); toast(t("gr.saved")); onClose(); }
-      else { const { id } = await api.createGroup(v); toast(t("gr.created")); onClose(); router.push(`/app/groups/${id}`); }
+      else { const { id } = await api.createGroup(v); toast(t("gr.created")); onClose(); router.push(`/app/groups/${id}?invite=1`); }
     } catch (e) {
       if (e instanceof ValidationError) setFields(e.fields); else setError(errText(e));
     } finally { setBusy(false); }
@@ -106,7 +107,7 @@ export function InviteCard({ code, groupName, owner, onNewCode }: { code: string
   };
   return (
     <div className="card pad stack g12 invite-card">
-      <h3 className="t-h3">{t("gr.invite")}</h3>
+      <h3 className="t-h3">{t("gi.orShare")}</h3>
       <div className="row g16 wrap" style={{ alignItems: "center" }}>
         {qr ? <img src={qr} alt={t("gr.qrAlt", { code })} width={148} height={148} className="qr" /> : <span className="qr" style={{ width: 148, height: 148 }} />}
         <div className="stack g8" style={{ minWidth: 180 }}>
@@ -122,4 +123,146 @@ export function InviteCard({ code, groupName, owner, onNewCode }: { code: string
       <p className="t-small muted">{t("gr.inviteHint")}</p>
     </div>
   );
+}
+
+type Candidates = NonNullable<Awaited<ReturnType<typeof api.groupInviteCandidates>>>;
+
+/** Pick friends and send each one a group invite in chat. */
+export function GroupInviteDialog({ open, onClose, preselect }: { open: boolean; onClose: () => void; preselect?: string }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const errText = useErrorText();
+  const [data, setData] = useState<Candidates | null | undefined>(undefined);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [query, setQuery] = useState("");
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    setQuery(""); setData(undefined);
+    void api.groupInviteCandidates().then((d) => {
+      setData(d);
+      setPicked(new Set(preselect && d?.friends.some((f) => f.person.id === preselect && f.state !== "member" && f.state !== "invited") ? [preselect] : []));
+    });
+  }, [open, preselect]);
+  const toggle = (id: string) => setPicked((s) => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  const send = async () => {
+    setBusy(true);
+    try { const { sent } = await api.inviteToGroup([...picked]); toast(t("gi.sent", { n: sent })); onClose(); }
+    catch (e) { toast(errText(e), "error"); } finally { setBusy(false); }
+  };
+  const list = (data?.friends ?? []).filter((f) => !query.trim() || `${f.person.fullName} ${f.person.username}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const spots = data ? data.group.max - data.group.members : 0;
+  return (
+    <Dialog open={open} onClose={onClose} title={data ? t("gi.title", { group: data.group.name }) : t("gi.inviteFriends")} footer={data && data.friends.length > 0 ? <>
+      <Button variant="ghost" onClick={onClose}>{t("a.cancel")}</Button>
+      <Button variant="primary" icon="send" loading={busy} disabled={!picked.size} onClick={send}>{picked.size ? t("gi.sendN", { n: picked.size }) : t("gi.send")}</Button>
+    </> : undefined}>
+      {data === undefined ? <div className="stack g8">{[0, 1, 2].map((i) => <span key={i} className="skeleton" style={{ height: 52 }} />)}</div> : !data ? null : data.friends.length === 0 ? (
+        <div className="stack g12" style={{ alignItems: "center", textAlign: "center", padding: "8px 0" }}>
+          <Icon name="users" size={28} className="muted" />
+          <strong>{t("gi.noFriends")}</strong>
+          <p className="t-small secondary">{t("gi.noFriendsBody")}</p>
+          <a href="/app/chat?tab=friends" className="btn btn-primary btn-sm">{t("gi.findFriends")}</a>
+        </div>
+      ) : (
+        <div className="stack g12">
+          <div className="row between g8"><p className="t-small secondary">{t("gi.body")}</p><span className="t-meta" style={{ whiteSpace: "nowrap" }}>{t("gi.spots", { n: spots })}</span></div>
+          {data.friends.length > 6 && <TextInput aria-label={t("gi.search")} placeholder={t("gi.search")} value={query} onChange={(e) => setQuery(e.target.value)} />}
+          <ul className="invite-pick" role="listbox" aria-multiselectable>
+            {list.map((f, i) => {
+              const disabled = f.state === "member" || f.state === "invited";
+              const on = picked.has(f.person.id);
+              return (
+                <li key={f.person.id} style={{ ["--i" as string]: i }}>
+                  <button type="button" role="option" aria-selected={on} disabled={disabled} className="invite-pick-row" data-on={on || undefined} onClick={() => toggle(f.person.id)}>
+                    <Avatar name={f.person.fullName} src={f.person.avatar} size={40} />
+                    <span className="stack grow" style={{ minWidth: 0, textAlign: "left" }}>
+                      <span className="truncate" style={{ fontWeight: 500 }}>{f.person.fullName}</span>
+                      <span className="t-small secondary truncate">
+                        {f.state === "member" ? t("gi.stateMember") : f.state === "invited" ? t("gi.stateInvited") : f.state === "other_group" ? t("gi.stateOther", { group: f.otherGroup ?? "" }) : `@${f.person.username}`}
+                      </span>
+                    </span>
+                    <span className="pick-tick" aria-hidden>{(on || disabled) && <Icon name="check" size={14} />}</span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        </div>
+      )}
+    </Dialog>
+  );
+}
+
+/**
+ * Compact "my group" card for Home and the chat Groups tab: invites waiting for me first,
+ * then my group with a one-tap way to bring friends in, or a clear way to start one.
+ */
+export function GroupSpot({ compact }: { compact?: boolean }) {
+  const { t } = useI18n();
+  const toast = useToast();
+  const errText = useErrorText();
+  const router = useRouter();
+  const mine = useApiLite(() => api.myGroup());
+  const invites = useApiLite(() => api.myGroupInvites());
+  const [invite, setInvite] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  if (mine === undefined) return null;
+  const pending = invites ?? [];
+  const answer = async (messageId: string, decision: "accepted" | "declined", el: HTMLElement | null) => {
+    setBusy(messageId + decision);
+    try {
+      const { groupId } = await api.respondGroupInvite(messageId, decision, { switchGroup: Boolean(mine) });
+      if (decision === "accepted") { const { celebrate } = await import("@/lib/fx"); celebrate(el); router.push(`/app/groups/${groupId}`); }
+      else toast(t("gi.declinedToast"));
+    } catch (e) { toast(errText(e), "error"); } finally { setBusy(null); }
+  };
+  return (
+    <>
+      {pending.slice(0, 1).map((p) => (
+        <div key={p.messageId} className="invite-bubble invite-wide" style={{ ["--gc" as string]: p.group.color }}>
+          <span className="invite-bubble-band" aria-hidden />
+          <span className="t-small secondary row g8"><span className="pulse-dot" aria-hidden />{t("gi.pendingFrom", { name: p.from.fullName })}</span>
+          <div className="row g12" style={{ alignItems: "center" }}>
+            <GroupMark name={p.group.name} color={p.group.color} size={44} />
+            <span className="stack grow" style={{ minWidth: 0 }}><strong className="invite-bubble-name truncate">{p.group.name}</strong><span className="t-small secondary">{t("gi.card.members", { n: p.group.members })}</span></span>
+          </div>
+          {mine && <span className="t-small secondary">{t("gi.card.switchHint", { group: mine.group.name })}</span>}
+          <div className="row g8">
+            <Button size="sm" variant="primary" icon="check" className="grow" loading={busy === p.messageId + "accepted"} onClick={(e) => answer(p.messageId, "accepted", e.currentTarget)}>{mine ? t("gi.card.switch") : t("gi.card.join")}</Button>
+            <Button size="sm" variant="ghost" loading={busy === p.messageId + "declined"} onClick={(e) => answer(p.messageId, "declined", e.currentTarget)}>{t("gi.card.decline")}</Button>
+          </div>
+        </div>
+      ))}
+      {mine ? (
+        <div className={`card pad stack g12 group-spot${compact ? " compact" : ""}`} style={{ ["--gc" as string]: mine.group.color }}>
+          <a href={`/app/groups/${mine.group.id}`} className="row g12" style={{ minWidth: 0 }}>
+            <GroupMark name={mine.group.name} color={mine.group.color} size={compact ? 36 : 44} />
+            <span className="stack grow" style={{ minWidth: 0 }}>
+              <span className="t-small secondary">{t("gr.myGroup")}</span>
+              <strong className="truncate">{mine.group.name}</strong>
+            </span>
+            <span className="t-meta num">{t("gr.level")} {mine.level}</span>
+          </a>
+          <div className="row g8">
+            {mine.members.length < 30 && <Button size="sm" variant="primary" icon="userPlus" className="grow" onClick={() => setInvite(true)}>{t("gi.inviteFriends")}</Button>}
+            <a href={`/app/chat/g_${mine.group.id}`} className="btn btn-secondary btn-sm"><Icon name="message" size={16} />{t("gr.chat")}</a>
+          </div>
+          <GroupInviteDialog open={invite} onClose={() => setInvite(false)} />
+        </div>
+      ) : pending.length === 0 && (
+        <a href="/app/groups" className="card pad row g12 group-spot-empty">
+          <span className="choice-icon" style={{ width: 40, height: 40 }}><Icon name="users" size={20} /></span>
+          <span className="stack grow" style={{ minWidth: 0 }}><strong>{t("gr.create")}</strong><span className="t-small secondary">{t("gi.step2")} · {t("gi.step3").toLowerCase()}</span></span>
+          <Icon name="chevronRight" size={16} className="muted" />
+        </a>
+      )}
+    </>
+  );
+}
+
+/** Minimal live query (re-runs when the store changes). */
+function useApiLite<T>(fn: () => Promise<T>): T | undefined {
+  const q = useApiHook(fn);
+  return q.data;
 }

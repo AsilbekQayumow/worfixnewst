@@ -1163,13 +1163,13 @@ export const api = {
       const messages = db.groupMessages.filter((m) => m.groupId === g.id).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)).map((m) => {
         const sig = m.signalId ? db.helpSignals.find((x) => x.id === m.signalId) ?? null : null;
         return {
-          ...m, kind: m.kind, mission: null, joined: false,
+          ...m, kind: m.kind, mission: null, joined: false, invite: null,
           signal: sig ? { id: sig.id, title: sig.title, place: sig.place, status: sig.status, expiresAt: sig.expiresAt, responders: sig.responders.length, going: sig.responders.includes(u.id) } : null,
         };
       });
       return {
         kind: "group" as const, id, me: u.id, title: g.name, subtitle: "", color: g.color, avatar: null as string | null, group: { id: g.id, members: g.members.length, ownerId: g.ownerId },
-        person: null, isFriend: false, canWrite: true, otherIsAdmin: false, names, messages, myActive,
+        person: null, isFriend: false, canWrite: true, otherIsAdmin: false, names, messages, myActive, groupInvite: null,
       };
     }
     const other = db.users.find((x) => x.id === id && x.status === "active");
@@ -1178,12 +1178,18 @@ export const api = {
     const messages = db.messages.filter((m) => m.chatId === chatId).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)).map((m) => ({
       ...m, mission: missionOf(m.missionId), signal: null,
       joined: m.missionId ? db.participants.some((p) => p.id === `${m.missionId}_${u.id}` && p.status === "accepted") : false,
+      invite: m.kind === "group_invite" && m.group ? inviteInfo(db, u.id, m.group.id) : null,
     }));
     const adminThread = isAdmin(u.role) || isAdmin(other.role);
     const friend = relationOf(db, u.id, id) === "friend";
     return {
       kind: "direct" as const, id, me: u.id, title: other.fullName, subtitle: "", color: null as string | null, avatar: other.avatar, group: null,
       person: person(other), isFriend: friend, canWrite: friend || adminThread, otherIsAdmin: isAdmin(other.role),
+      groupInvite: (() => {
+        const mine = groupOf(db, u.id);
+        if (!friend || !mine || other.role !== "volunteer") return null;
+        return { groupName: mine.name, state: mine.members.includes(other.id) ? "member" as const : pendingGroupInvite(db, mine.id, other.id) ? "invited" as const : "free" as const };
+      })(),
       names: { [u.id]: { name: u.fullName, avatar: u.avatar }, [other.id]: { name: other.fullName, avatar: other.avatar } } as Record<string, { name: string; avatar: string | null }>,
       messages, myActive,
     };
@@ -1786,6 +1792,105 @@ export const api = {
     });
   },
 
+  /* ───────────── v3.1: group invites sent as chat messages ───────────── */
+  /** Friends of the signed-in member with what an invite to my group would do for each. */
+  async groupInviteCandidates() {
+    await ready();
+    const db = getDB();
+    const u = actor(db);
+    const g = groupOf(db, u.id);
+    if (!g) return null;
+    const friends = [...friendIdsOf(db, u.id)].flatMap((id) => {
+      const x = db.users.find((y) => y.id === id && y.status === "active" && y.role === "volunteer");
+      if (!x) return [];
+      const other = groupOf(db, x.id);
+      const state: "member" | "other_group" | "invited" | "free" = other?.id === g.id ? "member" : pendingGroupInvite(db, g.id, x.id) ? "invited" : other ? "other_group" : "free";
+      return [{ person: person(x), state, otherGroup: other && other.id !== g.id ? other.name : null }];
+    });
+    const order = { free: 0, other_group: 1, invited: 2, member: 3 } as const;
+    return {
+      group: { id: g.id, name: g.name, color: g.color, members: g.members.length, max: GROUP_MAX_MEMBERS },
+      friends: friends.sort((a, b) => order[a.state] - order[b.state] || a.person.fullName.localeCompare(b.person.fullName)),
+    };
+  },
+
+  /** Sends each friend a chat message with a one-tap invite to my group. */
+  async inviteToGroup(friendIds: string[]) {
+    await ready();
+    let sent = 0;
+    await commit((db) => {
+      const u = actor(db);
+      const g = groupOf(db, u.id);
+      if (!g) throw new DomainError("not_found", "e.notFound");
+      const code = db.groupCodes.find((c) => c.groupId === g.id);
+      if (!code) throw new DomainError("invalid_state", "e.inviteExpired");
+      let room = GROUP_MAX_MEMBERS - g.members.length;
+      for (const fid of new Set(friendIds)) {
+        if (fid === u.id || relationOf(db, u.id, fid) !== "friend") continue;
+        if (g.members.includes(fid) || pendingGroupInvite(db, g.id, fid)) continue;
+        if (room <= 0) throw new DomainError("conflict", "e.groupFull");
+        room -= 1;
+        db.messages.push({
+          id: uid(), chatId: chatIdOf(u.id, fid), participants: [u.id, fid].sort() as [string, string], from: u.id, text: g.name, kind: "group_invite",
+          missionId: null, readBy: [u.id], createdAt: nowIso(), reactions: {}, replyTo: null, editedAt: null, deletedAt: null, via: null,
+          group: { id: g.id, name: g.name, color: g.color, code: code.id }, inviteStatus: null,
+        });
+        notify(db, fid, "system", "n.groupInvite", { name: u.fullName, group: g.name }, `/app/chat/${u.id}`);
+        sent += 1;
+      }
+      if (sent) log(db, u, "group.invite", "groups", g.id, String(sent));
+    });
+    return { sent };
+  },
+
+  /** Group invites waiting for my answer (shown on the Groups page). */
+  async myGroupInvites() {
+    await ready();
+    const db = getDB();
+    const u = actor(db);
+    return db.messages
+      .filter((m) => m.kind === "group_invite" && m.participants.includes(u.id) && m.from !== u.id && !m.inviteStatus && !m.deletedAt && m.group)
+      .flatMap((m) => {
+        const g = db.groups.find((x) => x.id === m.group!.id);
+        const from = db.users.find((x) => x.id === m.from);
+        if (!g || !from || g.members.includes(u.id)) return [];
+        return [{ messageId: m.id, from: person(from), group: { id: g.id, name: g.name, color: g.color, members: g.members.length, description: g.description }, createdAt: m.createdAt }];
+      })
+      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  },
+
+  /** Accepts (optionally leaving my current group first) or declines a group invite from a chat. */
+  async respondGroupInvite(messageId: string, decision: "accepted" | "declined", opts: { switchGroup?: boolean } = {}) {
+    await ready();
+    const db0 = getDB();
+    const me = actor(db0);
+    const msg = db0.messages.find((x) => x.id === messageId && x.kind === "group_invite" && x.participants.includes(me.id) && x.from !== me.id);
+    if (!msg?.group) throw new DomainError("not_found", "e.notFound");
+    const target = msg.group;
+    if (decision === "accepted") {
+      const current = groupOf(db0, me.id);
+      if (current && current.id !== target.id) {
+        if (!opts.switchGroup) throw new DomainError("conflict", "e.inGroup");
+        await api.leaveGroup();
+      }
+      if (!current || current.id !== target.id) {
+        try { await api.joinGroup(target.code); } catch (e) {
+          if (e instanceof ValidationError) throw new DomainError("invalid_state", "e.inviteExpired");
+          if (!(e instanceof DomainError && e.message === "e.alreadyMember")) throw e;
+        }
+      }
+    }
+    await commit((db) => {
+      const u = actor(db);
+      const m = db.messages.find((x) => x.id === messageId);
+      if (!m) return;
+      m.inviteStatus = decision;
+      if (!m.readBy.includes(u.id)) m.readBy = [...m.readBy, u.id];
+      if (decision === "declined") notify(db, m.from, "system", "n.groupInviteDeclined", { name: u.fullName, group: target.name }, `/app/chat/${u.id}`);
+    });
+    return { groupId: target.id };
+  },
+
   /* ───────────── v3: leaderboards ───────────── */
   async leaderboard(opts: { entity: "volunteers" | "groups"; scope: Scope; period: "month" | "all" }) {
     await ready();
@@ -2306,6 +2411,22 @@ async function ensureProfile(id: string, init: { provider: "phone" | "telegram";
     if (!FIREBASE) startSession(me);
   });
   return strip(getDB().users.find((x) => x.id === id)!);
+}
+
+/** An unanswered invite from any member of this group to this person. */
+function pendingGroupInvite(db: DB, groupId: string, userId: string) {
+  return db.messages.some((m) => m.kind === "group_invite" && m.group?.id === groupId && m.participants.includes(userId) && m.from !== userId && !m.inviteStatus && !m.deletedAt);
+}
+
+/** What a group invite card shows right now: the live group and where the viewer stands. */
+function inviteInfo(db: DB, viewerId: string, groupId: string) {
+  const g = db.groups.find((x) => x.id === groupId);
+  const mine = groupOf(db, viewerId);
+  return {
+    exists: Boolean(g), members: g?.members.length ?? 0, full: g ? g.members.length >= GROUP_MAX_MEMBERS : false,
+    description: g?.description ?? "", isMember: Boolean(g?.members.includes(viewerId)),
+    otherGroup: mine && mine.id !== groupId ? mine.name : null,
+  };
 }
 
 /** The group a volunteer belongs to (one at a time). */

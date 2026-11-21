@@ -337,6 +337,20 @@ async function seed(db: DB) {
   });
   gmsg(timur.id, "Bu hafta ariq bo‘yini tozalashga chiqamiz, kim bor?", 300);
   gmsg(aziza.id, "Men boraman, qoplarni olaman", 240);
+  // v3.1: Malika runs a reading group in Tashkent and has invited the demo volunteer in chat.
+  const readersId = uid();
+  const readersCode = makeGroupCode();
+  db.groups.push({
+    id: readersId, name: "Kitob do‘stlari", description: "Maktab kutubxonalarida bolalar bilan ertak va kitob soatlari o‘tkazamiz.", color: "#7a4cc2", ownerId: malika.id,
+    members: [malika.id], province: "Tashkent", district: "Chilonzor", mahalla: "Navro‘z", createdAt: ago(8),
+  });
+  db.groupCodes.push({ id: readersCode, groupId: readersId, createdAt: ago(8) });
+  const mchat = [vol.id, malika.id].sort().join("_");
+  db.messages.push({
+    id: uid(), chatId: mchat, participants: [vol.id, malika.id].sort() as [string, string], from: malika.id, text: "Kitob do‘stlari", kind: "group_invite",
+    missionId: null, readBy: [malika.id], createdAt: new Date(Date.now() - 95 * 60_000).toISOString(), reactions: {}, replyTo: null, editedAt: null, deletedAt: null, via: null,
+    group: { id: readersId, name: "Kitob do‘stlari", color: "#7a4cc2", code: readersCode }, inviteStatus: null,
+  });
   db.helpSignals.push({
     id: uid(), userId: timur.id, groupId, missionId: null, title: "Ariq bo‘yi — qo‘l kerak", note: "Plastik ko‘p, yana 2–3 kishi kerak.",
     location: { lat: 39.6626, lng: 66.9851 }, place: "Siyob ariqi", radiusKm: 2, province: "Samarqand Region", district: "Samarqand shahri", city: "Samarkand",

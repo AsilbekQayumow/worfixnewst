@@ -2,6 +2,7 @@
 import { AnnouncementBanner } from "@/components/admin-comms";
 import Link from "next/link";
 import { Medal } from "@/components/achievements";
+import { GroupSpot } from "@/components/group-bits";
 import { Icon } from "@/components/icons";
 import { MissionCard } from "@/components/mission-card";
 import { useMe } from "@/components/providers";
@@ -102,6 +103,7 @@ export default function Home() {
         </div>
 
         <aside className="stack g16">
+          {me.role === "volunteer" && <GroupSpot />}
           {d?.next && (
             <Link href="/app/profile?tab=achievements" className="card pad row g12">
               <Medal a={d.next} />

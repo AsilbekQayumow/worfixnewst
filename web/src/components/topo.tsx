@@ -2,7 +2,7 @@
 import { useMemo } from "react";
 
 /** Deterministic contour lines around a few "hills" — the hand-drawn field map behind the hero. */
-function contours(w: number, h: number) {
+export function contours(w: number, h: number) {
   const hills = [
     { x: 0.28, y: 0.32, r: 1, k: 9 },
     { x: 0.78, y: 0.7, r: 0.8, k: 7 },

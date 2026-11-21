@@ -1,8 +1,8 @@
 "use client";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
-import { GroupDialog, GroupMark, InviteCard } from "@/components/group-bits";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { GroupDialog, GroupInviteDialog, GroupMark, InviteCard } from "@/components/group-bits";
 import { Icon } from "@/components/icons";
 import { SignalRow } from "@/components/signals";
 import { Avatar, Button, ButtonLink, CategoryTag, Dialog, Empty, Progress, Skeleton, useToast } from "@/components/ui";
@@ -19,6 +19,9 @@ export default function GroupPage() {
   const { id } = useParams<{ id: string }>();
   const q = useApi(() => api.group(id), [id]);
   const [edit, setEdit] = useState(false);
+  const [invite, setInvite] = useState(false);
+  const params = useSearchParams();
+  useEffect(() => { if (params.get("invite") === "1") { setInvite(true); router.replace(`/app/groups/${id}`); } }, [params, id, router]);
   const [leave, setLeave] = useState(false);
   const [remove, setRemove] = useState<{ id: string; name: string } | null>(null);
   const run = async (fn: () => Promise<unknown>, ok?: string) => { try { await fn(); if (ok) toast(ok); } catch (e) { toast(errText(e), "error"); } };
@@ -40,7 +43,8 @@ export default function GroupPage() {
             {g.description && <p className="secondary">{g.description}</p>}
           </div>
           <div className="row g8 wrap">
-            {d.isMember && <ButtonLink href={`/app/chat/g_${g.id}`} variant="primary" icon="message">{t("gr.chat")}</ButtonLink>}
+            {d.isMember && d.members.length < 30 && <Button variant="primary" icon="userPlus" onClick={() => setInvite(true)}>{t("gi.inviteFriends")}</Button>}
+            {d.isMember && <ButtonLink href={`/app/chat/g_${g.id}`} icon="message">{t("gr.chat")}</ButtonLink>}
             {d.isMember && <ButtonLink href="/app/signals?new=1" icon="zap">{t("sg.call")}</ButtonLink>}
             {d.isOwner && <Button icon="edit" variant="ghost" onClick={() => setEdit(true)}>{t("a.edit")}</Button>}
           </div>
@@ -117,6 +121,7 @@ export default function GroupPage() {
         </aside>
       </div>
 
+      <GroupInviteDialog open={invite} onClose={() => setInvite(false)} />
       <GroupDialog open={edit} onClose={() => setEdit(false)} initial={{ id: g.id, name: g.name, description: g.description, color: g.color }} />
       <Dialog open={leave} onClose={() => setLeave(false)} title={t("gr.leaveTitle")} footer={<>
         <Button variant="ghost" onClick={() => setLeave(false)}>{t("a.cancel")}</Button>

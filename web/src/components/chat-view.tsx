@@ -4,7 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { useErrorText, useFmt, useI18n } from "@/lib/i18n";
 import { api, REACTIONS } from "@/lib/store/api";
 import { useApi } from "@/lib/store/hooks";
-import { GroupMark } from "./group-bits";
+import { useRouter } from "next/navigation";
+import { celebrate } from "@/lib/fx";
+import type { Message } from "@/lib/domain/types";
+import { GroupMark, GroupSpot } from "./group-bits";
 import { Icon } from "./icons";
 import { Avatar, Button, ButtonLink, CategoryTag, Dialog, Empty, Skeleton, useToast } from "./ui";
 
@@ -42,7 +45,10 @@ export function ChatView({ openId, base = "/app/chat", kind = "direct", onPickKi
         </div>
         {kind === "group" ? (
           !groups.data ? <div style={{ padding: 16 }}><Skeleton rows={2} height={48} /></div> : groups.data.length === 0 ? (
-            <Empty icon="users" title={t("chat.noGroup")} body={t("chat.noGroupBody")} action={<ButtonLink href="/app/groups" size="sm" variant="primary">{t("gr.open")}</ButtonLink>} />
+            <div className="stack g12" style={{ padding: "4px 12px 16px" }}>
+              <p className="t-small secondary" style={{ padding: "0 4px" }}>{t("chat.noGroupBody")}</p>
+              <GroupSpot compact />
+            </div>
           ) : (
             <ul>
               {groups.data.map((c) => {
@@ -62,7 +68,7 @@ export function ChatView({ openId, base = "/app/chat", kind = "direct", onPickKi
                   </li>
                 );
               })}
-              <li style={{ padding: "8px 16px" }}><Link href="/app/groups" className="t-small link row g4"><Icon name="users" size={14} />{t("gr.myGroup")}</Link></li>
+              <li style={{ padding: "8px 12px" }}><GroupSpot compact /></li>
             </ul>
           )
         ) : !direct.data ? <div style={{ padding: 16 }}><Skeleton rows={4} height={48} /></div> : direct.data.length === 0 ? (
@@ -99,6 +105,7 @@ export function ChatView({ openId, base = "/app/chat", kind = "direct", onPickKi
 function previewOf(m: { kind: string; text: string; deletedAt?: string | null }, t: (k: string, v?: Record<string, string | number>) => string, from = "") {
   if (m.deletedAt) return t("chat.deleted");
   if (m.kind === "invite") return t("chat.inviteShort", { title: m.text });
+  if (m.kind === "group_invite") return t("gi.preview", { group: m.text });
   if (m.kind === "signal") return `${t("sg.short")}: ${m.text}`;
   if (m.kind === "system") return systemText(m.text, t);
   return from ? `${from}: ${m.text}` : m.text;
@@ -192,7 +199,13 @@ function Thread({ id, base }: { id: string; base: string }) {
       <div className="row g12" style={{ padding: "12px 16px", borderBottom: "1px solid var(--line)" }}>
         <Link href={base + (group ? "?tab=groups" : "")} className="btn btn-ghost btn-sm btn-icon chat-back" aria-label={t("a.back")}><Icon name="arrowLeft" size={16} /></Link>
         {headHref ? <Link href={headHref} className="row g12 grow" style={{ minWidth: 0 }}>{head}</Link> : <span className="row g12 grow" style={{ minWidth: 0 }}>{head}</span>}
-        {d.isFriend && <Button size="sm" icon="flag" onClick={() => setPick(true)}>{t("chat.inviteBtn")}</Button>}
+        {d.groupInvite && d.groupInvite.state !== "member" && (
+          <Button size="sm" icon="users" disabled={d.groupInvite.state === "invited"} title={d.groupInvite.groupName}
+            onClick={() => act(async () => { await api.inviteToGroup([id]); toast(t("gi.sent", { n: 1 })); })}>
+            <span className="hide-sm">{d.groupInvite.state === "invited" ? t("gi.headInvited") : t("gi.headBtn")}</span>
+          </Button>
+        )}
+        {d.isFriend && <Button size="sm" icon="flag" onClick={() => setPick(true)}><span className="hide-sm">{t("chat.inviteBtn")}</span></Button>}
         {group && <ButtonLink size="sm" icon="zap" href="/app/signals?new=1">{t("sg.call")}</ButtonLink>}
       </div>
       <div ref={scroller} className="chat-scroll">
@@ -224,6 +237,8 @@ function Thread({ id, base }: { id: string; base: string }) {
                   <span className="row g8 t-small secondary">{t("sg.going", { n: m.signal.responders })}{m.signal.going ? ` · ${t("sg.youGo")}` : ""}</span>
                   <span className="bubble-time">{f.time(m.createdAt)}</span>
                 </Link>
+              ) : m.kind === "group_invite" && "group" in m && m.group ? (
+                <GroupInviteBubble m={m as InviteMsg} mine={mine} fromName={d.names[m.from]?.name ?? "—"} />
               ) : m.kind === "invite" && m.mission ? (
                 <div className="card pad stack g8" style={{ maxWidth: 360, width: "100%" }}>
                   <span className="t-small secondary row g8"><Icon name="hands" size={16} />{mine ? t("chat.youInvited") : t("chat.invitedYou")}</span>
@@ -333,5 +348,72 @@ function Thread({ id, base }: { id: string; base: string }) {
         )}
       </Dialog>
     </>
+  );
+}
+
+type InviteMsg = Message & { invite: { exists: boolean; members: number; full: boolean; description: string; isMember: boolean; otherGroup: string | null } | null };
+
+/** A group invite inside a personal chat: the friend joins, switches group or declines right here. */
+function GroupInviteBubble({ m, mine, fromName }: { m: InviteMsg; mine: boolean; fromName: string }) {
+  const { t } = useI18n();
+  const f = useFmt();
+  const toast = useToast();
+  const errText = useErrorText();
+  const router = useRouter();
+  const [busy, setBusy] = useState<"join" | "decline" | null>(null);
+  const [confirmSwitch, setConfirmSwitch] = useState(false);
+  const card = useRef<HTMLDivElement>(null);
+  const g = m.group!;
+  const info = m.invite;
+  const answer = async (decision: "accepted" | "declined", switchGroup = false) => {
+    setBusy(decision === "accepted" ? "join" : "decline");
+    try {
+      await api.respondGroupInvite(m.id, decision, { switchGroup });
+      if (decision === "accepted") { celebrate(card.current); toast(t("gi.joinedToast", { group: g.name })); }
+      else toast(t("gi.declinedToast"));
+    } catch (e) { toast(errText(e), "error"); } finally { setBusy(null); }
+  };
+  const status = m.inviteStatus;
+  let footer: React.ReactNode;
+  if (mine) {
+    footer = <span className={`status ${status === "accepted" ? "s-ok" : status === "declined" ? "s-neutral" : "s-warn"}`}>{status === "accepted" ? t("gi.card.theyJoined") : status === "declined" ? t("gi.card.declined") : t("gi.card.waiting")}</span>;
+  } else if (!info?.exists) footer = <span className="t-small muted">{t("gi.card.gone")}</span>;
+  else if (info.isMember) footer = <Button size="sm" variant="primary" icon="users" onClick={() => router.push(`/app/groups/${g.id}`)}>{t("gi.card.open")}</Button>;
+  else if (status === "declined") footer = <span className="status s-neutral">{t("gi.card.declined")}</span>;
+  else if (info.full) footer = <span className="t-small muted">{t("gi.card.full")}</span>;
+  else if (info.otherGroup) footer = (
+    <div className="stack g8">
+      <span className="t-small secondary">{t("gi.card.switchHint", { group: info.otherGroup })}</span>
+      <div className="row g8">
+        <Button size="sm" variant="primary" loading={busy === "join"} onClick={() => setConfirmSwitch(true)}>{t("gi.card.switch")}</Button>
+        <Button size="sm" variant="ghost" loading={busy === "decline"} onClick={() => answer("declined")}>{t("gi.card.decline")}</Button>
+      </div>
+    </div>
+  );
+  else footer = (
+    <div className="row g8">
+      <Button size="sm" variant="primary" icon="check" loading={busy === "join"} onClick={() => answer("accepted")} className="grow">{t("gi.card.join")}</Button>
+      <Button size="sm" variant="ghost" loading={busy === "decline"} onClick={() => answer("declined")}>{t("gi.card.decline")}</Button>
+    </div>
+  );
+  return (
+    <div ref={card} className="invite-bubble" style={{ ["--gc" as string]: g.color }} data-mine={mine || undefined}>
+      <span className="invite-bubble-band" aria-hidden />
+      <span className="t-small secondary row g8"><Icon name="users" size={14} />{mine ? t("gi.card.youInvited") : `${fromName.split(" ")[0]} · ${t("gi.card.invitedYou")}`}</span>
+      <div className="row g12" style={{ alignItems: "center" }}>
+        <GroupMark name={g.name} color={g.color} size={52} />
+        <span className="stack" style={{ minWidth: 0 }}>
+          <strong className="truncate invite-bubble-name">{g.name}</strong>
+          <span className="t-small secondary">{t("gi.card.members", { n: info?.members ?? 0 })}</span>
+        </span>
+      </div>
+      {info?.description && <p className="t-small secondary invite-bubble-desc">{info.description}</p>}
+      {footer}
+      <span className="bubble-time">{f.time(m.createdAt)}</span>
+      <Dialog open={confirmSwitch} onClose={() => setConfirmSwitch(false)} title={t("gi.card.switch")} footer={<>
+        <Button variant="ghost" onClick={() => setConfirmSwitch(false)}>{t("a.cancel")}</Button>
+        <Button variant="primary" onClick={() => { setConfirmSwitch(false); void answer("accepted", true); }}>{t("gi.card.join")}</Button>
+      </>}><p className="t-small secondary">{t("gi.card.switchHint", { group: info?.otherGroup ?? "" })}</p></Dialog>
+    </div>
   );
 }

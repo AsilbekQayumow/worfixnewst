@@ -390,7 +390,7 @@ export interface Message {
   participants: [string, string];
   from: string;
   text: string;
-  kind: "text" | "invite";
+  kind: "text" | "invite" | "group_invite";
   missionId: string | null;
   readBy: string[];
   createdAt: string;
@@ -404,6 +404,10 @@ export interface Message {
   deletedAt?: string | null;
   /** v2.1: "admin" for a message sent by the moderation team */
   via?: "admin" | null;
+  /** v3.1: the group a "group_invite" message invites to (code lets the friend join in one tap) */
+  group?: { id: string; name: string; color: string; code: string } | null;
+  /** v3.1: the invited friend's answer to a group invite */
+  inviteStatus?: "accepted" | "declined" | null;
 }
 
 /** v2.1: an announcement from the admins, shown to everyone (or one audience) in notifications and on the home page. */

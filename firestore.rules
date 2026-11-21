@@ -180,11 +180,20 @@ service cloud.firestore {
         && request.resource.data.text.size() <= 2200
         && request.resource.data.get('deletedAt', null) == null
         && (request.resource.data.get('via', null) != 'admin' || isAdmin())
+        // v3.1: a group invite is sent only by a member of that group, with that group's current code
+        && (request.resource.data.get('kind', 'text') != 'group_invite'
+            || (memberOf(request.resource.data.group.id)
+                && get(/databases/$(db)/documents/groupCodes/$(request.resource.data.group.code)).data.groupId == request.resource.data.group.id
+                && request.resource.data.get('inviteStatus', null) == null))
         && (areFriends(request.resource.data.participants[0], request.resource.data.participants[1])
             || isAdmin() || userIsAdmin(otherOf(request.resource.data.participants)));
       allow update: if signedIn() && uid() in resource.data.participants && (
         // Either participant: read receipts and reactions.
         onlyTouches(['readBy', 'reactions'])
+        // v3.1: the invited friend answers a group invite
+        || (resource.data.from != uid() && resource.data.kind == 'group_invite'
+            && onlyTouches(['readBy', 'inviteStatus'])
+            && request.resource.data.inviteStatus in ['accepted', 'declined'])
         // The sender: edit or delete their own text message.
         || (resource.data.from == uid() && resource.data.kind == 'text'
             && onlyTouches(['text', 'editedAt', 'deletedAt', 'reactions', 'readBy'])

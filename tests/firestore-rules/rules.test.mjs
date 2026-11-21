@@ -133,6 +133,18 @@ test("group chat: members only", async () => {
   await assertSucceeds(updateDoc(doc(as("bob"), "groupMessages/gm1"), { reactions: { "👍": ["bob"] } }));
   await assertFails(updateDoc(doc(as("bob"), "groupMessages/gm1"), { text: "forged" }));
 });
+test("v3.1 group invites in chat: members send with the real code; the friend answers", async () => {
+  await env.withSecurityRulesDisabled(async (c) => { await setDoc(doc(c.firestore(), "friendships/alice_carol"), { id: "alice_carol", from: "alice", to: "carol", status: "accepted" }); });
+  const inv = (id, from, to, extra = {}) => msg(from, to, { id, kind: "group_invite", text: "G1", group: { id: "g1", name: "G1", color: "#0a6a2c", code: "WFX-ABCDE" }, inviteStatus: null, ...extra });
+  await assertSucceeds(setDoc(doc(as("alice"), "messages/gi1"), inv("gi1", "alice", "carol")));
+  await assertFails(setDoc(doc(as("carol"), "messages/gi2"), inv("gi2", "carol", "alice")));
+  await assertFails(setDoc(doc(as("alice"), "messages/gi3"), inv("gi3", "alice", "carol", { group: { id: "g1", name: "G1", color: "#0a6a2c", code: "WFX-ZZZZZ" } })));
+  await assertFails(setDoc(doc(as("alice"), "messages/gi4"), inv("gi4", "alice", "carol", { inviteStatus: "accepted" })));
+  await assertFails(updateDoc(doc(as("alice"), "messages/gi1"), { inviteStatus: "accepted" }));
+  await assertFails(updateDoc(doc(as("carol"), "messages/gi1"), { inviteStatus: "maybe" }));
+  await assertFails(updateDoc(doc(as("carol"), "messages/gi1"), { inviteStatus: "accepted", text: "x" }));
+  await assertSucceeds(updateDoc(doc(as("carol"), "messages/gi1"), { inviteStatus: "declined", readBy: ["alice", "carol"] }));
+});
 test("groups: a member leaves; the owner cannot add people directly", async () => {
   await assertSucceeds(updateDoc(doc(as("bob"), "groups/g1"), { members: ["alice", "dave"] }));
   await assertFails(updateDoc(doc(as("alice"), "groups/g1"), { members: ["alice", "dave", "carol"] }));

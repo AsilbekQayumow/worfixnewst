@@ -1,10 +1,12 @@
 "use client";
 import Link from "next/link";
+import { HeroScene, Leaves } from "@/components/hero-scene";
 import { Icon, type IconName } from "@/components/icons";
 import { MissionCard } from "@/components/mission-card";
-import { TopoMap } from "@/components/topo";
-import { ButtonLink, Coins, Skeleton } from "@/components/ui";
-import { DIFFICULTY_REWARD } from "@/lib/domain/rewards";
+import { CountUp, Reveal, Words } from "@/components/motion";
+import { RankBadge } from "@/components/rank";
+import { ButtonLink, Skeleton } from "@/components/ui";
+import { RANKS } from "@/lib/domain/rewards";
 import { useFmt, useI18n } from "@/lib/i18n";
 import { api } from "@/lib/store/api";
 import { useApi } from "@/lib/store/hooks";
@@ -14,102 +16,130 @@ export default function Landing() {
   const f = useFmt();
   const stats = useApi(() => api.publicStats());
   const missions = useApi(() => api.listMissions({ scope: "public" }));
+  const open = (missions.data ?? []).filter((m) => m.status === "published");
 
   const steps: { icon: IconName; title: string; body: string }[] = [
-    { icon: "radar", title: t("home.s1t"), body: t("home.s1b") },
-    { icon: "route", title: t("home.s2t"), body: t("home.s2b") },
-    { icon: "camera", title: t("home.s3t"), body: t("home.s3b") },
-    { icon: "award", title: t("home.s4t"), body: t("home.s4b") },
+    { icon: "radar", title: t("ld.how1"), body: t("ld.how1b") },
+    { icon: "users", title: t("ld.how2"), body: t("ld.how2b") },
+    { icon: "camera", title: t("ld.how3"), body: t("ld.how3b") },
   ];
+  const titleWords = t("ld.title1").split(" ").length;
 
   return (
-    <>
-      <section className="hero">
+    <div className="landing">
+      <section className="hero hero-v31">
+        <div className="hero-glow" aria-hidden />
         <div className="container hero-grid">
-          <div className="stack g24 enter">
-            <h1 className="t-display">{t("home.title")}</h1>
-            <p className="t-lead">{t("home.lead")}</p>
-            <div className="row g12 wrap">
-              <ButtonLink href="/register" variant="primary" size="lg">{t("home.cta")}</ButtonLink>
-              <ButtonLink href="/missions" variant="ghost" size="lg" icon="compass">{t("home.cta2")}</ButtonLink>
+          <div className="stack g24 hero-copy">
+            <span className="live-chip">
+              <span className="pulse-dot" aria-hidden />
+              {t("ld.live")}{stats.data ? <> · <strong className="num">{f.num(stats.data.openMissions)}</strong> {t("home.statOpen").toLowerCase()}</> : null}
+            </span>
+            <h1 className="t-display hero-title">
+              <span className="line"><Words text={t("ld.title1")} start={120} /></span>
+              <span className="line hero-accent">
+                <Words text={t("ld.title2")} start={120 + titleWords * 70} />
+                <svg className="scribble" viewBox="0 0 300 18" preserveAspectRatio="none" aria-hidden>
+                  <path d="M3 13 C 60 4, 120 4, 170 9 S 260 15, 297 6" pathLength={1} />
+                </svg>
+              </span>
+            </h1>
+            <p className="t-lead hero-lead">{t("ld.lead")}</p>
+            <div className="row g12 wrap hero-ctas">
+              <ButtonLink href="/register" variant="primary" size="lg" className="btn-shine">{t("ld.start")} <Icon name="arrowRight" size={18} /></ButtonLink>
+              <ButtonLink href="/missions" variant="ghost" size="lg" icon="compass">{t("ld.see")}</ButtonLink>
             </div>
+            <span className="t-small muted hero-kicker">{t("ld.kicker")}</span>
           </div>
-
-          <div style={{ position: "relative", paddingBottom: 24 }}>
-            <div className="topo-card"><TopoMap /></div>
-            <div className="float-card float-mission" style={{ bottom: 0, width: 280, padding: 16 }}>
-              <div className="row between g8" style={{ marginBottom: 8 }}>
-                <span className="tag cat-environment"><span className="cat-dot" />{t("cat.environment")}</span>
-                <span className="t-meta">1.2 km</span>
-              </div>
-              <p style={{ fontWeight: 500, marginBottom: 12 }}>{t("home.demoMission")}</p>
-              <div className="row between" style={{ borderTop: "1px dashed var(--line-strong)", paddingTop: 10 }}>
-                <span className="status s-ok">{t("vs.approved")}</span>
-                <span className="row g12 t-small num"><span style={{ fontWeight: 500 }}>+{DIFFICULTY_REWARD.medium.xp} XP</span><Coins value={`+${DIFFICULTY_REWARD.medium.coins}`} size={14} /></span>
-              </div>
-            </div>
-            <div className="float-card" style={{ right: 16, top: 20, padding: "10px 14px" }}>
-              <span className="row g8 t-small"><Icon name="award" size={16} /> {t("home.levelCert", { n: 5 })}</span>
-            </div>
-          </div>
+          <HeroScene />
         </div>
+        <a href="#how" className="scroll-cue" aria-label={t("ld.scroll")}><span /></a>
       </section>
 
-      <section className="container">
-        <div className="panel" style={{ padding: "20px 24px" }}>
+      {open.length > 0 && (
+        <div className="ticker" aria-label={t("home.upcoming")}>
+          <div className="ticker-track">
+            {[0, 1].map((dup) => (
+              <ul key={dup} aria-hidden={dup === 1 || undefined}>
+                {open.slice(0, 10).map((m) => (
+                  <li key={m.id}><span className={`cat-dot cat-${m.category}`} />{m.title}<span className="t-meta">{m.location.split(",")[0]}</span></li>
+                ))}
+              </ul>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <section className="container" style={{ marginTop: 56 }}>
+        <Reveal className="panel stats-panel">
           {stats.data ? (
             <div className="grid cols-4">
-              {[
-                [t("home.statActions"), f.num(stats.data.verifiedActions)],
-                [t("home.statHours"), f.num(stats.data.hours)],
-                [t("home.statOpen"), f.num(stats.data.openMissions)],
-                [t("home.statOrgs"), f.num(stats.data.organizations)],
-              ].map(([k, v]) => (
-                <div key={k} className="stack g4">
-                  <span className="stat-value">{v}</span>
+              {([
+                [t("home.statActions"), stats.data.verifiedActions, "checkCircle"],
+                [t("home.statHours"), stats.data.hours, "clock"],
+                [t("home.statOpen"), stats.data.openMissions, "flag"],
+                [t("home.statOrgs"), stats.data.organizations, "building"],
+              ] as const).map(([k, v, icon], i) => (
+                <div key={k} className="stack g4 stat-cell" style={{ ["--i" as string]: i }}>
+                  <Icon name={icon} size={18} className="accent-text" />
+                  <span className="stat-value stat-big"><CountUp value={v} format={(n) => f.num(Math.round(n))} /></span>
                   <span className="t-small secondary">{k}</span>
                 </div>
               ))}
             </div>
           ) : <Skeleton rows={1} />}
           {stats.data?.includesDemoData && <p className="t-small muted" style={{ marginTop: 12 }}>{t("home.demoNote")}</p>}
-        </div>
+        </Reveal>
       </section>
 
-      <section className="container" style={{ marginTop: 96 }}>
-        <h2 className="t-h1" style={{ maxWidth: 640, marginBottom: 40 }}>{t("home.howTitle")}</h2>
-        <div style={{ position: "relative" }}>
-          <svg className="how-trail" viewBox="0 0 1000 40" preserveAspectRatio="none" aria-hidden style={{ position: "absolute", left: 20, right: 20, top: 2, width: "calc(100% - 40px)", height: 40 }}>
-            <path d="M0,20 C150,0 250,40 400,20 S650,0 800,20 S950,30 1000,20" fill="none" stroke="var(--line-strong)" strokeWidth={2.5} strokeDasharray="1 9" strokeLinecap="round" vectorEffect="non-scaling-stroke" />
+      <section className="container section-gap" id="how">
+        <Reveal><h2 className="t-h1 section-heading">{t("ld.howTitle")}</h2></Reveal>
+        <Reveal className="how3">
+          <svg className="how-trail" viewBox="0 0 1000 60" preserveAspectRatio="none" aria-hidden>
+            <path d="M0,30 C150,0 250,60 400,30 S650,0 800,30 S950,45 1000,30" pathLength={1} />
           </svg>
-          <ol className="grid cols-4" style={{ position: "relative", gap: 32 }}>
-            {steps.map((s) => (
-              <li key={s.title} className="stack g12">
-                <span style={{ width: 44, height: 44, borderRadius: 22, display: "grid", placeItems: "center", background: "var(--surface)", border: "1px solid var(--line-strong)" }}>
-                  <Icon name={s.icon} size={20} />
-                </span>
+          <ol className="grid cols-3">
+            {steps.map((s, i) => (
+              <li key={s.title} className="card pad-lg how-card" style={{ ["--i" as string]: i }}>
+                <span className="how-num num">0{i + 1}</span>
+                <span className="how-icon"><Icon name={s.icon} size={22} /></span>
                 <h3 className="t-h3">{s.title}</h3>
                 <p className="t-small secondary">{s.body}</p>
               </li>
             ))}
           </ol>
-        </div>
+        </Reveal>
       </section>
 
-      <section className="container" style={{ marginTop: 96 }}>
-        <div className="row between wrap g12" style={{ marginBottom: 20 }}>
+      <section className="container section-gap">
+        <Reveal className="panel ranks-panel">
+          <h2 className="t-h2" style={{ maxWidth: 520 }}>{t("ld.ranksTitle")}</h2>
+          <ol className="rank-road">
+            {RANKS.map((r, i) => (
+              <li key={r.id} style={{ ["--i" as string]: i }}>
+                <RankBadge rank={r.id} size={56} />
+                <strong>{t(`rank.${r.id}`)}</strong>
+                <span className="t-meta">{t("lvl.short", { n: r.from })}</span>
+              </li>
+            ))}
+          </ol>
+        </Reveal>
+      </section>
+
+      <section className="container section-gap">
+        <Reveal className="row between wrap g12" style={{ marginBottom: 20 }}>
           <h2 className="t-h1">{t("home.upcoming")}</h2>
           <Link href="/missions" className="btn btn-ghost">{t("home.allMissions")} <Icon name="arrowRight" size={16} /></Link>
-        </div>
+        </Reveal>
         {missions.data ? (
-          <div className="grid cols-3">
-            {missions.data.slice(0, 3).map((m) => <MissionCard key={m.id} m={m} href={`/missions/${m.id}`} />)}
-          </div>
+          <Reveal className="grid cols-3 stagger-cards">
+            {missions.data.slice(0, 3).map((m, i) => <div key={m.id} style={{ ["--i" as string]: i }} className="lift"><MissionCard m={m} href={`/missions/${m.id}`} /></div>)}
+          </Reveal>
         ) : <Skeleton rows={2} height={180} />}
       </section>
 
-      <section className="container" style={{ marginTop: 96 }}>
-        <div className="panel split" style={{ padding: 32 }}>
+      <section className="container section-gap">
+        <Reveal className="panel split" style={{ padding: 32 }}>
           <div className="stack g12">
             <h2 className="t-h1">{t("home.orgTitle")}</h2>
             <p className="secondary" style={{ maxWidth: 520 }}>{t("home.orgBody")}</p>
@@ -126,8 +156,19 @@ export default function Landing() {
               </li>
             ))}
           </ul>
-        </div>
+        </Reveal>
       </section>
-    </>
+
+      <section className="container section-gap">
+        <Reveal className="cta-band">
+          <Leaves />
+          <div className="stack g12" style={{ position: "relative", maxWidth: 560 }}>
+            <h2 className="t-h1">{t("ld.ctaTitle")}</h2>
+            <p className="cta-body">{t("ld.ctaBody")}</p>
+          </div>
+          <ButtonLink href="/register" size="lg" className="cta-btn btn-shine">{t("ld.start")} <Icon name="arrowRight" size={18} /></ButtonLink>
+        </Reveal>
+      </section>
+    </div>
   );
 }
