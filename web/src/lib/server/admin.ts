@@ -1,10 +1,10 @@
 /**
  * Server-only: Firebase Admin SDK for the Netlify functions that must write what a browser may not
- * (AI review results and rewards, promo-code delivery, Telegram sign-in tokens).
+ * (AI review results and rewards, promo-code delivery, the daily territory decay).
  *
  * Configure with FIREBASE_SERVICE_ACCOUNT = the service-account JSON from
  * Firebase console → Project settings → Service accounts → Generate new private key (raw JSON or base64).
- * Without it these functions answer 501 and the app falls back (admins review; admins issue codes; no Telegram).
+ * Without it these functions answer 501 and the app falls back (admins review; admins issue codes; areas decay when their owner opens the map).
  */
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";

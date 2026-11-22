@@ -101,6 +101,12 @@ export function useFmt() {
       if (abs < 86400 * 30) return rtf.format(Math.round(diff / 86400), "day");
       return new Date(iso).toLocaleDateString(locale, { day: "numeric", month: "short" });
     },
+    month: (d: Date = new Date()) => {
+      const name = uz ? UZ_MONTHS[d.getMonth()] : d.toLocaleDateString(locale, { month: "long" });
+      return name.charAt(0).toUpperCase() + name.slice(1);
+    },
+    area: (m2: number) => (m2 >= 100_000 ? t("u.km2", { n: (m2 / 1_000_000).toFixed(2) }) : t("u.m2", { n: (uz ? Math.round(m2).toLocaleString("ru-RU") : Math.round(m2).toLocaleString(locale)) })),
+    clock: (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`,
     coords: (lat: number, lng: number) => `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? "N" : "S"}  ${Math.abs(lng).toFixed(4)}° ${lng >= 0 ? "E" : "W"}`,
   }), [locale, t, uz]);
 }

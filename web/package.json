@@ -1,6 +1,6 @@
 {
   "name": "worfix-web",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
@@ -11,6 +11,16 @@
     "prebuild": "node scripts/check-env.mjs"
   },
   "dependencies": {
+    "@turf/area": "^7.4.0",
+    "@turf/bbox": "^7.4.0",
+    "@turf/boolean-point-in-polygon": "^7.4.0",
+    "@turf/centroid": "^7.4.0",
+    "@turf/difference": "^7.4.0",
+    "@turf/helpers": "^7.4.0",
+    "@turf/intersect": "^7.4.0",
+    "@turf/simplify": "^7.4.0",
+    "@turf/union": "^7.4.0",
+    "@turf/unkink-polygon": "^7.4.0",
     "firebase": "^13.4.0",
     "firebase-admin": "^13.10.0",
     "maplibre-gl": "^5.24.1",

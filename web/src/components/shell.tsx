@@ -1,7 +1,7 @@
 "use client";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect, type ReactNode } from "react";
+import { Suspense, useEffect, useRef, type ReactNode } from "react";
 import { homeForRole, canEnterArea, type Area } from "@/lib/domain/permissions";
 import { useI18n } from "@/lib/i18n";
 import { api } from "@/lib/store/api";
@@ -9,7 +9,7 @@ import { useApi } from "@/lib/store/hooks";
 import { Logo } from "./brand";
 import { Icon, type IconName } from "./icons";
 import { useMe, useTheme } from "./providers";
-import { Avatar, Coins, Skeleton } from "./ui";
+import { Avatar, Coins, Skeleton, useToast } from "./ui";
 import { LangSwitch } from "./lang-switch";
 import { DemoBanner } from "./demo-banner";
 import { LevelUp } from "./level-up";
@@ -28,7 +28,7 @@ function navItems(area: Area, t: (k: string) => string, b: Badges | undefined): 
   if (area === "volunteer") return {
     main: [
       { href: "/app", label: t("nav.home"), icon: "home", mobile: true, exact: true, badge: b?.signals },
-      { href: "/app/missions", label: t("nav.missions"), icon: "flag", mobile: true, also: ["/app/explore"] },
+      { href: "/app/map", label: t("nav.map"), icon: "map", mobile: true, also: ["/app/missions", "/app/explore"] },
       { href: "/app/chat", label: t("nav.chat"), icon: "message", badge: (b?.messages ?? 0) + (b?.friends ?? 0), mobile: true, also: ["/app/friends", "/app/groups", "/app/people", "/app/join"] },
       { href: "/app/rating", label: t("nav.rating"), icon: "trophy", mobile: true },
       { href: "/app/shop", label: t("nav.shop"), icon: "bag" },
@@ -96,9 +96,21 @@ function ShellInner({ area, children }: { area: Area; children: ReactNode }) {
   const { theme, toggle } = useTheme();
   const router = useRouter();
   const path = usePathname();
-  const tab = useSearchParams().get("tab");
+  const search = useSearchParams();
+  const tab = search.get("tab");
+  // v3.2: the map runs edge to edge
+  const bleed = path === "/app/map" && search.get("view") !== "list";
   const nav = useNav(area);
   const b = nav.b;
+
+  // v3.2: a group that approved my join request takes me in on my next visit.
+  const toast = useToast();
+  const claimed = useRef(false);
+  useEffect(() => {
+    if (!me || me.role !== "volunteer" || claimed.current) return;
+    claimed.current = true;
+    void api.claimApprovedJoins().then((g) => { if (g) toast(t("jr.joinedToast", { group: g.name })); }).catch(() => {});
+  }, [me, t, toast]);
 
   useEffect(() => {
     if (me === undefined) return;
@@ -166,7 +178,7 @@ function ShellInner({ area, children }: { area: Area; children: ReactNode }) {
         </header>
         <DemoBanner />
         {area === "volunteer" && <LevelUp />}
-        <main className="main" id="main">
+        <main className={bleed ? "main main-bleed" : "main"} id="main">
           <div className="main-inner">{children}</div>
         </main>
         <nav className="tabbar" aria-label={t("nav.main")}>

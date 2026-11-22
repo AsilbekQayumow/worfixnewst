@@ -6,7 +6,7 @@ import { levelForXp } from "./rewards";
 import type { Group, Mission, Submission, UserProfile } from "./types";
 
 export const GROUP_MAX_MEMBERS = 30;
-export const GROUP_COLORS = ["#0a6a2c", "#1d5fa8", "#b4580f", "#6b3fa0", "#b32554", "#0f7a7a"] as const;
+export const GROUP_COLORS = ["#0a6a2c", "#1d5fa8", "#b4580f", "#5b6b2f", "#b32554", "#0f7a7a"] as const;
 export const SIGNAL_RADIUS_KM = 2;
 export const SIGNAL_HOURS = 6;
 export const SIGNALS_PER_DAY = 3;

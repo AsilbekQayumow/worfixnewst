@@ -5,7 +5,7 @@ ma'lumotlar Firebase'da (`worfix3` loyihasi) saqlanadi. Netlify'ga qayta deploy 
 
 ## 1. Firestore qoidalarini yangilash (bir marta, deploydan oldin)
 
-v3 funksiyalari (guruhlar va guruh chati, yordam signallari, yangiliklar, promo-kodlar, telefon/Telegram orqali kirish,
+v3 funksiyalari (guruhlar va guruh chati, yordam signallari, yangiliklar, promo-kodlar,
 AI tekshiruvi) yangi qoidalarni talab qiladi. **Qoidalarni yangilamasangiz, bu funksiyalar "server ruxsat bermadi" xatosini beradi.**
 
 **Brauzer orqali:** Firebase console → `worfix3` → Firestore Database → **Rules** → ichidagini `firestore.rules`
@@ -38,15 +38,13 @@ npx firebase-tools deploy --only firestore:rules,firestore:indexes --project wor
 | `GEMINI_API_KEY` | Google AI Studio kaliti (**Secret** deb belgilang) |
 | `ORS_API_KEY` | openrouteservice.org kaliti (**Secret** deb belgilang) |
 | `FIREBASE_SERVICE_ACCOUNT` | **v3, tavsiya etiladi.** Firebase console → Project settings → Service accounts → **Generate new private key** → yuklangan JSON faylning to'liq matni (**Secret**) |
-| `TELEGRAM_BOT_TOKEN` | v3, ixtiyoriy: @BotFather bergan bot tokeni (**Secret**) |
-| `NEXT_PUBLIC_TELEGRAM_BOT` | v3, ixtiyoriy: botning username'i, `@` siz (masalan `worfix_uz_bot`) |
 
 Firebase qiymatlari `netlify.toml` ichida allaqachon bor, ularni qayta kiritish shart emas.
 
 **`FIREBASE_SERVICE_ACCOUNT` nima beradi:** agent missiyalarini AI serverda tekshiradi va mukofotni o'zi yozadi;
-promo-kodlar xariddan so'ng darhol beriladi; Telegram orqali kirish ishlaydi. U bo'lmasa sayt ishlayveradi:
-agent missiyalarini admin tekshiradi, promo-kodni admin "Kutayotganlarga kod berish" tugmasi bilan beradi,
-Telegram tugmasi ko'rinmaydi.
+promo-kodlar xariddan so'ng darhol beriladi; har kuni tunda hududlar qisqarishi (`territory-decay`) hammaga qo'llanadi.
+U bo'lmasa sayt ishlayveradi: agent missiyalarini admin tekshiradi, promo-kodni admin "Kutayotganlarga kod berish"
+tugmasi bilan beradi, hudud esa faqat egasi Xaritani ochganda qisqaradi.
 
 Firebase qiymatlari maxfiy emas, ular brauzerga ochiq beriladi. Himoyani Firestore qoidalari ta'minlaydi.
 `GEMINI_API_KEY` va `ORS_API_KEY` esa faqat serverda ishlaydi va brauzerga chiqmaydi.
@@ -59,12 +57,14 @@ tasodifan bo'sh "demo rejim"da ochilib qolmaydi.
 Firebase console → Authentication → Settings → **Authorized domains** → **Add domain** → Netlify bergan manzil
 (masalan `worfix-uz.netlify.app`) va o'zingizning domeningiz. Bu qilinmasa, kirish va ro'yxatdan o'tish ishlamaydi.
 
-## 3a. Telefon (SMS) va Telegram orqali kirish
+## 3a. Xarita va hududlar (v3.2)
 
-- **Telefon:** Firebase console → Authentication → Sign-in method → **Phone** → Enable. SMS uchun Firebase loyihasi
-  **Blaze** (to'lovli) tarifda bo'lishi kerak. Test uchun shu sahifada "Phone numbers for testing" ga raqam va kod qo'shish mumkin.
-- **Telegram:** @BotFather → `/newbot` → token → Netlify'ga `TELEGRAM_BOT_TOKEN` va `NEXT_PUBLIC_TELEGRAM_BOT`.
-  Keyin @BotFather → `/setdomain` → saytingiz domeni (masalan `worfix.uz`). `FIREBASE_SERVICE_ACCOUNT` ham kerak.
+- Kirish faqat email orqali. Avvalgi `TELEGRAM_BOT_TOKEN` va `NEXT_PUBLIC_TELEGRAM_BOT` o'zgaruvchilarini Netlify'dan o'chirib
+  tashlasangiz bo'ladi; Firebase'da **Phone** provayderini ham o'chirsa bo'ladi.
+- `territory-decay` funksiyasi Netlify'da **Scheduled function** sifatida har kuni 00:15 UTC da o'zi ishlaydi
+  (Netlify → Logs → Functions'da ko'rinadi). `FIREBASE_SERVICE_ACCOUNT` kerak.
+- Firestore rules'ni qayta e'lon qiling: yangi `territories`, `territoryCaptures`, `groupRequests` kolleksiyalari bor.
+- Xarita GPS'dan foydalanadi: sayt HTTPS'da ochilishi shart (Netlify buni avtomatik beradi).
 
 ## 4. Admin
 

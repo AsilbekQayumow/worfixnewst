@@ -53,7 +53,6 @@ function Register() {
       <div className="stack g8">
         <h1 className="t-h1">{t("auth.registerTitle")}</h1>
         <p className="secondary">{t("auth.registerSub")}</p>
-        <Link href="/login?method=phone" className="t-small link">{t("auth.phoneSignup")}</Link>
       </div>
 
       <div className="grid cols-2" role="radiogroup" aria-label={t("auth.accountType")}>

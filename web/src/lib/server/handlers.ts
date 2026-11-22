@@ -2,16 +2,17 @@
  * Server functions that need the Firebase Admin SDK (see admin.ts):
  *  • ai-review   — the AI reviews an agent-mission submission and the decision (with rewards) is written here;
  *  • shop-fulfil — gives a paid promo-code order the next free code;
- *  • telegram-auth — checks a Telegram Login Widget result and returns a Firebase custom token.
+ *  • territory-decay — daily: areas with ignored missions inside shrink;
  */
-import { createHash, createHmac, randomUUID, timingSafeEqual } from "node:crypto";
+import { randomUUID } from "node:crypto";
 import { aiMock, verifyPhotos } from "../ai/handlers";
 import { AiError } from "../ai/server";
 import { aiNote, aiReviewer, AI_REVIEWER_ID, decideAi, type AiVerdict } from "../domain/ai-review";
 import { runChecks } from "../domain/checks";
 import { isAgentOrg } from "../domain/permissions";
 import { reviewSubmission } from "../domain/verification";
-import { LANGS, type Lang, type Mission, type MissionParticipant, type Notification, type Order, type PromoCode, type Submission, type UserProfile } from "../domain/types";
+import { LANGS, type Lang, type Mission, type MissionParticipant, type Notification, type Order, type PromoCode, type Submission, type Territory, type UserProfile } from "../domain/types";
+import { bboxOf, centerOf, contains, decay, decodeShape, encodeShape, seasonOf, shapeArea, TERRITORY } from "../domain/territory";
 import { adminApp, adminAuth, adminDb, caller, notConfigured, tooMany } from "./admin";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
@@ -125,30 +126,55 @@ export async function handleShopFulfil(req: Request): Promise<Response> {
   return json(out.body, out.status);
 }
 
-/* ───────────── telegram-auth ───────────── */
+/* ───────────── territory-decay (daily) ───────────── */
 
-/** Telegram Login Widget check: HMAC-SHA256 of the sorted fields with SHA-256(bot token) as the key. */
-export function telegramValid(data: Record<string, string | number>, botToken: string, nowSec = Math.floor(Date.now() / 1000)) {
-  const { hash, ...rest } = data;
-  if (typeof hash !== "string" || !/^[0-9a-f]{64}$/.test(hash)) return false;
-  const check = Object.keys(rest).sort().map((k) => `${k}=${rest[k]}`).join("\n");
-  const secret = createHash("sha256").update(botToken).digest();
-  const mine = createHmac("sha256", secret).update(check).digest("hex");
-  const age = nowSec - Number(rest.auth_date);
-  return timingSafeEqual(Buffer.from(mine), Buffer.from(hash)) && age >= 0 && age < 86_400;
-}
-
-export async function handleTelegramAuth(req: Request): Promise<Response> {
-  const bot = process.env.TELEGRAM_BOT_TOKEN;
-  if (!bot || !adminApp()) return notConfigured();
-  const ip = req.headers.get("x-nf-client-connection-ip") ?? req.headers.get("x-forwarded-for") ?? "?";
-  if (tooMany(`tg:${ip}`, 10)) return json({ error: "ai.tooMany" }, 429);
-  const data = ((await req.json().catch(() => null)) ?? {}) as Record<string, string | number>;
-  const allowed = ["id", "first_name", "last_name", "username", "photo_url", "auth_date", "hash"];
-  const clean = Object.fromEntries(Object.entries(data).filter(([k]) => allowed.includes(k)));
-  if (!clean.id || !telegramValid(clean, bot)) return json({ error: "e.telegramFailed" }, 401);
-  const tgId = String(clean.id);
-  const token = await adminAuth().createCustomToken(`tg_${tgId}`, { tg: tgId });
-  const name = [clean.first_name, clean.last_name].filter(Boolean).join(" ").slice(0, 80);
-  return json({ token, name });
+/**
+ * Once a day: every area this month with an open mission inside that nobody on the owner's side joined
+ * within the grace period loses 10% a day. Same rules as the app (domain/territory.ts).
+ */
+export async function runTerritoryDecay(now = Date.now()) {
+  if (!adminApp()) return { skipped: "not configured" };
+  const db = adminDb();
+  const season = seasonOf(now);
+  const [tSnap, mSnap, gSnap] = await Promise.all([
+    db.collection("territories").where("season", "==", season).get(),
+    db.collection("missions").where("status", "==", "published").get(),
+    db.collection("groups").get(),
+  ]);
+  const missions = mSnap.docs.map((d) => d.data() as Mission).filter((m) => m.source !== "agent" && m.coordinates && Date.parse(m.date) > now);
+  const groups = gSnap.docs.map((d) => d.data() as { id: string; members: string[] });
+  const joinedBy = new Map<string, Set<string>>();
+  let changed = 0;
+  for (const doc of tSnap.docs) {
+    const t = doc.data() as Territory;
+    const shape = decodeShape(t.shape);
+    if (!shape || t.areaM2 <= 0) continue;
+    const g = groups.find((x) => x.members.includes(t.userId));
+    const side = new Set(g ? g.members : [t.userId]);
+    const due: string[] = [];
+    for (const m of missions) {
+      if (!contains(shape, m.coordinates)) continue;
+      if (!joinedBy.has(m.id)) {
+        const ps = await db.collection("participants").where("missionId", "==", m.id).get();
+        joinedBy.set(m.id, new Set(ps.docs.map((d) => d.data() as MissionParticipant).filter((p) => p.status === "accepted").map((p) => p.userId)));
+      }
+      if ([...joinedBy.get(m.id)!].some((u) => side.has(u))) continue;
+      const at = Date.parse(m.publishedAt ?? m.createdAt) + TERRITORY.graceHours * 3_600_000;
+      if (at <= now) due.push(new Date(at).toISOString());
+    }
+    const r = decay(shape, t.decayCheckedAt, due, now);
+    if (!r.days) continue;
+    const area = shapeArea(r.shape);
+    const lost = t.areaM2 - area;
+    const n = note(t.userId, "system", "n.territoryShrunk", { area: `${Math.round(lost).toLocaleString("en-US").replace(/,/g, " ")} m²`, days: r.days }, "/app/map");
+    const batch = db.batch();
+    batch.update(doc.ref, {
+      shape: r.shape ? encodeShape(r.shape) : "", areaM2: area, center: r.shape ? centerOf(r.shape) : null, bbox: r.shape ? bboxOf(r.shape) : [],
+      lostM2: t.lostM2 + lost, decayCheckedAt: r.checkedAt, updatedAt: nowIso(),
+    });
+    batch.set(db.doc(`notifications/${n.id}`), n);
+    await batch.commit();
+    changed += 1;
+  }
+  return { season, checked: tSnap.size, shrunk: changed };
 }

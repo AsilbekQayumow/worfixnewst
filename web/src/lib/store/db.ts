@@ -11,14 +11,16 @@ import { sampleCatalog } from "../domain/shop";
 import * as cloud from "./cloud";
 import type {
   Announcement, AuditLog, Certificate, Cheer, Friendship, Group, GroupMessage, HelpSignal, Message, Mission, MissionParticipant, NewsPost, Notification,
-  Order, Organization, PromoCode, ShopItem, Submission, UserProfile, VerificationRecord,
+  Order, Organization, PromoCode, ShopItem, Submission, UserProfile, VerificationRecord, Territory, TerritoryCapture, GroupRequest,
 } from "../domain/types";
 import { makeGroupCode } from "../domain/community";
+import { bboxOf, centerOf, encodeShape, loopAround, seasonOf, traceToShape } from "../domain/territory";
 
 /** v3: invite code → group (the code is the document id, so it cannot be listed, only looked up). */
 export interface GroupCode { id: string; groupId: string; createdAt: string }
 /** v3: proof that a member joined with a valid code (checked by the security rules). */
-export interface GroupJoin { id: string; groupId: string; userId: string; code: string; createdAt: string }
+/** v3.2: or with an approved join request (`code` is then empty and `requestId` is set). */
+export interface GroupJoin { id: string; groupId: string; userId: string; code: string; createdAt: string; requestId?: string | null }
 
 export interface Credential { userId: string; salt: string; hash: string }
 export interface Token { token: string; userId: string; kind: "verify" | "reset"; expiresAt: string }
@@ -46,6 +48,9 @@ export interface DB {
   groupJoins: GroupJoin[];
   groupMessages: GroupMessage[];
   helpSignals: HelpSignal[];
+  territories: Territory[];
+  territoryCaptures: TerritoryCapture[];
+  groupRequests: GroupRequest[];
   promoCodes: PromoCode[];
   credentials: Credential[];
   tokens: Token[];
@@ -88,7 +93,7 @@ function empty(): DB {
   return {
     version: 2, users: [], organizations: [], missions: [], participants: [], submissions: [], records: [], certificates: [], notifications: [],
     audits: [], friendships: [], cheers: [], shopItems: [], orders: [], messages: [], announcements: [],
-    news: [], groups: [], groupCodes: [], groupJoins: [], groupMessages: [], helpSignals: [], promoCodes: [], credentials: [], tokens: [], loginAttempts: {},
+    news: [], groups: [], groupCodes: [], groupJoins: [], groupMessages: [], helpSignals: [], territories: [], territoryCaptures: [], groupRequests: [], promoCodes: [], credentials: [], tokens: [], loginAttempts: {},
   };
 }
 
@@ -341,7 +346,7 @@ async function seed(db: DB) {
   const readersId = uid();
   const readersCode = makeGroupCode();
   db.groups.push({
-    id: readersId, name: "Kitob do‘stlari", description: "Maktab kutubxonalarida bolalar bilan ertak va kitob soatlari o‘tkazamiz.", color: "#7a4cc2", ownerId: malika.id,
+    id: readersId, name: "Kitob do‘stlari", description: "Maktab kutubxonalarida bolalar bilan ertak va kitob soatlari o‘tkazamiz.", color: "#1d5fa8", ownerId: malika.id,
     members: [malika.id], province: "Tashkent", district: "Chilonzor", mahalla: "Navro‘z", createdAt: ago(8),
   });
   db.groupCodes.push({ id: readersCode, groupId: readersId, createdAt: ago(8) });
@@ -349,7 +354,7 @@ async function seed(db: DB) {
   db.messages.push({
     id: uid(), chatId: mchat, participants: [vol.id, malika.id].sort() as [string, string], from: malika.id, text: "Kitob do‘stlari", kind: "group_invite",
     missionId: null, readBy: [malika.id], createdAt: new Date(Date.now() - 95 * 60_000).toISOString(), reactions: {}, replyTo: null, editedAt: null, deletedAt: null, via: null,
-    group: { id: readersId, name: "Kitob do‘stlari", color: "#7a4cc2", code: readersCode }, inviteStatus: null,
+    group: { id: readersId, name: "Kitob do‘stlari", color: "#1d5fa8", code: readersCode }, inviteStatus: null,
   });
   db.helpSignals.push({
     id: uid(), userId: timur.id, groupId, missionId: null, title: "Ariq bo‘yi — qo‘l kerak", note: "Plastik ko‘p, yana 2–3 kishi kerak.",
@@ -361,6 +366,30 @@ async function seed(db: DB) {
     body: "Endi ko‘ngillilar guruh tuzib, QR kod orqali do‘stlarini taklif qilishi mumkin. Guruh a’zolari bajargan missiyalar guruh XP siga qo‘shiladi va mahalla, tuman, viloyat hamda respublika reytinglarida ko‘rinadi.\n\nYordam kerak bo‘lsa, “Yordam chaqirish” tugmasi yaqin atrofdagi ko‘ngillilarga signal yuboradi.",
     cover: null, category: "update", audience: "all", status: "published", pinned: true, publishAt: ago(1), link: "/app/chat?tab=groups", authorId: admin.id, createdAt: ago(1), updatedAt: ago(1),
   });
+  // v3.2: this month's areas around Samarkand — the group holds the Siyob canal, Jasur the university avenue,
+  // Dilnoza a small block with a mission that is waiting for her. Two fresh missions show the "first look".
+  const area = (userId: string, groupId: string | null, lat: number, lng: number, r: number, days: number) => {
+    const res = traceToShape(loopAround({ lat, lng }, r, 40, Date.now() - days * 86_400_000, 6));
+    if ("error" in res) return;
+    db.territories.push({
+      id: `${seasonOf()}_${userId}`, userId, groupId, season: seasonOf(), shape: encodeShape(res.shape), areaM2: res.areaM2, center: centerOf(res.shape), bbox: bboxOf(res.shape),
+      captures: 1, lostM2: 0, createdAt: ago(days), updatedAt: ago(days), decayCheckedAt: new Date().toISOString(), takenNotice: null,
+    });
+  };
+  area(timur.id, groupId, 39.6626, 66.9851, 260, 6);
+  area(aziza.id, groupId, 39.6712, 66.9446, 190, 4);
+  area(jasur.id, null, 39.6542, 66.9597, 230, 3);
+  area(vol.id, groupId, 39.6478, 66.9712, 150, 2);
+  const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
+  const fresh = mission({ title: "Bog‘ishamol ko‘chasida gul ekish", category: "environment", difficulty: "easy", duration: 90, location: "Bog‘ishamol ko‘chasi, Siyob yonida", lat: 39.6640, lng: 66.9832, date: at(3, 10), deadline: at(2, 18), capacity: 12, description: "Ko‘cha bo‘yidagi gulzorga ko‘chat ekamiz va sug‘oramiz. Asboblar beriladi.", impact: ["ko‘chat ekildi", 4] });
+  fresh.publishedAt = hoursAgo(1);
+  fresh.createdAt = hoursAgo(2);
+  const hidden = mission({ title: "Xiyobondagi skameykalarni bo‘yash", category: "community", difficulty: "easy", duration: 120, location: "Universitet xiyoboni, janubiy qism", lat: 39.6528, lng: 66.9590, date: at(5, 10), deadline: at(4, 18), capacity: 10, description: "Eski skameykalarni tozalab, qayta bo‘yaymiz.", impact: ["skameyka", 1] });
+  hidden.publishedAt = hoursAgo(2);
+  const waiting = mission({ title: "Hovlidagi maysazorni tozalash", category: "recycling", difficulty: "easy", duration: 60, location: "Registon ko‘chasi hovlisi", lat: 39.6482, lng: 66.9716, date: at(4, 16), deadline: at(3, 18), capacity: 8, description: "Hovlidagi chiqindini yig‘ib, saralaymiz.", impact: ["kg chiqindi", 3] });
+  waiting.publishedAt = hoursAgo(30);
+  waiting.createdAt = hoursAgo(31);
+
   const promoItem: ShopItem = {
     id: "promo-books-1y", title: { uz: "Kitob obunasi · 1 yil", ru: "Подписка на книги · 1 год", en: "Book subscription · 1 year" },
     description: { uz: "Hamkor kutubxonaning onlayn obunasi. Xariddan keyin promo-kod beriladi.", ru: "Онлайн-подписка партнёрской библиотеки. После покупки выдаётся промокод.", en: "A partner library's online subscription. You get a promo code after buying." },

@@ -1,10 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createHash, createHmac } from "node:crypto";
 import { decideAi, reverseGrant, aiNote } from "./ai-review";
 import { groupBoard, groupLevel, makeGroupCode, normaliseGroupCode, placeKey, scopeKey, signalAudience, volunteerBoard } from "./community";
 import { rankFor, levelTitleKey } from "./rewards";
-import { telegramValid } from "../server/handlers";
 import type { Group, Mission, Submission, UserProfile, VerificationCheck } from "./types";
 
 const u = (id: string, over: Partial<UserProfile> = {}): UserProfile => ({
@@ -99,12 +97,3 @@ test("overturning an approval takes back exactly what it granted", () => {
   assert.deepEqual(r.revoked.map((c) => c.id), ["c1"]);
 });
 
-test("Telegram login data is checked with the bot token", () => {
-  const token = "123:ABC";
-  const data: Record<string, string | number> = { id: 77, first_name: "Ali", auth_date: 1_800_000_000 };
-  const check = Object.keys(data).sort().map((k) => `${k}=${data[k]}`).join("\n");
-  const hash = createHmac("sha256", createHash("sha256").update(token).digest()).update(check).digest("hex");
-  assert.equal(telegramValid({ ...data, hash }, token, 1_800_000_100), true);
-  assert.equal(telegramValid({ ...data, first_name: "Vali", hash }, token, 1_800_000_100), false);
-  assert.equal(telegramValid({ ...data, hash }, token, 1_800_200_000), false);
-});

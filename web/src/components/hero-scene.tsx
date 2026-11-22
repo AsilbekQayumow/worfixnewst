@@ -10,12 +10,12 @@ import { Coins } from "./ui";
 
 const W = 600;
 const H = 560;
-const TRAIL = "M118,470 C170,430 160,380 220,360 S330,350 350,300 S420,230 452,196";
-const LOOP_MS = 12000;
+const TRAIL = "M150,430 C138,330 190,222 300,190 S482,150 520,250 S500,412 400,442 S208,492 150,430 Z";
+const LOOP_MS = 13500;
 
 /**
- * The landing hero: a field map that draws itself, a volunteer walks the trail to a mission,
- * the photo is approved and XP lands. Loops; holds still for reduced motion.
+ * The landing hero: a field map draws itself, a volunteer walks a loop, the loop fills in as their area,
+ * a new mission drops inside it (theirs to see first), the photo is approved and XP lands. Loops; holds still for reduced motion.
  */
 export function HeroScene() {
   const { t } = useI18n();
@@ -67,14 +67,16 @@ export function HeroScene() {
               {Array.from({ length: 6 }, (_, i) => <line key={`h${i}`} x1={0} y1={i * 100} x2={W} y2={i * 100} strokeDasharray="2 6" />)}
             </g>
 
-            {/* the trail from you to the mission */}
+            {/* the area the loop takes */}
+            <path d={TRAIL} className="area-fill" fill="var(--accent)" fillOpacity={0.18} stroke="var(--accent)" strokeWidth={2.5} />
+            {/* the loop being walked */}
             <g mask="url(#trail-mask)">
               <path d={TRAIL} fill="none" stroke="var(--surface)" strokeWidth={8} strokeLinecap="round" opacity={0.9} />
               <path d={TRAIL} fill="none" stroke="var(--text)" strokeWidth={3.2} strokeLinecap="round" strokeDasharray="1 8" />
             </g>
 
             {/* other missions nearby */}
-            {[[250, 250, "#1d6fb8", 1.9], [520, 420, "#c27a12", 2.1], [300, 470, "#7a4cc2", 2.3]].map(([x, y, c, d]) => (
+            {[[90, 200, "#1d6fb8", 1.9], [562, 470, "#c27a12", 2.1], [300, 528, "#a8322d", 2.3]].map(([x, y, c, d]) => (
               <g key={`${x}`} transform={`translate(${x} ${y})`}>
                 <g className="pin-pop" style={{ animationDelay: `${d}s` }}>
                   <circle r={5} fill={c as string} stroke="var(--surface)" strokeWidth={2.5} />
@@ -83,7 +85,7 @@ export function HeroScene() {
             ))}
 
             {/* you */}
-            <g transform="translate(118 470)">
+            <g transform="translate(150 430)">
               <circle r={10} className="ripple" fill="var(--info)" />
               <circle r={10} className="ripple r2" fill="var(--info)" />
               <g className="pin-pop" style={{ animationDelay: "1.1s" }}>
@@ -97,27 +99,28 @@ export function HeroScene() {
               <g className="walker">
                 <circle r={26} fill="url(#glow)" />
                 <circle r={7} fill="var(--accent)" stroke="var(--surface)" strokeWidth={3} />
-                <animateMotion ref={walker} begin="indefinite" dur="1.6s" fill="freeze" path={TRAIL} keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines="0.45 0 0.25 1" />
+                <animateMotion ref={walker} begin="indefinite" dur="2.6s" fill="freeze" path={TRAIL} keyPoints="0;1" keyTimes="0;1" calcMode="spline" keySplines="0.4 0 0.3 1" />
               </g>
             )}
 
             {/* the mission */}
-            <g transform="translate(452 196)">
-              <circle r={14} className="ripple accent" fill="var(--accent)" style={{ animationDelay: "4.9s" }} />
-              <g className="pin-drop" style={{ animationDelay: "1.5s" }}>
+            <text x={330} y={345} textAnchor="middle" className="area-label num" fontFamily="var(--font-display)" fontSize={22} fill="var(--accent)">+64 200 m²</text>
+            <g transform="translate(372 292)">
+              <circle r={22} className="first-ring" fill="none" stroke="#d99a00" strokeWidth={2.5} />
+              <g className="pin-drop" style={{ animationDelay: "6.4s" }}>
                 <path d="M0 0c-9-12-15-18-15-26a15 15 0 0 1 30 0c0 8-6 14-15 26Z" fill="var(--accent)" stroke="var(--surface)" strokeWidth={2.5} />
                 <circle cy={-26} r={5.5} fill="var(--surface)" />
               </g>
             </g>
-            <text x={470} y={232} fontFamily="var(--font-mono)" fontSize={11} fill="var(--text-2)" className="scene-label" style={{ animationDelay: "1.8s" }}>39.6542° N  66.9597° E</text>
-            <text x={136} y={500} fontFamily="var(--font-mono)" fontSize={11} fill="var(--text-2)" className="scene-label" style={{ animationDelay: "2.6s" }}>1.2 km · 16 min</text>
+            <text x={392} y={318} fontFamily="var(--font-mono)" fontSize={11} fill="var(--text-2)" className="scene-label" style={{ animationDelay: "6.8s" }}>39.6542° N  66.9597° E</text>
+            <text x={176} y={462} fontFamily="var(--font-mono)" fontSize={11} fill="var(--text-2)" className="scene-label" style={{ animationDelay: "2.6s" }}>1.4 km · 18 min</text>
           </svg>
         </div>
 
         <div className="float-card scene-mission layer-front">
           <div className="row between g8" style={{ marginBottom: 8 }}>
             <span className="tag cat-environment"><span className="cat-dot" />{t("cat.environment")}</span>
-            <span className="t-meta">1.2 km</span>
+            <span className="t-meta first-look">{t("tm.inYourArea")}</span>
           </div>
           <p style={{ fontWeight: 500, marginBottom: 12 }}>{t("home.demoMission")}</p>
           <div className="row between" style={{ borderTop: "1px dashed var(--line-strong)", paddingTop: 10, position: "relative" }}>

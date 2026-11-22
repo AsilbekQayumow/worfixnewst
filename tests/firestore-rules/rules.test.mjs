@@ -170,14 +170,13 @@ test("promo codes: unissued codes are secret; the buyer sees their own", async (
   await assertFails(updateDoc(doc(as("bob"), "promoCodes/p1"), { userId: "bob", orderId: "x" }));
   await assertSucceeds(getDoc(doc(as("admin"), "promoCodes/p1")));
 });
-test("phone and Telegram: verified flags come only from the sign-in token", async () => {
+test("legacy phone/Telegram flags cannot be set from the app", async () => {
   const phoneUser = env.authenticatedContext("ph1", { phone_number: "+998901234567" }).firestore();
-  await assertSucceeds(setDoc(doc(phoneUser, "users/ph1"), user("ph1", { phoneVerified: true, authProvider: "phone" })));
-  await assertFails(setDoc(doc(as("ph2"), "users/ph2"), user("ph2", { phoneVerified: true })));
-  const tg = env.authenticatedContext("tg_77", { tg: "77" }).firestore();
-  await assertSucceeds(setDoc(doc(tg, "users/tg_77"), user("tg_77", { telegramId: "77" })));
+  await assertFails(setDoc(doc(phoneUser, "users/ph1"), user("ph1", { phoneVerified: true, authProvider: "phone" })));
+  await assertSucceeds(setDoc(doc(as("ph2"), "users/ph2"), user("ph2")));
   await assertFails(setDoc(doc(as("tg_78"), "users/tg_78"), user("tg_78", { telegramId: "78" })));
   await assertFails(updateDoc(doc(as("bob"), "users/bob"), { phoneVerified: true }));
+  await assertFails(updateDoc(doc(as("bob"), "users/bob"), { telegramId: "1" }));
 });
 test("AI review: the volunteer cannot hide or forge the AI decision", async () => {
   await assertFails(updateDoc(doc(as("carol"), "submissions/sub1"), { aiReview: null }));
@@ -188,4 +187,50 @@ test("AI review: the volunteer cannot hide or forge the AI decision", async () =
 });
 test("orders cannot be created with a promo code", async () => {
   await assertFails(setDoc(doc(as("alice"), "orders/o9"), { id: "o9", userId: "alice", itemId: "i1", price: 50, status: "placed", code: "Y", promoCode: "SECRET-1" }));
+});
+
+test("v3.2 join requests: ask, a member answers, the asker joins without a code", async () => {
+  await env.withSecurityRulesDisabled(async (c) => {
+    const db = c.firestore();
+    await setDoc(doc(db, "users/frank"), user("frank"));
+    await setDoc(doc(db, "groups/gq"), group("gq", "alice", ["alice", "bob"]));
+  });
+  const req = (extra = {}) => ({ id: "gq_frank", groupId: "gq", userId: "frank", status: "pending", note: "salom", createdAt: "x", decidedBy: null, decidedAt: null, ...extra });
+  await assertFails(setDoc(doc(as("frank"), "groupRequests/gq_frank"), req({ status: "approved" })));
+  await assertFails(setDoc(doc(as("carol"), "groupRequests/gq_frank"), req()));
+  await assertSucceeds(setDoc(doc(as("frank"), "groupRequests/gq_frank"), req()));
+  // frank cannot let himself in, a stranger cannot, a member can
+  await assertFails(updateDoc(doc(as("frank"), "groupRequests/gq_frank"), { status: "approved", decidedBy: "frank", decidedAt: "y" }));
+  await assertFails(updateDoc(doc(as("carol"), "groupRequests/gq_frank"), { status: "approved", decidedBy: "carol", decidedAt: "y" }));
+  // without approval, joining with an empty code fails
+  const f0 = as("frank");
+  const early = writeBatch(f0);
+  early.set(doc(f0, "groupJoins/gq_frank"), { id: "gq_frank", groupId: "gq", userId: "frank", code: "", requestId: "gq_frank", createdAt: "x" });
+  early.update(doc(f0, "groups/gq"), { members: ["alice", "bob", "frank"] });
+  await assertFails(early.commit());
+  await assertSucceeds(updateDoc(doc(as("bob"), "groupRequests/gq_frank"), { status: "approved", decidedBy: "bob", decidedAt: "y" }));
+  const f = as("frank");
+  const b = writeBatch(f);
+  b.set(doc(f, "groupJoins/gq_frank"), { id: "gq_frank", groupId: "gq", userId: "frank", code: "", requestId: "gq_frank", createdAt: "x" });
+  b.update(doc(f, "groups/gq"), { members: ["alice", "bob", "frank"] });
+  b.update(doc(f, "groupRequests/gq_frank"), { status: "joined" });
+  await assertSucceeds(b.commit());
+});
+
+test("v3.2 territories: own area freely; others may only take area away; captures are honest about speed", async () => {
+  const terr = (id, userId, extra = {}) => ({ id, userId, groupId: null, season: "2026-11", shape: "[]", areaM2: 50000, center: null, bbox: [], captures: 1, lostM2: 0, createdAt: "x", updatedAt: "x", decayCheckedAt: "x", takenNotice: null, ...extra });
+  await assertSucceeds(setDoc(doc(as("alice"), "territories/2026-11_alice"), terr("2026-11_alice", "alice")));
+  await assertFails(setDoc(doc(as("alice"), "territories/2026-11_bob"), terr("2026-11_bob", "bob")));
+  await assertFails(setDoc(doc(as("admin"), "territories/2026-11_admin"), terr("2026-11_admin", "admin")));
+  await assertSucceeds(updateDoc(doc(as("alice"), "territories/2026-11_alice"), { areaM2: 90000, shape: "[[1]]", captures: 2 }));
+  // bob walks over part of it
+  await assertSucceeds(updateDoc(doc(as("bob"), "territories/2026-11_alice"), { areaM2: 70000, lostM2: 20000, shape: "[[2]]", takenNotice: { by: "bob", at: "y" } }));
+  await assertFails(updateDoc(doc(as("bob"), "territories/2026-11_alice"), { areaM2: 95000, lostM2: 25000 }));
+  await assertFails(updateDoc(doc(as("bob"), "territories/2026-11_alice"), { areaM2: 60000, lostM2: 30000, captures: 9 }));
+  await assertFails(updateDoc(doc(as("bob"), "territories/2026-11_alice"), { userId: "bob" }));
+  await assertFails(deleteDoc(doc(as("alice"), "territories/2026-11_alice")));
+  const cap = (extra = {}) => ({ id: "c1", userId: "bob", groupId: null, season: "2026-11", areaM2: 1, gainedM2: 1, distanceM: 1, durationS: 1, maxSpeedKmh: 7, droppedFast: 0, takenFrom: [], createdAt: "x", ...extra });
+  await assertSucceeds(setDoc(doc(as("bob"), "territoryCaptures/c1"), cap()));
+  await assertFails(setDoc(doc(as("bob"), "territoryCaptures/c2"), cap({ id: "c2", maxSpeedKmh: 60 })));
+  await assertFails(getDoc(doc(as("carol"), "territoryCaptures/c1")));
 });

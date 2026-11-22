@@ -20,7 +20,7 @@ export default function manifest(): MetadataRoute.Manifest {
       { src: "/icons/icon-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
     shortcuts: [
-      { name: "Missiyalar", url: "/app/missions?tab=explore" },
+      { name: "Xarita", url: "/app/map" },
       { name: "Xabarlar", url: "/app/chat" },
     ],
   };

@@ -164,6 +164,8 @@ export interface Mission {
   checklist?: string[];
   /** EXTRA (v2): why the agent picked this place */
   whyHere?: string;
+  /** v3.2: when it went live (territory owners get the first look for a few hours) */
+  publishedAt?: string | null;
 }
 
 export interface MissionParticipant {
@@ -489,4 +491,56 @@ export interface HelpSignal {
   status: "open" | "closed";
   createdAt: string;
   expiresAt: string;
+}
+
+/** v3.2: the area a volunteer holds this month (one document per person per season). */
+export interface Territory {
+  /** `${season}_${userId}` */
+  id: string;
+  userId: string;
+  /** the owner's group when the area was last taken; group areas are the union of their members' */
+  groupId: string | null;
+  /** "2026-11" — areas reset every month */
+  season: string;
+  /** MultiPolygon coordinates as JSON ([lng, lat]); empty string when nothing is left */
+  shape: string;
+  areaM2: number;
+  center: GeoPoint | null;
+  bbox: number[];
+  captures: number;
+  /** area lost to others and to decay this season */
+  lostM2: number;
+  /** the last "someone is taking your area" notice (one per person per 12 hours) */
+  takenNotice?: { by: string; at: string } | null;
+  createdAt: string;
+  updatedAt: string;
+  decayCheckedAt: string;
+}
+
+/** v3.2: one closed loop (no raw GPS is kept, only these figures for fair play checks). */
+export interface TerritoryCapture {
+  id: string;
+  userId: string;
+  groupId: string | null;
+  season: string;
+  areaM2: number;
+  gainedM2: number;
+  distanceM: number;
+  durationS: number;
+  maxSpeedKmh: number;
+  droppedFast: number;
+  takenFrom: { userId: string; areaM2: number }[];
+  createdAt: string;
+}
+
+/** v3.2: someone asks to join a group; any member can let them in. `${groupId}_${userId}` */
+export interface GroupRequest {
+  id: string;
+  groupId: string;
+  userId: string;
+  status: "pending" | "approved" | "declined" | "joined" | "cancelled";
+  note: string;
+  createdAt: string;
+  decidedBy: string | null;
+  decidedAt: string | null;
 }

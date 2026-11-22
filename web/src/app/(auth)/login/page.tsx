@@ -3,8 +3,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { useMe } from "@/components/providers";
-import { Button, Notice, PasswordInput, Segmented, TextInput } from "@/components/ui";
-import { PhoneLogin, TelegramLogin, telegramEnabled } from "@/components/phone-login";
+import { Button, Notice, PasswordInput, TextInput } from "@/components/ui";
 import type { SelfUser } from "@/lib/store/api";
 import { homeForRole } from "@/lib/domain/permissions";
 import { useErrorText, useI18n } from "@/lib/i18n";
@@ -17,7 +16,6 @@ function Login() {
   const router = useRouter();
   const params = useSearchParams();
   const next = params.get("next");
-  const [method, setMethod] = useState<"email" | "phone" | "telegram">(params.get("method") === "phone" ? "phone" : "email");
   const { reload } = useMe();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -52,22 +50,8 @@ function Login() {
         <h1 className="t-h1">{t("auth.loginTitle")}</h1>
         <p className="secondary">{t("auth.loginSub")}</p>
       </div>
-      <Segmented value={method} onChange={setMethod} label={t("auth.method")} items={[
-        { value: "email", label: t("auth.byEmail") }, { value: "phone", label: t("auth.byPhone") },
-        ...(telegramEnabled() ? [{ value: "telegram" as const, label: "Telegram" }] : []),
-      ]} />
     </div>
   );
-  if (method !== "email") {
-    return (
-      <div className="stack g20">
-        {head}
-        {method === "phone" ? <PhoneLogin onDone={done} /> : <TelegramLogin onDone={done} />}
-        <p className="t-small secondary">{t("auth.phoneOrgNote")} <Link href="/register" className="link">{t("auth.register")}</Link></p>
-      </div>
-    );
-  }
-
   return (
     <form className="stack g20" onSubmit={submit} noValidate>
       {head}

@@ -3,7 +3,7 @@ import QRCode from "qrcode";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { GROUP_COLORS } from "@/lib/domain/community";
-import { useErrorText, useI18n } from "@/lib/i18n";
+import { useErrorText, useFmt, useI18n } from "@/lib/i18n";
 import { api, ValidationError } from "@/lib/store/api";
 import { useApi as useApiHook } from "@/lib/store/hooks";
 import { Icon } from "./icons";
@@ -242,9 +242,9 @@ export function GroupSpot({ compact }: { compact?: boolean }) {
               <span className="t-small secondary">{t("gr.myGroup")}</span>
               <strong className="truncate">{mine.group.name}</strong>
             </span>
-            <span className="t-meta num">{t("gr.level")} {mine.level}</span>
+            {!compact && <span className="t-meta num">{t("gr.level")} {mine.level}</span>}
           </a>
-          <div className="row g8">
+          <div className={compact ? "stack g8" : "row g8"}>
             {mine.members.length < 30 && <Button size="sm" variant="primary" icon="userPlus" className="grow" onClick={() => setInvite(true)}>{t("gi.inviteFriends")}</Button>}
             <a href={`/app/chat/g_${mine.group.id}`} className="btn btn-secondary btn-sm"><Icon name="message" size={16} />{t("gr.chat")}</a>
           </div>
@@ -265,4 +265,84 @@ export function GroupSpot({ compact }: { compact?: boolean }) {
 function useApiLite<T>(fn: () => Promise<T>): T | undefined {
   const q = useApiHook(fn);
   return q.data;
+}
+
+/** For someone outside the group: ask to join (the request lands in the group chat). */
+export function JoinRequestBox({ groupId }: { groupId: string }) {
+  const { t } = useI18n();
+  const f = useFmt();
+  const toast = useToast();
+  const errText = useErrorText();
+  const q = useApiHook(() => api.groupPublic(groupId), [groupId]);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const d = q.data;
+  if (!d || d.isMember) return null;
+  const send = async () => {
+    setBusy(true);
+    try { await api.requestToJoin(groupId, note); toast(t("jr.sent")); setNote(""); } catch (e) { toast(errText(e), "error"); } finally { setBusy(false); }
+  };
+  return (
+    <div className="card pad stack g12 join-box" style={{ ["--gc" as string]: d.color }}>
+      <div className="row g8 faces">
+        {d.faces.map((p, i) => <span key={p.id} style={{ ["--i" as string]: i }}><Avatar name={p.fullName} src={p.avatar} size={32} /></span>)}
+        <span className="t-small secondary">{t("gi.card.members", { n: d.members })}</span>
+      </div>
+      {d.areaM2 > 0 && <span className="t-small secondary row g8"><Icon name="map" size={14} />{t("jr.area", { area: f.area(d.areaM2) })}</span>}
+      {d.full ? <span className="t-small muted">{t("jr.full")}</span>
+        : d.myGroup ? <span className="t-small secondary">{t("jr.inOther", { group: d.myGroup })}</span>
+        : d.request?.status === "pending" ? (
+          <div className="stack g8">
+            <span className="status s-warn"><span className="pulse-dot" aria-hidden />{t("jr.pending")}</span>
+            <Button variant="ghost" size="sm" onClick={async () => { try { await api.cancelJoinRequest(groupId); } catch (e) { toast(errText(e), "error"); } }}>{t("jr.cancel")}</Button>
+          </div>
+        ) : (
+          <div className="stack g8">
+            {d.request?.status === "declined" && <span className="t-small muted">{t("jr.declined")}</span>}
+            <p className="t-small secondary">{t("jr.askHint")}</p>
+            <TextArea label={t("jr.note")} placeholder={t("jr.notePh")} rows={2} maxLength={200} value={note} onChange={(e) => setNote(e.target.value)} />
+            <Button variant="primary" icon="userPlus" loading={busy} onClick={send} block>{t("jr.send")}</Button>
+          </div>
+        )}
+    </div>
+  );
+}
+
+/** Join requests waiting for a group, with one-tap answers (group page and group chat). */
+export function JoinRequests({ groupId, compact }: { groupId: string; compact?: boolean }) {
+  const { t } = useI18n();
+  const f = useFmt();
+  const toast = useToast();
+  const errText = useErrorText();
+  const q = useApiHook(() => api.groupRequestsFor(groupId), [groupId]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const list = q.data ?? [];
+  if (!list.length) return null;
+  const answer = async (id: string, d: "approved" | "declined", el: HTMLElement) => {
+    setBusy(id + d);
+    try {
+      await api.decideJoinRequest(id, d);
+      if (d === "approved") { const { celebrate } = await import("@/lib/fx"); celebrate(el, 50); }
+    } catch (e) { toast(errText(e), "error"); } finally { setBusy(null); }
+  };
+  return (
+    <section className={`stack g8 join-reqs${compact ? " compact" : ""}`} aria-label={t("jr.waitingTitle")}>
+      {!compact && <h2 className="t-h3 row g8"><span className="pulse-dot" aria-hidden />{t("jr.waitingTitle")}</h2>}
+      {list.map((r) => (
+        <div key={r.id} className="join-req">
+          <Avatar name={r.person.fullName} src={r.person.avatar} size={40} />
+          <span className="stack grow" style={{ minWidth: 0 }}>
+            <span className="truncate" style={{ fontWeight: 500 }}>{r.person.fullName}</span>
+            <span className="t-small secondary truncate">{t("jr.card")} · {t("lvl.short", { n: r.level })} · {f.relative(r.createdAt)}</span>
+            {r.note && <span className="t-small join-note">“{r.note}”</span>}
+            {r.inGroup && <span className="t-small muted">{t("gi.stateOther", { group: r.inGroup })}</span>}
+          </span>
+          <span className="row g8">
+            <Button size="sm" variant="primary" icon="check" loading={busy === r.id + "approved"} onClick={(e) => answer(r.id, "approved", e.currentTarget)}>{t("jr.accept")}</Button>
+            <Button size="sm" variant="ghost" loading={busy === r.id + "declined"} onClick={(e) => answer(r.id, "declined", e.currentTarget)} aria-label={t("jr.decline")}><Icon name="x" size={16} /></Button>
+          </span>
+        </div>
+      ))}
+    </section>
+  );
 }

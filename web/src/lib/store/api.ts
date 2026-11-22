@@ -23,11 +23,15 @@ import {
 } from "../domain/validation";
 import type {
   AiReview, Announcement, Category, Certificate, Evidence, GpsFix, Group, GroupMessage, HelpSignal, Lang, Message, Mission, NewsPost, Notification, Order,
-  Organization, Role, ShopItem, Submission, UserProfile,
+  Organization, Role, ShopItem, Submission, UserProfile, Territory, GroupRequest,
 } from "../domain/types";
 import { postAi } from "../ai/client";
 import type { AiMission } from "../ai/missions";
 import * as cloud from "./cloud";
+import {
+  bboxOf, centerOf, cleanTrace, contains, decay, decodeShape, encodeShape, overlapM2, seasonOf, shapeArea, subtractShape, TERRITORY, traceToShape, unionShapes,
+  type CaptureError, type Shape, type TracePoint,
+} from "../domain/territory";
 import { commit, FIREBASE, getDB, hashPassword, nowIso, ready, SESSION_KEY, uid, type DB } from "./db";
 
 export class ValidationError extends Error {
@@ -535,6 +539,9 @@ export const api = {
       requireAdmin(db);
     } else {
       list = list.filter((m) => m.status === "published" && m.source !== "agent");
+      // v3.2: a new mission inside someone's area is theirs to see first
+      if (viewer?.role === "volunteer") { const live = liveTerritories(db); list = list.filter((m) => !firstLook(db, m, viewer.id, live).hidden); }
+      else if (!viewer) { const live = liveTerritories(db); list = list.filter((m) => { const at = Date.parse(m.publishedAt ?? m.createdAt); return Date.now() > at + TERRITORY.firstLookHours * 3_600_000 || !live.some((t) => contains(decodeShape(t.shape), m.coordinates)); }); }
     }
     if (opts.category && opts.category !== "all") list = list.filter((m) => m.category === opts.category);
     if (opts.q) {
@@ -602,6 +609,17 @@ export const api = {
       if (Date.parse(m.date) <= Date.now()) throw new DomainError("validation", "e.startPast");
       m.status = "published";
       m.updatedAt = nowIso();
+      m.publishedAt = nowIso();
+      // v3.2: whoever holds this spot (and their group) hears about it first
+      const told = new Set<string>();
+      for (const t of liveTerritories(db)) {
+        if (!contains(decodeShape(t.shape), m.coordinates)) continue;
+        for (const who of sideOf(db, t.userId)) {
+          if (told.has(who)) continue;
+          told.add(who);
+          notify(db, who, "mission", "n.missionInArea", { title: m.title, hours: TERRITORY.firstLookHours }, `/app/missions/${m.id}`);
+        }
+      }
       log(db, u, "mission.publish", "missions", id, m.title);
     });
   },
@@ -1626,43 +1644,6 @@ export const api = {
     });
   },
 
-  /* ───────────── v3: phone and Telegram sign-in ───────────── */
-  /** Sends an SMS code. Local demo mode: no SMS, the code is 123456 (returned as devCode). */
-  async phoneStart(rawPhone: string, recaptchaContainer: string) {
-    await ready();
-    const phone = normalisePhone(rawPhone);
-    if (!phone) throw new ValidationError({ phone: "e.phoneInvalid" });
-    if (FIREBASE) { await cloud.startPhone(phone, recaptchaContainer); return { phone, devCode: null as string | null }; }
-    pendingPhone = phone;
-    return { phone, devCode: "123456" as string | null };
-  },
-
-  async phoneConfirm(code: string) {
-    await ready();
-    const clean = code.replace(/\D/g, "");
-    if (clean.length !== 6) throw new ValidationError({ code: "e.codeInvalid" });
-    if (FIREBASE) {
-      const id = await cloud.confirmPhone(clean);
-      return ensureProfile(id, { provider: "phone", phone: cloud.currentPhone() ?? "", name: "" });
-    }
-    if (!pendingPhone || clean !== "123456") throw new ValidationError({ code: "e.codeInvalid" });
-    const phone = pendingPhone;
-    pendingPhone = null;
-    const existing = getDB().users.find((u) => u.phone === phone && u.phoneVerified && u.status !== "deleted");
-    return ensureProfile(existing?.id ?? uid(), { provider: "phone", phone, name: "" });
-  },
-
-  /** Telegram Login Widget result → server check → custom token → profile. */
-  async telegramLogin(data: Record<string, string | number>) {
-    await ready();
-    if (!FIREBASE) throw new DomainError("invalid_state", "e.telegramFirebase");
-    const res = await fetch("/.netlify/functions/telegram-auth", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(data) }).catch(() => null);
-    const body = res ? ((await res.json().catch(() => ({}))) as { token?: string; error?: string; name?: string }) : {};
-    if (!res?.ok || !body.token) throw new DomainError("forbidden", body.error ?? "e.telegramFailed");
-    const id = await cloud.signInWithToken(body.token);
-    return ensureProfile(id, { provider: "telegram", telegramId: String(data.id), name: body.name ?? "" });
-  },
-
   /* ───────────── v3: groups ───────────── */
   async myGroup() {
     await ready();
@@ -1790,6 +1771,258 @@ export const api = {
       db.groupCodes = db.groupCodes.filter((c) => c.groupId !== g.id);
       db.groupCodes.push({ id: makeGroupCode(), groupId: g.id, createdAt: nowIso() });
     });
+  },
+
+  /* ───────────── v3.2: territory ───────────── */
+  /**
+   * Everything the Map shows: this month's areas (with who holds them and how they relate to me),
+   * the missions I may see on the map, my standing, and the top of the season. My own area decays here
+   * first (in demo mode every area does); the daily server job covers everyone else.
+   */
+  async territoryMap() {
+    await ready();
+    const db0 = getDB();
+    const me0 = actor(db0);
+    const decayIds = liveTerritories(db0).filter((t) => (!FIREBASE || t.userId === me0.id) && pendingDecay(db0, t)).map((t) => t.id);
+    if (decayIds.length) {
+      await commit((db) => { for (const t of db.territories) if (decayIds.includes(t.id)) applyDecay(db, t); });
+    }
+    const db = getDB();
+    const u = actor(db);
+    const side = sideOf(db, u.id);
+    const myGroup = groupOf(db, u.id);
+    const live = liveTerritories(db);
+    const areas = live.map((t) => {
+      const owner = db.users.find((x) => x.id === t.userId);
+      const g = groupOf(db, t.userId);
+      const relation: "mine" | "group" | "other" = t.userId === u.id ? "mine" : side.has(t.userId) ? "group" : "other";
+      return {
+        id: t.id, userId: t.userId, name: owner?.fullName ?? "—", avatar: owner?.avatar ?? null, areaM2: t.areaM2, shape: decodeShape(t.shape)!,
+        center: t.center, relation, group: g ? { id: g.id, name: g.name, color: g.color } : null, updatedAt: t.updatedAt,
+      };
+    }).filter((a) => a.shape);
+    const mineT = live.find((t) => t.userId === u.id) ?? null;
+    const mineShape = decodeShape(mineT?.shape);
+    const sideShapes = areas.filter((a) => a.relation !== "other").map((a) => a.shape);
+    const now = Date.now();
+    const missions = db.missions
+      .filter((m) => m.status === "published" && m.source !== "agent" && m.coordinates && Date.parse(m.date) > now)
+      .flatMap((m) => {
+        const look = firstLook(db, m, u.id, live);
+        if (look.hidden) return [];
+        const inMine = sideShapes.some((s) => contains(s, m.coordinates));
+        return [{ ...withOrg(db, m, u), inMyArea: inMine, firstLookUntil: look.until, joined: db.participants.some((p) => p.missionId === m.id && p.userId === u.id && p.status === "accepted") }];
+      });
+    const users = [...live].sort((a, b) => b.areaM2 - a.areaM2);
+    const groupTotals = new Map<string, number>();
+    for (const t of live) { const g = groupOf(db, t.userId); if (g) groupTotals.set(g.id, (groupTotals.get(g.id) ?? 0) + t.areaM2); }
+    const groups = [...groupTotals.entries()].sort((a, b) => b[1] - a[1]);
+    const since = now - 86_400_000;
+    const capturesToday = db.territoryCaptures.filter((c) => c.userId === u.id && Date.parse(c.createdAt) > since).length;
+    const ignored = mineT && mineShape ? ignoredMissions(db, mineT, mineShape) : [];
+    return {
+      season: seasonOf(), areas, missions,
+      me: {
+        areaM2: mineT?.areaM2 ?? 0, lostM2: mineT?.lostM2 ?? 0, captures: mineT?.captures ?? 0,
+        rank: mineT && mineT.areaM2 > 0 ? users.findIndex((t) => t.userId === u.id) + 1 : null, of: users.length,
+        capturesLeft: Math.max(0, TERRITORY.capturesPerDay - capturesToday),
+        ignored: ignored.map((m) => ({ id: m.id, title: m.title, dueAt: new Date(Date.parse(m.publishedAt ?? m.createdAt) + TERRITORY.graceHours * 3_600_000).toISOString() })),
+        group: myGroup ? { id: myGroup.id, name: myGroup.name, color: myGroup.color, areaM2: groupTotals.get(myGroup.id) ?? 0, rank: groups.findIndex(([id]) => id === myGroup.id) + 1 || null } : null,
+        canCapture: u.role === "volunteer",
+      },
+      board: {
+        people: users.slice(0, 5).map((t) => { const x = db.users.find((y) => y.id === t.userId); return { id: t.userId, name: x?.fullName ?? "—", avatar: x?.avatar ?? null, areaM2: t.areaM2, me: t.userId === u.id }; }),
+        groups: groups.slice(0, 5).map(([id, m2]) => { const g = db.groups.find((x) => x.id === id)!; return { id, name: g.name, color: g.color, areaM2: m2, mine: id === myGroup?.id }; }),
+      },
+    };
+  },
+
+  /** Light summary for Home: my area and rank this month. */
+  async myTerritory() {
+    await ready();
+    const db = getDB();
+    const u = actor(db);
+    const live = liveTerritories(db).sort((a, b) => b.areaM2 - a.areaM2);
+    const i = live.findIndex((t) => t.userId === u.id);
+    return { areaM2: i >= 0 ? live[i].areaM2 : 0, rank: i >= 0 ? i + 1 : null, of: live.length };
+  },
+
+  /**
+   * Turns a finished walk into area. Returns what was gained and from whom it was taken,
+   * or why the walk does not count (without throwing, so the walker can carry on).
+   */
+  async captureTerritory(trace: TracePoint[], opts: { forceClose?: boolean } = {}): Promise<
+    | { ok: true; gainedM2: number; areaM2: number; takenFrom: { name: string; areaM2: number }[]; missionsInside: number; shape: Shape }
+    | { ok: false; error: CaptureError | "limit"; toStartM?: number }
+  > {
+    await ready();
+    const res = traceToShape(trace, opts);
+    if ("error" in res) return { ok: false, error: res.error, toStartM: res.toStartM };
+    const stats = cleanTrace(trace);
+    let out: { gainedM2: number; areaM2: number; takenFrom: { name: string; areaM2: number }[]; missionsInside: number } | null = null;
+    try {
+      await commit((db) => {
+        const u = actor(db);
+        if (u.role !== "volunteer") throw new DomainError("forbidden", "e.volunteersOnly");
+        const since = Date.now() - 86_400_000;
+        if (db.territoryCaptures.filter((c) => c.userId === u.id && Date.parse(c.createdAt) > since).length >= TERRITORY.capturesPerDay) throw new DomainError("conflict", "limit");
+        const season = seasonOf();
+        const g = groupOf(db, u.id);
+        const side = sideOf(db, u.id);
+        const box = bboxOf(res.shape);
+        const takenFrom: { userId: string; areaM2: number }[] = [];
+        for (const t of liveTerritories(db)) {
+          if (side.has(t.userId) || !boxesMeet(t.bbox, box)) continue;
+          const s = decodeShape(t.shape);
+          if (!s || overlapM2(s, res.shape) < 50) continue;
+          const left = subtractShape(s, res.shape);
+          const area = shapeArea(left);
+          const lost = t.areaM2 - area;
+          if (lost <= 0) continue;
+          setShape(t, left);
+          t.lostM2 += lost;
+          takenFrom.push({ userId: t.userId, areaM2: lost });
+          const recent = t.takenNotice && t.takenNotice.by === u.id && Date.now() - Date.parse(t.takenNotice.at) < 12 * 3_600_000;
+          if (lost >= TERRITORY.notifyLossM2 && !recent) {
+            t.takenNotice = { by: u.id, at: nowIso() };
+            notify(db, t.userId, "system", "n.territoryTaken", { name: u.fullName, area: fmtArea(lost), left: fmtArea(area) }, "/app/map");
+          }
+        }
+        const id = `${season}_${u.id}`;
+        let mine = db.territories.find((t) => t.id === id);
+        const before = mine?.areaM2 ?? 0;
+        const merged = unionShapes(decodeShape(mine?.shape), res.shape)!;
+        if (!mine) {
+          mine = { id, userId: u.id, groupId: g?.id ?? null, season, shape: "", areaM2: 0, center: null, bbox: [], captures: 0, lostM2: 0, createdAt: nowIso(), updatedAt: nowIso(), decayCheckedAt: nowIso(), takenNotice: null };
+          db.territories.push(mine);
+        }
+        setShape(mine, merged);
+        mine.captures += 1;
+        mine.groupId = g?.id ?? null;
+        const gained = Math.max(0, mine.areaM2 - before);
+        db.territoryCaptures.push({
+          id: uid(), userId: u.id, groupId: g?.id ?? null, season, areaM2: res.areaM2, gainedM2: gained, distanceM: stats.distanceM, durationS: stats.durationS,
+          maxSpeedKmh: stats.maxSpeedKmh, droppedFast: stats.droppedFast, takenFrom, createdAt: nowIso(),
+        });
+        const now = Date.now();
+        const inside = db.missions.filter((m) => m.status === "published" && m.source !== "agent" && Date.parse(m.date) > now && contains(res.shape, m.coordinates)).length;
+        if (g) db.groupMessages.push(systemMessage(g.id, u.id, "gm.territory", { name: u.fullName, area: fmtArea(gained) }));
+        log(db, u, "territory.capture", "territories", id, String(gained));
+        out = {
+          gainedM2: gained, areaM2: mine.areaM2, missionsInside: inside,
+          takenFrom: takenFrom.map((x) => ({ name: db.users.find((y) => y.id === x.userId)?.fullName ?? "—", areaM2: x.areaM2 })),
+        };
+      });
+    } catch (e) {
+      if (e instanceof DomainError && e.message === "limit") return { ok: false, error: "limit" };
+      throw e;
+    }
+    return { ok: true, ...out!, shape: res.shape };
+  },
+
+  /* ───────────── v3.2: asking to join a group ───────────── */
+  /** A public view of a group for someone who is not in it (from the map, the rating or a shared link). */
+  async groupPublic(id: string) {
+    await ready();
+    const db = getDB();
+    const u = actor(db);
+    const g = db.groups.find((x) => x.id === id);
+    if (!g) return null;
+    const req = db.groupRequests.find((r) => r.id === `${g.id}_${u.id}`) ?? null;
+    const t = liveTerritories(db).filter((x) => g.members.includes(x.userId)).reduce((a, x) => a + x.areaM2, 0);
+    return {
+      id: g.id, name: g.name, description: g.description, color: g.color, members: g.members.length, full: g.members.length >= GROUP_MAX_MEMBERS,
+      place: [g.mahalla, g.district].filter(Boolean).join(", "), areaM2: t, isMember: g.members.includes(u.id), myGroup: groupOf(db, u.id)?.name ?? null,
+      faces: g.members.slice(0, 5).flatMap((m) => { const x = db.users.find((y) => y.id === m); return x ? [person(x)] : []; }),
+      request: req && req.status !== "cancelled" ? { status: req.status, createdAt: req.createdAt } : null,
+    };
+  },
+
+  async requestToJoin(groupId: string, note = "") {
+    await ready();
+    await commit((db) => {
+      const u = actor(db);
+      if (u.role !== "volunteer") throw new DomainError("forbidden", "e.volunteersOnly");
+      const g = db.groups.find((x) => x.id === groupId);
+      if (!g) throw new DomainError("not_found", "e.notFound");
+      if (g.members.includes(u.id)) throw new DomainError("conflict", "e.alreadyMember");
+      if (g.members.length >= GROUP_MAX_MEMBERS) throw new DomainError("conflict", "e.groupFull");
+      const id = `${g.id}_${u.id}`;
+      const prev = db.groupRequests.find((r) => r.id === id);
+      if (prev?.status === "pending") return;
+      const req: GroupRequest = { id, groupId: g.id, userId: u.id, status: "pending", note: note.trim().slice(0, 200), createdAt: nowIso(), decidedBy: null, decidedAt: null };
+      db.groupRequests = [...db.groupRequests.filter((r) => r.id !== id), req];
+      for (const m of g.members) notify(db, m, "system", "n.groupRequest", { name: u.fullName, group: g.name }, `/app/chat/g_${g.id}`);
+      log(db, u, "group.request", "groupRequests", id);
+    });
+  },
+
+  async cancelJoinRequest(groupId: string) {
+    await ready();
+    await commit((db) => {
+      const u = actor(db);
+      const r = db.groupRequests.find((x) => x.id === `${groupId}_${u.id}`);
+      if (r && r.status === "pending") r.status = "cancelled";
+    });
+  },
+
+  /** Requests waiting for my group (members only). */
+  async groupRequestsFor(groupId: string) {
+    await ready();
+    const db = getDB();
+    const u = actor(db);
+    const g = db.groups.find((x) => x.id === groupId);
+    if (!g || !g.members.includes(u.id)) return [];
+    return db.groupRequests.filter((r) => r.groupId === g.id && r.status === "pending").flatMap((r) => {
+      const x = db.users.find((y) => y.id === r.userId);
+      if (!x) return [];
+      const other = groupOf(db, x.id);
+      return [{ id: r.id, person: person(x), note: r.note, createdAt: r.createdAt, inGroup: other?.name ?? null, level: x.level }];
+    }).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  },
+
+  /** A member lets someone in (they join on their next visit, or right away in demo mode) or says no. */
+  async decideJoinRequest(requestId: string, decision: "approved" | "declined") {
+    await ready();
+    await commit((db) => {
+      const u = actor(db);
+      const r = db.groupRequests.find((x) => x.id === requestId);
+      if (!r || r.status !== "pending") throw new DomainError("invalid_state", "e.requestGone");
+      const g = db.groups.find((x) => x.id === r.groupId);
+      if (!g || !g.members.includes(u.id)) throw new DomainError("forbidden", "e.forbidden");
+      if (decision === "approved" && g.members.length >= GROUP_MAX_MEMBERS) throw new DomainError("conflict", "e.groupFull");
+      r.status = decision;
+      r.decidedBy = u.id;
+      r.decidedAt = nowIso();
+      const who = db.users.find((x) => x.id === r.userId)?.fullName ?? "—";
+      db.groupMessages.push(systemMessage(g.id, u.id, decision === "approved" ? "gm.requestApproved" : "gm.requestDeclined", { name: u.fullName, who }));
+      notify(db, r.userId, "system", decision === "approved" ? "n.requestApproved" : "n.requestDeclined", { group: g.name }, decision === "approved" ? `/app/groups/${g.id}` : "/app/groups");
+    });
+  },
+
+  /** Joins every group that has let me in (called on load). Leaves a request open if I am already in a group. */
+  async claimApprovedJoins() {
+    await ready();
+    const db0 = getDB();
+    const me = readSession(db0);
+    if (!me || me.role !== "volunteer" || groupOf(db0, me.id)) return null;
+    const r = db0.groupRequests.find((x) => x.userId === me.id && x.status === "approved");
+    if (!r) return null;
+    const g0 = db0.groups.find((x) => x.id === r.groupId);
+    await commit((db) => {
+      const u = actor(db);
+      const req = db.groupRequests.find((x) => x.id === r.id)!;
+      const g = db.groups.find((x) => x.id === r.groupId);
+      if (!g || g.members.length >= GROUP_MAX_MEMBERS) { req.status = "cancelled"; return; }
+      const joinId = `${g.id}_${u.id}`;
+      db.groupJoins = db.groupJoins.filter((j) => j.id !== joinId);
+      db.groupJoins.push({ id: joinId, groupId: g.id, userId: u.id, code: "", requestId: req.id, createdAt: nowIso() });
+      g.members = [...g.members, u.id];
+      req.status = "joined";
+      db.groupMessages.push(systemMessage(g.id, u.id, "gm.joined", { name: u.fullName }));
+      log(db, u, "group.join", "groups", g.id, "request");
+    });
+    return g0 ? { id: g0.id, name: g0.name } : null;
   },
 
   /* ───────────── v3.1: group invites sent as chat messages ───────────── */
@@ -2364,8 +2597,6 @@ async function createOrganization(data: OrganizationInput, ownerId: string) {
 
 /* ───────────────────────── v3 helpers ───────────────────────── */
 
-let pendingPhone: string | null = null;
-
 /** +998 90 123 45 67 → +998901234567 (Uzbek numbers may be typed without the country code). */
 export function normalisePhone(raw: string) {
   let d = raw.replace(/[^\d+]/g, "");
@@ -2373,45 +2604,11 @@ export function normalisePhone(raw: string) {
   return /^\+\d{10,15}$/.test(d) ? d : null;
 }
 
-/** Email, SMS or Telegram: any confirmed way of reaching the person counts as a verified account. */
+/** A confirmed email (older accounts made by SMS or Telegram keep counting as verified). */
 export function isVerifiedAccount(u: Pick<UserProfile, "emailVerified" | "phoneVerified" | "telegramId">) {
   return Boolean(u.emailVerified || u.phoneVerified || u.telegramId);
 }
 
-/** Profile for a phone or Telegram sign-in; created (as a volunteer) on the first sign-in only. */
-async function ensureProfile(id: string, init: { provider: "phone" | "telegram"; phone?: string; telegramId?: string; name: string }) {
-  const have = getDB().users.find((x) => x.id === id);
-  if (!have) {
-    if (FIREBASE && (await cloud.profileExists(id)) !== false) {
-      // The profile exists but is not loaded yet, or the server could not be asked: never create a second one.
-      for (let i = 0; i < 40 && !getDB().users.some((x) => x.id === id); i++) await new Promise((r) => setTimeout(r, 100));
-      if (!getDB().users.some((x) => x.id === id)) { await cloud.logOut(); throw new DomainError("invalid_state", "e.network"); }
-    } else {
-      await commit((db) => {
-        const t = nowIso();
-        db.users.push({
-          id, email: "", emailVerified: false, fullName: init.name.slice(0, 80), username: `user_${uid().slice(0, 8)}`, avatar: null, bio: "", country: "Uzbekistan",
-          province: "", city: "", feedVisible: true, languages: [], skills: [], interests: [], level: 1, xp: 0, points: 0, trustScore: 50, reputation: 0, streak: 0,
-          lastApprovedDay: null, totalVolunteerHours: 0, totalImpact: 0, impact: {}, onboarded: false, organizationId: null, role: "volunteer", status: "active",
-          createdAt: t, updatedAt: t, lastLogin: t, language: "uz", privacy: "public", phone: init.phone ?? "", birthYear: null, authProvider: init.provider,
-          phoneVerified: init.provider === "phone", telegramId: init.telegramId ?? null, district: "", mahalla: "",
-        });
-        log(db, { id, role: "volunteer" }, `user.register_${init.provider}`, "users", id);
-      });
-    }
-  }
-  const u = getDB().users.find((x) => x.id === id)!;
-  if (u.status !== "active") {
-    if (FIREBASE) await cloud.logOut();
-    throw new DomainError(u.status === "suspended" ? "suspended" : "forbidden", u.status === "suspended" ? "e.suspended" : "e.badLogin");
-  }
-  await commit((db) => {
-    const me = db.users.find((x) => x.id === id)!;
-    me.lastLogin = nowIso();
-    if (!FIREBASE) startSession(me);
-  });
-  return strip(getDB().users.find((x) => x.id === id)!);
-}
 
 /** An unanswered invite from any member of this group to this person. */
 function pendingGroupInvite(db: DB, groupId: string, userId: string) {
@@ -2427,6 +2624,65 @@ function inviteInfo(db: DB, viewerId: string, groupId: string) {
     description: g?.description ?? "", isMember: Boolean(g?.members.includes(viewerId)),
     otherGroup: mine && mine.id !== groupId ? mine.name : null,
   };
+}
+
+/* v3.2 territory helpers */
+function liveTerritories(db: DB) {
+  const season = seasonOf();
+  return db.territories.filter((t) => t.season === season && t.areaM2 > 0 && t.shape);
+}
+/** Me and everyone in my group: we never take area from each other and share the first look. */
+function sideOf(db: DB, userId: string) {
+  const g = groupOf(db, userId);
+  return new Set(g ? g.members : [userId]);
+}
+function setShape(t: Territory, s: Shape | null) {
+  t.shape = s ? encodeShape(s) : "";
+  t.areaM2 = shapeArea(s);
+  t.center = s ? centerOf(s) : null;
+  t.bbox = s ? bboxOf(s) : [];
+  t.updatedAt = nowIso();
+}
+const boxesMeet = (a: number[], b: number[]) => a.length === 4 && b.length === 4 && a[0] <= b[2] && b[0] <= a[2] && a[1] <= b[3] && b[1] <= a[3];
+function fmtArea(m2: number) {
+  return m2 >= 100_000 ? `${(m2 / 1_000_000).toFixed(2)} km²` : `${Math.round(m2).toLocaleString("en-US").replace(/,/g, " ")} m²`;
+}
+/** Open missions inside this area that nobody on the owner's side has joined. */
+function ignoredMissions(db: DB, t: Territory, s: Shape) {
+  const side = sideOf(db, t.userId);
+  const now = Date.now();
+  return db.missions.filter((m) => m.status === "published" && m.source !== "agent" && Date.parse(m.date) > now && contains(s, m.coordinates)
+    && !db.participants.some((p) => p.missionId === m.id && side.has(p.userId) && p.status === "accepted"));
+}
+function dueTimes(db: DB, t: Territory, s: Shape) {
+  const now = Date.now();
+  return ignoredMissions(db, t, s).map((m) => new Date(Date.parse(m.publishedAt ?? m.createdAt) + TERRITORY.graceHours * 3_600_000).toISOString()).filter((d) => Date.parse(d) <= now);
+}
+function pendingDecay(db: DB, t: Territory) {
+  const s = decodeShape(t.shape);
+  return Boolean(s && decay(s, t.decayCheckedAt, dueTimes(db, t, s)).days > 0);
+}
+function applyDecay(db: DB, t: Territory) {
+  const s = decodeShape(t.shape);
+  if (!s) return;
+  const r = decay(s, t.decayCheckedAt, dueTimes(db, t, s));
+  if (!r.days) return;
+  const before = t.areaM2;
+  setShape(t, r.shape);
+  t.decayCheckedAt = r.checkedAt;
+  t.lostM2 += before - t.areaM2;
+  notify(db, t.userId, "system", "n.territoryShrunk", { area: fmtArea(before - t.areaM2), days: r.days }, "/app/map");
+}
+/** New missions inside someone's area are shown only to that side for the first hours. */
+function firstLook(db: DB, m: Mission, viewerId: string, live = liveTerritories(db)) {
+  const at = Date.parse(m.publishedAt ?? m.createdAt);
+  const until = at + TERRITORY.firstLookHours * 3_600_000;
+  if (!m.coordinates || Date.now() > until) return { hidden: false, until: null as string | null };
+  const holders = live.filter((t) => contains(decodeShape(t.shape), m.coordinates));
+  if (!holders.length) return { hidden: false, until: null };
+  const side = sideOf(db, viewerId);
+  const ours = holders.some((t) => side.has(t.userId));
+  return { hidden: !ours, until: ours ? new Date(until).toISOString() : null };
 }
 
 /** The group a volunteer belongs to (one at a time). */

@@ -7,7 +7,7 @@ import { useApi } from "@/lib/store/hooks";
 import { useRouter } from "next/navigation";
 import { celebrate } from "@/lib/fx";
 import type { Message } from "@/lib/domain/types";
-import { GroupMark, GroupSpot } from "./group-bits";
+import { GroupMark, GroupSpot, JoinRequests } from "./group-bits";
 import { Icon } from "./icons";
 import { Avatar, Button, ButtonLink, CategoryTag, Dialog, Empty, Skeleton, useToast } from "./ui";
 
@@ -208,6 +208,7 @@ function Thread({ id, base }: { id: string; base: string }) {
         {d.isFriend && <Button size="sm" icon="flag" onClick={() => setPick(true)}><span className="hide-sm">{t("chat.inviteBtn")}</span></Button>}
         {group && <ButtonLink size="sm" icon="zap" href="/app/signals?new=1">{t("sg.call")}</ButtonLink>}
       </div>
+      {group && <div className="chat-requests"><JoinRequests groupId={d.group!.id} compact /></div>}
       <div ref={scroller} className="chat-scroll">
         {d.messages.length === 0 && <p className="t-small muted" style={{ margin: "auto", textAlign: "center" }}>{t("chat.empty")}</p>}
         {d.messages.map((m) => {
@@ -333,7 +334,7 @@ function Thread({ id, base }: { id: string; base: string }) {
       </Dialog>
 
       <Dialog open={pick} onClose={() => setPick(false)} title={t("chat.inviteTitle")}>
-        {d.myActive.length === 0 ? <Empty icon="flag" title={t("chat.noActive")} action={<ButtonLink href="/app/missions?tab=explore" variant="primary">{t("nav.explore")}</ButtonLink>} /> : (
+        {d.myActive.length === 0 ? <Empty icon="flag" title={t("chat.noActive")} action={<ButtonLink href="/app/map?view=list&tab=explore" variant="primary">{t("nav.explore")}</ButtonLink>} /> : (
           <div className="stack g8">
             <p className="t-small secondary" style={{ marginBottom: 8 }}>{t("md.inviteBody")}</p>
             {d.myActive.map((m) => (

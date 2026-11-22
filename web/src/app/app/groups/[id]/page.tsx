@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
-import { GroupDialog, GroupInviteDialog, GroupMark, InviteCard } from "@/components/group-bits";
+import { GroupDialog, GroupInviteDialog, GroupMark, InviteCard, JoinRequestBox, JoinRequests } from "@/components/group-bits";
 import { Icon } from "@/components/icons";
 import { SignalRow } from "@/components/signals";
 import { Avatar, Button, ButtonLink, CategoryTag, Dialog, Empty, Progress, Skeleton, useToast } from "@/components/ui";
@@ -116,6 +116,8 @@ export default function GroupPage() {
           </section>
         </div>
         <aside className="stack g16">
+          {!d.isMember && <JoinRequestBox groupId={g.id} />}
+          {d.isMember && <JoinRequests groupId={g.id} />}
           {d.code && <InviteCard code={d.code} groupName={g.name} owner={d.isOwner} onNewCode={() => run(() => api.newGroupCode(), t("gr.codeRenewed"))} />}
           {d.isMember && <Button variant="danger" icon="logout" onClick={() => setLeave(true)}>{t("gr.leave")}</Button>}
         </aside>

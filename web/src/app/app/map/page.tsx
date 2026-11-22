@@ -1,0 +1,375 @@
+"use client";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { CATEGORY_ICON, Icon } from "@/components/icons";
+import { MissionsBoard } from "@/components/missions-board";
+import { useMe } from "@/components/providers";
+import { TerritoryMap, type MapArea, type MapMission } from "@/components/territory-map";
+import { Avatar, Button, Dialog, Segmented, Skeleton, useToast } from "@/components/ui";
+import { GroupMark } from "@/components/group-bits";
+import { buzz, celebrate } from "@/lib/fx";
+import { distanceM, TERRITORY, type Shape } from "@/lib/domain/territory";
+import type { GeoPoint } from "@/lib/domain/types";
+import { useTracker } from "@/lib/geo/tracker";
+import { useErrorText, useFmt, useI18n } from "@/lib/i18n";
+import { api } from "@/lib/store/api";
+import { FIREBASE } from "@/lib/store/db";
+import { useApi } from "@/lib/store/hooks";
+
+type Data = NonNullable<Awaited<ReturnType<typeof api.territoryMap>>>;
+type Capture = Awaited<ReturnType<typeof api.captureTerritory>>;
+const INTRO_KEY = "worfix.map.intro";
+
+/** v3.2: the Map menu — the territory game, with the mission lists one tap away. */
+function MapMenu() {
+  const { t } = useI18n();
+  const router = useRouter();
+  const params = useSearchParams();
+  const view = params.get("view") === "list" ? "list" : "map";
+  const setView = (v: "map" | "list") => router.replace(v === "list" ? "/app/map?view=list" : "/app/map", { scroll: false });
+  if (view === "list") {
+    return (
+      <div className="stack g24 enter">
+        <div className="page-head">
+          <h1 className="t-h1">{t("tm.viewList")}</h1>
+          <Segmented value={view} onChange={setView} label={t("tm.title")} items={[{ value: "map", label: <span className="row g8"><Icon name="map" size={16} />{t("tm.viewMap")}</span> }, { value: "list", label: <span className="row g8"><Icon name="list" size={16} />{t("tm.viewList")}</span> }]} />
+        </div>
+        <MissionsBoard embedded />
+      </div>
+    );
+  }
+  return <TerritoryGame onList={() => setView("list")} />;
+}
+
+function TerritoryGame({ onList }: { onList: () => void }) {
+  const { t } = useI18n();
+  const f = useFmt();
+  const toast = useToast();
+  const errText = useErrorText();
+  const router = useRouter();
+  const { me } = useMe();
+  const q = useApi(() => api.territoryMap());
+  const gps = useTracker();
+  const [selected, setSelected] = useState<string | null>(null);
+  const [tab, setTab] = useState<"missions" | "season">("missions");
+  const [intro, setIntro] = useState(false);
+  const [flash, setFlash] = useState<Shape | null>(null);
+  const [focus, setFocus] = useState<{ point: GeoPoint; zoom?: number; key: string } | null>(null);
+  const [result, setResult] = useState<Capture | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
+  const [sheet, setSheet] = useState(false);
+  const closing = useRef(false);
+  const capturing = gps.status !== "idle";
+
+  useEffect(() => { try { if (!localStorage.getItem(INTRO_KEY)) setIntro(true); } catch { /* ignore */ } }, []);
+  useEffect(() => { gps.locate(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const d = q.data;
+  const accent = "var(--accent)";
+  const areas: MapArea[] = useMemo(() => (d?.areas ?? []).map((a) => ({
+    id: a.id, shape: a.shape, relation: a.relation, name: a.name, color: a.group?.color ?? personColor(a.userId),
+  })), [d]);
+  const missions: MapMission[] = useMemo(() => (d?.missions ?? []).flatMap((m) => m.coordinates ? [{
+    id: m.id, title: m.title, category: m.category, coordinates: m.coordinates, inMyArea: m.inMyArea, firstLook: Boolean(m.firstLookUntil), joined: m.joined,
+  }] : []), [d]);
+  const here = gps.me;
+  const sorted = useMemo(() => [...(d?.missions ?? [])].sort((a, b) =>
+    Number(b.inMyArea) - Number(a.inMyArea) || (here && a.coordinates && b.coordinates ? distanceM(here, a.coordinates) - distanceM(here, b.coordinates) : Date.parse(a.date) - Date.parse(b.date))), [d, here]);
+  const sel = d?.missions.find((m) => m.id === selected) ?? null;
+
+  // The loop closes on its own when the walker comes back to the start.
+  useEffect(() => {
+    if (gps.status === "tracking" && gps.loop.canAutoClose && !closing.current) void finish(false);
+  }, [gps.loop.canAutoClose, gps.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const startCapture = () => {
+    setSelected(null);
+    setSheet(false);
+    buzz(18);
+    gps.start();
+  };
+  const startDemo = () => {
+    // Walk next to someone else's area so the demo also shows taking ground from them.
+    const other = d?.areas.find((a) => a.relation === "other")?.center;
+    const c = other ?? here ?? d?.areas.find((a) => a.relation === "mine")?.center ?? { lat: 39.6542, lng: 66.9597 };
+    const spot = other ? { lat: c.lat + 0.0006, lng: c.lng + 0.0036 } : { lat: c.lat + 0.0042, lng: c.lng - 0.0035 };
+    setFocus({ point: spot, zoom: 15.2, key: `demo${Date.now()}` });
+    setSelected(null);
+    setSheet(false);
+    gps.simulate(spot, 170);
+  };
+  async function finish(force: boolean) {
+    if (closing.current) return;
+    closing.current = true;
+    setBusy(true);
+    try {
+      const r = await api.captureTerritory(gps.points, { forceClose: force });
+      setResult(r);
+      if (r.ok) {
+        gps.reset();
+        setFlash(r.shape);
+        buzz(40);
+        window.setTimeout(() => celebrate(null, 120), 350);
+      } else if (r.error !== "not_closed") gps.reset();
+      else gps.pause();
+    } catch (e) {
+      toast(errText(e), "error");
+    } finally {
+      setBusy(false);
+      closing.current = false;
+    }
+  }
+
+  const monthEnd = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1);
+  const daysLeft = Math.max(1, Math.ceil((monthEnd.getTime() - Date.now()) / 86_400_000));
+
+  return (
+    <div className="mapx" data-capturing={capturing || undefined}>
+      <TerritoryMap
+        areas={areas} missions={capturing ? [] : missions} me={here} trace={gps.points} flash={flash} focus={focus} selected={selected}
+        onMission={(id) => { setSelected(id); setSheet(false); buzz(8); }}
+      />
+
+      {/* top bar over the map */}
+      <div className="mapx-top">
+        <Segmented value="map" onChange={(v) => v === "list" && onList()} label={t("tm.title")} items={[
+          { value: "map", label: <span className="row g8"><Icon name="map" size={16} />{t("tm.viewMap")}</span> },
+          { value: "list", label: <span className="row g8"><Icon name="list" size={16} />{t("tm.viewList")}</span> },
+        ]} />
+        <div className="row g8">
+          <button type="button" className="mapx-fab-sm" onClick={() => setIntro(true)} aria-label={t("tm.how")}><Icon name="info" size={18} /></button>
+          <button type="button" className="mapx-fab-sm" aria-label={t("tm.locate")} onClick={() => { gps.locate(); if (here) setFocus({ point: here, zoom: 16, key: `me${Date.now()}` }); }}><Icon name="crosshair" size={18} /></button>
+        </div>
+      </div>
+
+      {gps.problem && !capturing && <div className="mapx-alert" role="status"><Icon name="alert" size={16} />{t(`tm.g.${gps.problem}`)}</div>}
+
+      {/* the panel: my standing, the big button, missions and the season */}
+      {!capturing && (
+        <aside className="mapx-panel" data-open={sheet || undefined} aria-label={t("tm.myArea")}>
+          <button type="button" className="mapx-grip" onClick={() => setSheet((x) => !x)} aria-label={t("tm.myArea")} aria-expanded={sheet}><span /></button>
+          {!d ? <div style={{ padding: 16 }}><Skeleton rows={3} /></div> : (
+            <>
+              <div className="mapx-stat">
+                <span className="t-small secondary">{t("tm.season", { month: f.month(), n: daysLeft })}</span>
+                {d.me.areaM2 > 0 ? (
+                  <div className="row between g12" style={{ alignItems: "flex-end" }}>
+                    <span className="stack g4">
+                      <span className="t-small secondary">{t("tm.myArea")}</span>
+                      <strong className="mapx-area num">{f.area(d.me.areaM2)}</strong>
+                    </span>
+                    {d.me.rank && <span className="mapx-rank"><span className="t-meta">{t("tm.rankLabel")}</span><strong className="num">{t("tm.rank", { n: d.me.rank, of: d.me.of })}</strong></span>}
+                  </div>
+                ) : (
+                  <span className="stack g4"><strong className="t-h3">{t("tm.noArea")}</strong><span className="t-small secondary">{t("tm.noAreaBody")}</span></span>
+                )}
+                {d.me.group && <Link href={`/app/groups/${d.me.group.id}`} className="row g8 t-small secondary mapx-group"><GroupMark name={d.me.group.name} color={d.me.group.color} size={20} />{t("tm.groupArea", { group: d.me.group.name, area: f.area(d.me.group.areaM2) })}{d.me.group.rank ? ` · #${d.me.group.rank}` : ""}</Link>}
+              </div>
+
+              {d.me.canCapture && (
+                <div className="stack g8 mapx-cta">
+                  <Button variant="primary" size="lg" block icon="footprints" className="btn-shine" disabled={d.me.capturesLeft === 0} onClick={startCapture}>{t("tm.capture")}</Button>
+                  <span className="t-small muted" style={{ textAlign: "center" }}>{d.me.capturesLeft === 0 ? t("tm.noCapturesLeft") : t("tm.capturesLeft", { n: d.me.capturesLeft })}</span>
+                  {!FIREBASE && d.me.capturesLeft > 0 && <Button variant="ghost" size="sm" icon="play" className="mapx-demo" onClick={startDemo} title={t("tm.c.demoHint")}>{t("tm.c.demo")}</Button>}
+                </div>
+              )}
+
+              {d.me.ignored.length > 0 && (
+                <div className="mapx-warn">
+                  <Icon name="clock" size={16} />
+                  <span className="stack g4">
+                    <strong className="t-small">{t("tm.warnTitle")}</strong>
+                    <span className="t-small secondary">{d.me.ignored.some((x) => Date.parse(x.dueAt) <= Date.now()) ? t("tm.warnBody", { n: d.me.ignored.length }) : t("tm.warnSoon", { n: d.me.ignored.length })}</span>
+                    <span className="row g8 wrap">{d.me.ignored.slice(0, 3).map((x) => <Link key={x.id} href={`/app/missions/${x.id}`} className="chip">{x.title}</Link>)}</span>
+                  </span>
+                </div>
+              )}
+
+              <div className="mapx-tabs" role="tablist">
+                <button type="button" role="tab" aria-selected={tab === "missions"} onClick={() => setTab("missions")}>{t("tm.tabMissions")} <span className="t-meta">{d.missions.length}</span></button>
+                <button type="button" role="tab" aria-selected={tab === "season"} onClick={() => setTab("season")}>{t("tm.tabSeason")}</button>
+              </div>
+
+              {tab === "missions" ? (
+                d.missions.length === 0 ? <p className="t-small secondary" style={{ padding: "8px 4px" }}>{t("tm.noMissions")}</p> : (
+                  <ul className="mapx-list">
+                    {sorted.map((m, i) => (
+                      <li key={m.id} style={{ ["--i" as string]: Math.min(i, 8) }}>
+                        <button type="button" className="mapx-mission" data-on={m.id === selected || undefined} onClick={() => { setSelected(m.id); setSheet(false); if (m.coordinates) setFocus({ point: m.coordinates, key: m.id }); }}>
+                          <span className={`mapx-cat cat-${m.category}`}><Icon name={CATEGORY_ICON[m.category]} size={16} /></span>
+                          <span className="stack grow" style={{ minWidth: 0, textAlign: "left" }}>
+                            <span className="truncate" style={{ fontWeight: 500 }}>{m.title}</span>
+                            <span className="t-small secondary truncate">
+                              {m.firstLookUntil ? <span className="first-look">{t("tm.firstLook", { time: f.time(m.firstLookUntil) })}</span> : m.inMyArea ? <span className="in-area">{t("tm.inYourArea")}</span> : null}
+                              {(m.firstLookUntil || m.inMyArea) ? " · " : ""}{here && m.coordinates ? t("tm.away", { d: f.distance(distanceM(here, m.coordinates)) }) : f.dayTime(m.date)}
+                            </span>
+                          </span>
+                          <span className="t-small num" style={{ fontWeight: 500 }}>+{m.rewardXP} XP</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )
+              ) : (
+                <div className="stack g16">
+                  {d.board.people.length === 0 ? <p className="t-small secondary">{t("tm.boardEmpty")}</p> : (
+                    <>
+                      <BoardList title={t("tm.people")} rows={d.board.people.map((p) => ({ id: p.id, name: p.name, area: p.areaM2, me: p.me, mark: <Avatar name={p.name} src={p.avatar} size={28} /> }))} />
+                      {d.board.groups.length > 0 && <BoardList title={t("tm.groups")} rows={d.board.groups.map((g) => ({ id: g.id, name: g.name, area: g.areaM2, me: g.mine, mark: <GroupMark name={g.name} color={g.color} size={28} />, href: `/app/groups/${g.id}` }))} />}
+                    </>
+                  )}
+                </div>
+              )}
+
+              <div className="mapx-legend t-small secondary">
+                <span><i style={{ background: accent }} />{t("tm.legendMine")}</span>
+                {d.me.group && <span><i style={{ background: d.me.group.color }} />{t("tm.legendGroup")}</span>}
+                <span><i className="dash" />{t("tm.legendOther")}</span>
+              </div>
+            </>
+          )}
+        </aside>
+      )}
+
+      {/* the selected mission */}
+      {sel && !capturing && (
+        <div className="mapx-card" key={sel.id}>
+          <button type="button" className="mapx-card-x" onClick={() => setSelected(null)} aria-label={t("a.close")}><Icon name="x" size={16} /></button>
+          <span className={`tag cat-${sel.category}`}><span className="cat-dot" />{t(`cat.${sel.category}`)}</span>
+          <strong className="t-h3" style={{ paddingRight: 28 }}>{sel.title}</strong>
+          <span className="t-small secondary">{f.dayTime(sel.date)} · {sel.location}</span>
+          {sel.firstLookUntil ? <span className="first-look t-small">{t("tm.firstLook", { time: f.time(sel.firstLookUntil) })}</span> : sel.inMyArea ? <span className="in-area t-small">{t("tm.inYourArea")}</span> : null}
+          <div className="row between g8" style={{ marginTop: 4 }}>
+            <span className="t-small num" style={{ fontWeight: 500 }}>+{sel.rewardXP} XP · +{sel.rewardPoints} Fixcoin</span>
+            <Button variant="primary" size="sm" onClick={() => router.push(`/app/missions/${sel.id}`)}>{sel.joined ? t("tm.joined") : t("tm.open")}<Icon name="arrowRight" size={16} /></Button>
+          </div>
+        </div>
+      )}
+
+      {/* while walking */}
+      {capturing && (
+        <CaptureHud gps={gps} busy={busy} onFinish={() => finish(true)} onCancel={() => setConfirmCancel(true)} />
+      )}
+
+      <Dialog open={confirmCancel} onClose={() => setConfirmCancel(false)} title={t("tm.c.cancel")} footer={<>
+        <Button variant="ghost" onClick={() => setConfirmCancel(false)}>{t("tm.e.keep")}</Button>
+        <Button variant="danger" onClick={() => { setConfirmCancel(false); gps.reset(); }}>{t("tm.c.cancel")}</Button>
+      </>}><p className="secondary">{t("tm.c.cancelQ")}</p></Dialog>
+
+      <Dialog open={Boolean(result)} onClose={() => setResult(null)} title={result?.ok ? t("tm.r.title") : t("tm.e.title")} footer={result?.ok ? <>
+        <Button variant="ghost" onClick={() => setResult(null)}>{t("a.close")}</Button>
+        <Button variant="primary" onClick={() => { setResult(null); setTab("missions"); setSheet(true); }}>{t("tm.r.see")}</Button>
+      </> : <>
+        {result && !result.ok && result.error === "not_closed" ? <Button variant="primary" onClick={() => { setResult(null); gps.resume(); }}>{t("tm.e.keep")}</Button> : <Button variant="primary" onClick={() => setResult(null)}>{t("a.close")}</Button>}
+      </>}>
+        {result?.ok ? (
+          <div className="stack g12 capture-result">
+            <span className="capture-big num">{t("tm.r.gained", { area: f.area(result.gainedM2) })}</span>
+            <span className="secondary">{t("tm.r.total", { area: f.area(result.areaM2) })}</span>
+            {result.takenFrom.map((x) => <span key={x.name} className="row g8 t-small"><Icon name="zap" size={14} style={{ color: "var(--warn)" }} />{t("tm.r.taken", { name: x.name, area: f.area(x.areaM2) })}</span>)}
+            <span className="row g8 t-small"><Icon name="flag" size={14} />{result.missionsInside ? t("tm.r.missions", { n: result.missionsInside }) : t("tm.r.noMissions")}</span>
+          </div>
+        ) : result ? (
+          <p className="secondary">{t(`tm.e.${result.error}`, { d: f.distance(result.toStartM ?? 0) })}</p>
+        ) : null}
+      </Dialog>
+
+      <Dialog open={intro} onClose={() => { setIntro(false); try { localStorage.setItem(INTRO_KEY, "1"); } catch { /* ignore */ } }} title={t("tm.h.title")} footer={
+        <Button variant="primary" onClick={() => { setIntro(false); try { localStorage.setItem(INTRO_KEY, "1"); } catch { /* ignore */ } }}>{t("tm.h.ok")}</Button>
+      }>
+        <ol className="how-steps">
+          {(["1", "2", "3", "4"] as const).map((k, i) => (
+            <li key={k} style={{ ["--i" as string]: i }}>
+              <span className="how-steps-n num">{k}</span>
+              <span className="stack g4"><strong>{t(`tm.h.${k}t`)}</strong><span className="t-small secondary">{t(`tm.h.${k}b`)}</span></span>
+            </li>
+          ))}
+        </ol>
+        <p className="t-small muted" style={{ marginTop: 12 }}>{t("tm.h.rules")}</p>
+      </Dialog>
+      {me === null && null}
+    </div>
+  );
+}
+
+function CaptureHud({ gps, busy, onFinish, onCancel }: { gps: ReturnType<typeof useTracker>; busy: boolean; onFinish: () => void; onCancel: () => void }) {
+  const { t } = useI18n();
+  const f = useFmt();
+  const [, tick] = useState(0);
+  useEffect(() => { const id = window.setInterval(() => tick((n) => n + 1), 1000); return () => window.clearInterval(id); }, []);
+  const secs = gps.startedAt ? (Date.now() - gps.startedAt) / 1000 : 0;
+  const { loop, stats } = gps;
+  const toStart = loop.toStartM;
+  const goingBack = loop.pathM >= TERRITORY.minPathM;
+  const phase = gps.points.length < 2 ? "wait" : loop.canFinish ? "close" : goingBack && toStart != null ? "back" : "walk";
+  const hint = phase === "wait" ? t("tm.c.waiting") : phase === "close" ? t("tm.c.hintClose") : phase === "back" ? t("tm.c.hintBack", { d: f.distance(toStart ?? 0) }) : t("tm.c.hintWalk");
+  // progress: path toward the minimum, then closing the gap
+  const progress = !goingBack ? Math.min(0.5, (loop.pathM / TERRITORY.minPathM) * 0.5) : toStart == null ? 0.5 : 0.5 + 0.5 * Math.max(0, Math.min(1, 1 - (toStart - TERRITORY.autoCloseM) / 400));
+  return (
+    <>
+      <div className="hud" role="status" aria-live="polite">
+        <div className="hud-ring" style={{ ["--p" as string]: progress }}>
+          <svg viewBox="0 0 44 44" aria-hidden><circle cx="22" cy="22" r="19" /><circle cx="22" cy="22" r="19" pathLength={1} className="hud-ring-on" /></svg>
+          <Icon name="footprints" size={18} />
+        </div>
+        <div className="hud-cells">
+          <span><span className="t-meta">{t("tm.c.time")}</span><strong className="num">{f.clock(secs)}</strong></span>
+          <span><span className="t-meta">{t("tm.c.distance")}</span><strong className="num">{f.distance(stats.distanceM)}</strong></span>
+          <span><span className="t-meta">{t("tm.c.toStart")}</span><strong className="num">{toStart == null ? "—" : f.distance(toStart)}</strong></span>
+        </div>
+      </div>
+      <div className="hud-hint" data-ready={loop.canFinish || undefined} key={phase}>{hint}</div>
+      {stats.droppedFast > 2 && <div className="mapx-alert" style={{ top: 168 }}><Icon name="alert" size={16} />{t("tm.c.fast", { n: stats.droppedFast })}</div>}
+      <div className="hud-bar">
+        <span className="t-small secondary row g8">{gps.awake ? <><Icon name="sun" size={14} />{t("tm.c.awake")}</> : t("tm.c.keepOpen")}</span>
+        <div className="row g8">
+          <Button variant="ghost" onClick={onCancel}>{t("tm.c.cancel")}</Button>
+          {gps.status === "tracking"
+            ? <Button variant="secondary" icon="pause" onClick={gps.pause}>{t("tm.c.pause")}</Button>
+            : <Button variant="secondary" icon="play" onClick={gps.resume}>{t("tm.c.resume")}</Button>}
+          <Button variant="primary" icon="check" loading={busy} disabled={!loop.canFinish} onClick={onFinish} className={loop.canFinish ? "hud-go" : undefined}>{t("tm.c.finish")}</Button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function BoardList({ title, rows }: { title: string; rows: { id: string; name: string; area: number; me: boolean; mark: React.ReactNode; href?: string }[] }) {
+  const f = useFmt();
+  const max = Math.max(...rows.map((r) => r.area), 1);
+  return (
+    <section className="stack g8">
+      <h3 className="t-small secondary">{title}</h3>
+      <ol className="board-mini">
+        {rows.map((r, i) => {
+          const body = (
+            <>
+              <span className="num t-meta" style={{ width: 16 }}>{i + 1}</span>
+              {r.mark}
+              <span className="stack grow" style={{ minWidth: 0 }}>
+                <span className="truncate" style={{ fontWeight: r.me ? 600 : 500 }}>{r.name}</span>
+                <span className="board-bar"><span style={{ ["--w" as string]: r.area / max, ["--i" as string]: i }} /></span>
+              </span>
+              <span className="t-small num">{f.area(r.area)}</span>
+            </>
+          );
+          return <li key={r.id} data-me={r.me || undefined}>{r.href ? <Link href={r.href} className="row g12">{body}</Link> : <span className="row g12">{body}</span>}</li>;
+        })}
+      </ol>
+    </section>
+  );
+}
+
+/** A steady colour per person (no violet), for people outside any group. */
+function personColor(id: string) {
+  const palette = ["#c2410c", "#0e7490", "#be123c", "#4d7c0f", "#1d4ed8", "#a16207", "#0f766e"];
+  let h = 0;
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return palette[h % palette.length];
+}
+
+export default function MapPage() {
+  return <Suspense fallback={null}><MapMenu /></Suspense>;
+}

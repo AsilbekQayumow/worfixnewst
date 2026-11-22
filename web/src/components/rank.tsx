@@ -4,7 +4,7 @@ import { useFmt, useI18n } from "@/lib/i18n";
 import { Progress } from "./ui";
 
 const RANK_COLOR: Record<RankId, string> = {
-  explorer: "#2f8f5b", volunteer: "#1d6fb8", protector: "#c27a12", guardian: "#7a4cc2", legend: "#b8862b",
+  explorer: "#2f8f5b", volunteer: "#1d6fb8", protector: "#c27a12", guardian: "#a8322d", legend: "#b8862b",
 };
 
 /** Hexagonal rank badge with a leaf (the WORFIX mark), coloured by rank. */

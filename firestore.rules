@@ -1,7 +1,9 @@
 rules_version = '2';
 // WORFIX Firestore security rules (web app, Firebase mode — web/src/lib/store/cloud.ts).
 //
-// v3 adds groups (invite codes, group chat), help signals, news, promo codes, phone/Telegram sign-in fields and
+// v3.2 adds territories (monthly areas taken by walking a loop), capture logs and group join requests;
+// sign-in is by email only.
+// v3 adds groups (invite codes, group chat), help signals, news, promo codes and
 // AI review results (written only by the ai-review server function with the Admin SDK, which bypasses these rules).
 // v2.1 adds message reactions, replies, edits and deletes, admin messages and announcements.
 // v2 keeps every v1 collection and rule, and adds: agent missions (made by the GPS mission agent for one
@@ -31,11 +33,8 @@ service cloud.firestore {
           || (exists(/databases/$(db)/documents/friendships/$(b + '_' + a)) && get(/databases/$(db)/documents/friendships/$(b + '_' + a)).data.status == 'accepted');
     }
     // XP and Fixcoin by difficulty (web/src/lib/domain/rewards.ts).
-    // v3: a phone number counts as verified only when this sign-in was by SMS; a Telegram id only from the telegram-auth token.
-    function phoneClaimOk() { return request.resource.data.get('phoneVerified', false) != true || request.auth.token.get('phone_number', null) != null; }
-    function telegramClaimOk() {
-      return request.resource.data.get('telegramId', null) == null || request.resource.data.telegramId == request.auth.token.get('tg', '');
-    }
+    // v3.2: sign-in is by email only; the old phone/Telegram flags can no longer be set from the app.
+    function noLegacyClaims() { return request.resource.data.get('phoneVerified', false) != true && request.resource.data.get('telegramId', null) == null; }
     function xpFor(d) { return {'easy': 60, 'medium': 140, 'hard': 300}[d]; }
     function coinsFor(d) { return {'easy': 15, 'medium': 35, 'hard': 75}[d]; }
 
@@ -48,7 +47,7 @@ service cloud.firestore {
         && request.resource.data.status == 'active'
         && request.resource.data.xp == 0 && request.resource.data.points == 0 && request.resource.data.level == 1
         && request.resource.data.emailVerified == false
-        && phoneClaimOk() && telegramClaimOk();
+        && noLegacyClaims();
       allow update: if
         // Owner: profile, personal info, language and privacy. Never role or rewards. Fixcoin may only go down
         // (spent in the shop — the order rule below checks the amount).
@@ -58,8 +57,7 @@ service cloud.firestore {
           && (!touches(['status']) || request.resource.data.status == 'deleted')
           && (!touches(['emailVerified']) || request.auth.token.email_verified == true)
           && (!touches(['organizationId']) || resource.data.role == 'organization')
-          && (!touches(['phoneVerified']) || phoneClaimOk())
-          && (!touches(['telegramId']) || telegramClaimOk()))
+          && !touches(['phoneVerified', 'telegramId']))
         || (isReviewer() && !touches(['id', 'email', 'role', 'status', 'organizationId', 'emailVerified', 'phone', 'birthYear', 'phoneVerified', 'telegramId']))
         || (isAdmin() && !touches(['id', 'email']));
       allow delete: if false;
@@ -247,8 +245,10 @@ service cloud.firestore {
     function joinedWithCode(gid) {
       let j = getAfter(/databases/$(db)/documents/groupJoins/$(gid + '_' + uid()));
       return j != null && j.data.userId == uid() && j.data.groupId == gid
-        && exists(/databases/$(db)/documents/groupCodes/$(j.data.code))
-        && get(/databases/$(db)/documents/groupCodes/$(j.data.code)).data.groupId == gid;
+        && ((j.data.code != '' && exists(/databases/$(db)/documents/groupCodes/$(j.data.code))
+             && get(/databases/$(db)/documents/groupCodes/$(j.data.code)).data.groupId == gid)
+          // v3.2: or a join request a member approved
+          || (j.data.code == '' && get(/databases/$(db)/documents/groupRequests/$(gid + '_' + uid())).data.status == 'approved'));
     }
     match /groups/{gid} {
       allow read: if signedIn();
@@ -289,11 +289,58 @@ service cloud.firestore {
       allow create: if active() && request.resource.data.from == uid() && memberAfter(request.resource.data.groupId)
         && request.resource.data.text.size() <= 2200 && request.resource.data.get('deletedAt', null) == null
         && request.resource.data.kind in ['text', 'signal', 'system'];
+      // v3.2: a member answering a join request writes a system line too (covered above: kind 'system').
       allow update: if signedIn() && memberOf(resource.data.groupId) && (
         onlyTouches(['readBy', 'reactions'])
         || (resource.data.from == uid() && resource.data.kind == 'text'
             && onlyTouches(['text', 'editedAt', 'deletedAt', 'reactions', 'readBy']) && request.resource.data.text.size() <= 2200));
       allow delete: if false;
+    }
+
+    // ── v3.2: asking to join a group ──
+    function askToJoin(id) {
+      return request.resource.data.userId == uid() && id == request.resource.data.groupId + '_' + uid()
+        && request.resource.data.status == 'pending' && request.resource.data.decidedBy == null
+        && request.resource.data.note.size() <= 200
+        && exists(/databases/$(db)/documents/groups/$(request.resource.data.groupId))
+        && (resource == null || resource.data.status != 'approved');
+    }
+    function cancelOrJoined() {
+      return resource != null && resource.data.userId == uid() && onlyTouches(['status'])
+        && ((request.resource.data.status == 'cancelled' && resource.data.status in ['pending', 'approved'])
+          || (request.resource.data.status == 'joined' && resource.data.status == 'approved' && memberAfter(resource.data.groupId)));
+    }
+    function memberDecides() {
+      return resource != null && resource.data.status == 'pending' && memberOf(resource.data.groupId)
+        && onlyTouches(['status', 'decidedBy', 'decidedAt'])
+        && request.resource.data.status in ['approved', 'declined'] && request.resource.data.decidedBy == uid();
+    }
+    match /groupRequests/{id} {
+      allow read: if signedIn();
+      allow create, update: if active() && (askToJoin(id) || cancelOrJoined() || memberDecides());
+      allow delete: if false;
+    }
+
+    // ── v3.2: territory ──
+    function shapeKeys() { return ['shape', 'areaM2', 'center', 'bbox', 'updatedAt', 'lostM2', 'takenNotice']; }
+    match /territories/{id} {
+      allow read: if signedIn();
+      // the owner: their own area this month
+      allow create: if active() && me().role == 'volunteer' && request.resource.data.userId == uid()
+        && id == request.resource.data.season + '_' + uid() && request.resource.data.areaM2 >= 0 && request.resource.data.lostM2 == 0;
+      allow update: if active() && (
+        (resource.data.userId == uid() && !touches(['id', 'userId', 'season', 'createdAt'])
+          && request.resource.data.areaM2 >= 0 && request.resource.data.lostM2 >= resource.data.lostM2)
+        // anyone else may only take area away (walking over it), never add, and it counts as lost
+        || (resource.data.userId != uid() && onlyTouches(shapeKeys())
+          && request.resource.data.areaM2 < resource.data.areaM2 && request.resource.data.areaM2 >= 0
+          && request.resource.data.lostM2 > resource.data.lostM2));
+      allow delete: if false;
+    }
+    match /territoryCaptures/{id} {
+      allow read: if signedIn() && (resource.data.userId == uid() || isAdmin());
+      allow create: if active() && request.resource.data.userId == uid() && request.resource.data.maxSpeedKmh <= 18;
+      allow update, delete: if false;
     }
 
     // ── v3: help signals ──

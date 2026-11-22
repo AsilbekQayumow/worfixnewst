@@ -33,7 +33,7 @@ export function MissionDetail({ id, inApp }: { id: string; inApp: boolean }) {
   const [fix, setFix] = useState<GpsFix | null>(null);
 
   if (q.loading && !q.data) return <Skeleton rows={4} height={120} />;
-  if (!q.data) return <div className="card"><Empty icon="flag" title={t("md.notFound")} action={<ButtonLink href={inApp ? "/app/missions?tab=explore" : "/missions"}>{t("md.back")}</ButtonLink>} /></div>;
+  if (!q.data) return <div className="card"><Empty icon="flag" title={t("md.notFound")} action={<ButtonLink href={inApp ? "/app/map?view=list&tab=explore" : "/missions"}>{t("md.back")}</ButtonLink>} /></div>;
 
   const m = q.data.mission;
   const s = st.data;
@@ -60,7 +60,7 @@ export function MissionDetail({ id, inApp }: { id: string; inApp: boolean }) {
   return (
     <div className="stack g24 enter">
       <div className="stack g12">
-        <Link href={inApp ? (joined ? "/app/missions" : "/app/missions?tab=explore") : "/missions"} className="row g8 t-small secondary" style={{ width: "fit-content" }}>
+        <Link href={inApp ? (joined ? "/app/map?view=list&tab=active" : "/app/map?view=list&tab=explore") : "/missions"} className="row g8 t-small secondary" style={{ width: "fit-content" }}>
           <Icon name="arrowLeft" size={16} /> {inApp && joined ? t("nav.myMissions") : t("md.back")}
         </Link>
         <div className="row g12 wrap">

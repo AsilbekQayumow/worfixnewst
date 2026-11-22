@@ -9,8 +9,8 @@
 import { getApps, initializeApp } from "firebase/app";
 import {
   connectAuthEmulator, createUserWithEmailAndPassword, deleteUser, EmailAuthProvider, getAuth, onAuthStateChanged, reauthenticateWithCredential,
-  RecaptchaVerifier, sendEmailVerification, sendPasswordResetEmail, signInWithCustomToken, signInWithEmailAndPassword, signInWithPhoneNumber, signOut,
-  updatePassword, type Auth, type ConfirmationResult, type User,
+  sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, signOut,
+  updatePassword, type Auth, type User,
 } from "firebase/auth";
 import { collection, connectFirestoreEmulator, doc, getDocFromServer, getFirestore, onSnapshot, query, where, writeBatch, type Firestore, type Query, type Unsubscribe } from "firebase/firestore";
 
@@ -29,7 +29,7 @@ export const FIREBASE_ENABLED = Boolean(config.apiKey && config.projectId && con
 const PUBLIC = ["missions", "organizations", "certificates", "shopItems"] as const;
 const PRIVATE = [
   "users", "participants", "submissions", "records", "notifications", "audits", "friendships", "cheers", "orders", "messages", "announcements",
-  "news", "groups", "groupJoins", "helpSignals", "promoCodes",
+  "news", "groups", "groupJoins", "helpSignals", "promoCodes", "territories", "territoryCaptures", "groupRequests",
 ] as const;
 /** v3: read per group the signed-in user belongs to (see followGroups). */
 const PER_GROUP = ["groupMessages", "groupCodes"] as const;
@@ -68,7 +68,9 @@ function refsFor(name: SyncedName, uid?: string): Query[] {
   const c = collection(fs, name);
   if (!uid) return [c];
   if (name === "notifications" || name === "groupJoins") return [query(c, where("userId", "==", uid))];
-  if (name === "orders" || name === "promoCodes") return [c, query(c, where("userId", "==", uid))];
+  if (name === "orders" || name === "promoCodes" || name === "territoryCaptures") return [c, query(c, where("userId", "==", uid))];
+  // v3.2: only this month's areas
+  if (name === "territories") return [query(c, where("season", "==", new Date().toISOString().slice(0, 7)))];
   if (name === "news") return [c, query(c, where("status", "==", "published"))];
   if (name === "messages") return [query(c, where("participants", "array-contains", uid))];
   return [c];
@@ -226,35 +228,6 @@ export async function signIn(email: string, password: string) {
   const cred = await wrap(signInWithEmailAndPassword(auth, email, password));
   await synced(cred.user.uid);
   return cred.user.uid;
-}
-/* v3: phone (SMS) and Telegram sign-in */
-let confirmation: ConfirmationResult | null = null;
-let verifier: RecaptchaVerifier | null = null;
-/** Sends the SMS code. `container` is the id of an element for the invisible reCAPTCHA. */
-export async function startPhone(phone: string, container: string) {
-  init();
-  verifier?.clear();
-  verifier = new RecaptchaVerifier(auth, container, { size: "invisible" });
-  confirmation = await wrap(signInWithPhoneNumber(auth, phone, verifier));
-}
-export async function confirmPhone(code: string) {
-  if (!confirmation) throw new CloudAuthError("auth/code-expired");
-  const cred = await wrap(confirmation.confirm(code));
-  confirmation = null;
-  await synced(cred.user.uid);
-  return cred.user.uid;
-}
-/** Signs in with a custom token made by the telegram-auth server function. */
-export async function signInWithToken(token: string) {
-  init();
-  const cred = await wrap(signInWithCustomToken(auth, token));
-  await synced(cred.user.uid);
-  return cred.user.uid;
-}
-export const currentPhone = () => authUser?.phoneNumber ?? null;
-export async function currentClaims(): Promise<Record<string, unknown>> {
-  if (!authUser) return {};
-  return (await authUser.getIdTokenResult()).claims as Record<string, unknown>;
 }
 
 export async function logOut() {

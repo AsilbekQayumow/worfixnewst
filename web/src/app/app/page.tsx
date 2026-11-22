@@ -46,7 +46,7 @@ export default function Home() {
           <div className="rows">{signals.data.slice(0, 3).map((s) => <SignalRow key={s.id} s={s} />)}</div>
         </section>
       )}
-      {d && d.needsInfo > 0 && <Notice tone="info">{t("home.app.needsInfo", { n: d.needsInfo })} <Link className="link" href="/app/missions?tab=active">{t("nav.missions")}</Link></Notice>}
+      {d && d.needsInfo > 0 && <Notice tone="info">{t("home.app.needsInfo", { n: d.needsInfo })} <Link className="link" href="/app/map?view=list&tab=active">{t("nav.missions")}</Link></Notice>}
 
       <div className="grid home-top">
         <section className="card pad stack g16">
@@ -72,9 +72,9 @@ export default function Home() {
       <div className="split-wide">
         <div className="stack g24" style={{ minWidth: 0 }}>
           <section>
-            <div className="section-title"><h2 className="t-h2">{t("home.app.active")}</h2><Link href="/app/missions?tab=active" className="t-small link">{t("a.all")}</Link></div>
+            <div className="section-title"><h2 className="t-h2">{t("home.app.active")}</h2><Link href="/app/map?view=list&tab=active" className="t-small link">{t("a.all")}</Link></div>
             {!d ? <Skeleton rows={2} /> : d.active.length === 0 ? (
-              <div className="card"><Empty icon="flag" title={t("home.app.noActive")} body={t("home.app.noActiveBody")} action={<ButtonLink href="/app/missions?tab=explore" variant="primary">{t("nav.explore")}</ButtonLink>} /></div>
+              <div className="card"><Empty icon="flag" title={t("home.app.noActive")} body={t("home.app.noActiveBody")} action={<ButtonLink href="/app/map?view=list&tab=explore" variant="primary">{t("nav.explore")}</ButtonLink>} /></div>
             ) : (
               <div className="card rows">
                 {d.active.map(({ mission: m, participant: p, status }) => (
@@ -93,7 +93,7 @@ export default function Home() {
           </section>
 
           <section>
-            <div className="section-title"><h2 className="t-h2">{t("home.app.forYou")}</h2><Link href="/app/missions?tab=explore" className="t-small link">{t("a.all")}</Link></div>
+            <div className="section-title"><h2 className="t-h2">{t("home.app.forYou")}</h2><Link href="/app/map?view=list&tab=explore" className="t-small link">{t("a.all")}</Link></div>
             {!d ? <Skeleton rows={2} height={160} /> : d.forYou.length === 0 ? (
               <div className="card"><Empty icon="radar" title={t("home.app.noneNear")} action={<ButtonLink href="/app/missions?agent=1" variant="primary" icon="radar">{t("home.app.agent")}</ButtonLink>} /></div>
             ) : (
@@ -103,6 +103,7 @@ export default function Home() {
         </div>
 
         <aside className="stack g16">
+          {me.role === "volunteer" && <MapSpot />}
           {me.role === "volunteer" && <GroupSpot />}
           {d?.next && (
             <Link href="/app/profile?tab=achievements" className="card pad row g12">
@@ -143,5 +144,24 @@ export default function Home() {
         </aside>
       </div>
     </div>
+  );
+}
+
+/** v3.2: the way into the territory game from Home. */
+function MapSpot() {
+  const { t } = useI18n();
+  const f = useFmt();
+  const q = useApi(() => api.myTerritory());
+  if (!q.data) return null;
+  const has = q.data.areaM2 > 0;
+  return (
+    <Link href="/app/map" className="card pad row g12 map-spot">
+      <span className="map-spot-art" aria-hidden><svg viewBox="0 0 48 48"><path d="M10 30c3-9 9-15 18-16s11 7 9 13-9 11-17 10-11-1-10-7Z" /><circle cx="24" cy="25" r="2.6" /></svg></span>
+      <span className="stack grow" style={{ minWidth: 0 }}>
+        <strong>{has ? t("home.mapYours", { area: f.area(q.data.areaM2), rank: q.data.rank ?? "—" }) : t("home.mapCta")}</strong>
+        <span className="t-small secondary">{t("home.mapCtaBody")}</span>
+      </span>
+      <Icon name="chevronRight" size={16} className="muted" />
+    </Link>
   );
 }
