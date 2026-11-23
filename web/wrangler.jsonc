@@ -6,8 +6,12 @@
   "main": "worker.ts",
   "compatibility_date": "2025-10-01",
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
-  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  // Next route-group chunks ("(public)", "(auth)") are requested as %28…%29; the asset server
+  // redirects that to the literal form and browsers loop. worker.ts serves them instead.
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS", "run_worker_first": ["/_next/static/chunks/app/*"] },
   "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "worfix" }],
+  "workers_dev": true,
+  "preview_urls": false,
   "routes": [
     { "pattern": "worfix.site", "custom_domain": true },
     { "pattern": "www.worfix.site", "custom_domain": true }
