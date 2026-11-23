@@ -7,5 +7,6 @@ cd "$(dirname "$0")/.."
 set -a; . ./cloudflare.env; set +a
 export WORFIX_PRODUCTION=1 WORFIX_TARGET=cloudflare
 npx opennextjs-cloudflare build
+node scripts/embed-bracket-chunks.mjs
 [ "${1:-}" = "--build" ] && exit 0
 npx opennextjs-cloudflare deploy
