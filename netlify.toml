@@ -39,8 +39,6 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  # The Admin SDK (ai-review, shop-fulfil, territory-decay) is installed as a normal dependency, not bundled.
-  external_node_modules = ["firebase-admin"]
 
 # Next.js runtime (server-rendered pages and /api routes). Declared explicitly so it also runs
 # for deploys uploaded through the API/CLI, not only for Git-triggered builds.

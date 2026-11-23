@@ -1,0 +1,23 @@
+{
+  // WORFIX on Cloudflare Workers. Build and deploy: scripts/deploy-cloudflare.sh (see DEPLOY.md).
+  // Secrets (set once: npx wrangler secret put <NAME>): GEMINI_API_KEY, ORS_API_KEY, FIREBASE_SERVICE_ACCOUNT.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "worfix",
+  "main": "worker.ts",
+  "compatibility_date": "2025-10-01",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS" },
+  "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "worfix" }],
+  "routes": [
+    { "pattern": "worfix.site", "custom_domain": true },
+    { "pattern": "www.worfix.site", "custom_domain": true }
+  ],
+  // v3.2: the daily territory decay, 00:15 UTC
+  "triggers": { "crons": ["15 0 * * *"] },
+  "vars": {
+    "CONTEXT": "production",
+    "NEXT_PUBLIC_FIREBASE_PROJECT_ID": "worfix3",
+    "SITE_URL": "https://worfix.site"
+  },
+  "observability": { "enabled": true }
+}

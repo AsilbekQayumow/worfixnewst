@@ -13,7 +13,7 @@ import { isAgentOrg } from "../domain/permissions";
 import { reviewSubmission } from "../domain/verification";
 import { LANGS, type Lang, type Mission, type MissionParticipant, type Notification, type Order, type PromoCode, type Submission, type Territory, type UserProfile } from "../domain/types";
 import { bboxOf, centerOf, contains, decay, decodeShape, encodeShape, seasonOf, shapeArea, TERRITORY } from "../domain/territory";
-import { adminApp, adminAuth, adminDb, caller, notConfigured, tooMany } from "./admin";
+import { adminDb, adminReady, caller, notConfigured, tooMany } from "./admin";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 const nowIso = () => new Date().toISOString();
@@ -23,7 +23,7 @@ const note = (userId: string, type: Notification["type"], key: string, values: R
 /* ───────────── ai-review ───────────── */
 
 export async function handleAiReview(req: Request): Promise<Response> {
-  if (!adminApp()) return notConfigured();
+  if (!adminReady()) return notConfigured();
   const uid = await caller(req);
   if (!uid) return json({ error: "e.signIn" }, 401);
   if (tooMany(`ai:${uid}`, 6)) return json({ error: "ai.tooMany" }, 429);
@@ -83,7 +83,7 @@ export async function handleAiReview(req: Request): Promise<Response> {
     const now = nowIso();
     const res = reviewSubmission({
       submission: { ...cur, checks: checks.checks, fraudScore: checks.score, fraudFlags: checks.flags }, mission: m, volunteer: vol, reviewer: aiReviewer(now),
-      organization: null, decision: review.decision, note: aiNote(review), now, newId: randomUUID, origin: process.env.URL ?? "", team: teamSize > 1,
+      organization: null, decision: review.decision, note: aiNote(review), now, newId: randomUUID, origin: process.env.URL ?? process.env.SITE_URL ?? "", team: teamSize > 1,
     });
     tx.set(ref, { ...res.submission, aiReview: review, reviewedBy: AI_REVIEWER_ID });
     tx.set(vRef, res.volunteer);
@@ -100,7 +100,7 @@ export async function handleAiReview(req: Request): Promise<Response> {
 /* ───────────── shop-fulfil ───────────── */
 
 export async function handleShopFulfil(req: Request): Promise<Response> {
-  if (!adminApp()) return notConfigured();
+  if (!adminReady()) return notConfigured();
   const uid = await caller(req);
   if (!uid) return json({ error: "e.signIn" }, 401);
   if (tooMany(`shop:${uid}`, 10)) return json({ error: "ai.tooMany" }, 429);
@@ -133,7 +133,7 @@ export async function handleShopFulfil(req: Request): Promise<Response> {
  * within the grace period loses 10% a day. Same rules as the app (domain/territory.ts).
  */
 export async function runTerritoryDecay(now = Date.now()) {
-  if (!adminApp()) return { skipped: "not configured" };
+  if (!adminReady()) return { skipped: "not configured" };
   const db = adminDb();
   const season = seasonOf(now);
   const [tSnap, mSnap, gSnap] = await Promise.all([

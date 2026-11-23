@@ -1,7 +1,9 @@
-/** Emulator test of the Admin-SDK server functions (run by tests/functions). Not part of the app build. */
+/** Emulator test of the server functions and their Firestore client (firestore-rest.ts). Not part of the app build.
+ *  Run with FIRESTORE_EMULATOR_HOST=127.0.0.1:8085 FIREBASE_AUTH_EMULATOR_HOST=127.0.0.1:9099 NEXT_PUBLIC_FIREBASE_PROJECT_ID=<id> AI_MOCK=1. */
 import assert from "node:assert/strict";
-import { handleAiReview, handleShopFulfil } from "../src/lib/server/handlers";
-import { adminAuth, adminDb } from "../src/lib/server/admin";
+import { handleAiReview, handleShopFulfil, runTerritoryDecay } from "../src/lib/server/handlers";
+import { adminDb } from "../src/lib/server/admin";
+import { encodeShape, loopAround, seasonOf, traceToShape } from "../src/lib/domain/territory";
 
 const db = adminDb();
 const now = new Date().toISOString();
@@ -14,8 +16,11 @@ await db.doc("missions/m1").set({ id: "m1", organizationId: "agent_v1", source: 
 await db.doc("participants/m1_v1").set({ id: "m1_v1", missionId: "m1", userId: "v1", status: "accepted", startedAt: new Date(Date.now() - 3600_000).toISOString(), startGps: { lat: 39.65, lng: 66.95, accuracy: 10 }, completionStatus: "submitted" });
 await db.doc("submissions/s1").set({ id: "s1", missionId: "m1", userId: "v1", organizationId: "agent_v1", images: [img, img2], videos: [], notes: "done", gps: { lat: 39.65, lng: 66.95, accuracy: 10 }, gpsConsent: true, timestamp: now, metadata: { userAgent: "t", submissionCount: 1 }, aiConfidence: null, fraudScore: 0, fraudFlags: [], verificationStatus: "pending", reviewedBy: null, reviewedAt: null, reviewNote: "", rewardGrantedAt: null, certificateId: null, checks: [], checklistDone: ["a"], teamId: null, aiReview: null, grant: null, groupId: null });
 
+const b64 = (o: unknown) => Buffer.from(JSON.stringify(o)).toString("base64url");
 const token = async (uid: string) => {
-  const custom = await adminAuth().createCustomToken(uid);
+  // The Auth emulator accepts unsigned custom tokens.
+  const t = Math.floor(Date.now() / 1000);
+  const custom = `${b64({ alg: "none", typ: "JWT" })}.${b64({ iss: "fn-test@worfix", sub: "fn-test@worfix", aud: "https://identitytoolkit.googleapis.com/google.identity.identitytoolkit.v1.IdentityToolkit", iat: t, exp: t + 3600, uid })}.`;
   const r = await fetch(`http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=fake`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ token: custom, returnSecureToken: true }) });
   return ((await r.json()) as { idToken: string }).idToken;
 };
@@ -48,5 +53,31 @@ assert.equal(f1.code, "SECRET-1");
 assert.equal(f2.code, null);
 assert.equal(fOther.status, 404);
 assert.equal(((await db.doc("orders/o1").get()).data()!).status, "fulfilled");
+assert.equal(((await db.doc("promoCodes/c1").get()).data()!).orderId, "o1");
+
+// territory decay: an area with a mission inside that nobody on the owner's side joined for 3 days shrinks
+const T = Date.now();
+const center = { lat: 39.66, lng: 66.96 };
+const cap = traceToShape(loopAround(center, 120, 36, T - 3 * 86_400_000));
+assert.ok("shape" in cap);
+const season = seasonOf(T);
+const old = new Date(T - 3 * 86_400_000).toISOString();
+await db.doc(`territories/${season}_v1`).set({ id: `${season}_v1`, userId: "v1", groupId: null, season, shape: encodeShape(cap.shape), areaM2: cap.areaM2, center, bbox: [], captures: 1, lostM2: 0, takenNotice: null, createdAt: old, updatedAt: old, decayCheckedAt: old });
+await db.doc("missions/m2").set({ id: "m2", organizationId: "o9", source: "org", title: "Tree", description: "Plant", category: "environment", coordinates: center, date: new Date(T + 7 * 86_400_000).toISOString(), deadline: new Date(T + 8 * 86_400_000).toISOString(), status: "published", publishedAt: old, createdAt: old });
+await db.doc("groups/g1").set({ id: "g1", members: ["a1"] });
+const dec = await runTerritoryDecay(T);
+console.log("decay:", JSON.stringify(dec));
+assert.equal(dec.shrunk, 1);
+const after = (await db.doc(`territories/${season}_v1`).get()).data()!;
+assert.ok(after.areaM2 < cap.areaM2 * 0.95, `area should shrink (${after.areaM2} of ${cap.areaM2})`); // one day past the 48 h grace: −10%
+assert.ok(after.lostM2 > 0);
+const notes = await db.collection("notifications").where("userId", "==", "v1").get();
+assert.ok(notes.docs.some((d) => d.data().title === "n.territoryShrunk"));
+assert.equal((await runTerritoryDecay(T)).shrunk, 0, "same day must not shrink twice");
+
+// value round-trip: nested maps, arrays, nulls, doubles, empty map/array, missing doc
+await db.doc("misc/x").set({ a: { b: [1, 2.5, null, { c: "d" }], e: {} }, f: [], g: true, h: -3 });
+assert.deepEqual((await db.doc("misc/x").get()).data(), { a: { b: [1, 2.5, null, { c: "d" }], e: {} }, f: [], g: true, h: -3 });
+assert.equal((await db.doc("misc/none").get()).exists, false);
 console.log("FUNCTIONS OK");
 process.exit(0);

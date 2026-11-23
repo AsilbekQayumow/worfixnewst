@@ -52,6 +52,22 @@ Firebase qiymatlari maxfiy emas, ular brauzerga ochiq beriladi. Himoyani Firesto
 **Himoya:** Firebase qiymatlari kiritilmagan bo'lsa, production build xato bilan to'xtaydi. Shunday qilib sayt
 tasodifan bo'sh "demo rejim"da ochilib qolmaydi.
 
+## 2a. Cloudflare Workers (asosiy hosting, worfix.site)
+
+Sayt endi Cloudflare'da ishlaydi (bepul tarif, "Powered by" belgisi yo'q). Netlify sozlamalari zaxira sifatida qoldirilgan.
+
+- **Joylash:** `cd web && CLOUDFLARE_API_TOKEN=... npm run cf:deploy` — `scripts/deploy-cloudflare.sh` Next.js'ni
+  OpenNext bilan yig'adi (`web/cloudflare.env` dagi ochiq Firebase qiymatlari bilan) va `wrangler deploy` qiladi.
+- **Sozlamalar:** `web/wrangler.jsonc` — Worker nomi `worfix`, domenlar `worfix.site` va `www.worfix.site`
+  (www → asosiy domenga yo'naltiriladi), har kuni 00:15 UTC da hudud qisqarishi (cron).
+- **Maxfiy kalitlar** (bir marta): Cloudflare → Workers & Pages → worfix → Settings → Variables and Secrets,
+  yoki `npx wrangler secret put <NOM>`: `GEMINI_API_KEY`, `ORS_API_KEY`, `FIREBASE_SERVICE_ACCOUNT`.
+- **Server funksiyalari** avvalgi manzilda (`/.netlify/functions/<nom>`) ishlaydi — `web/worker.ts` ularni o'sha
+  kodga yo'naltiradi, shuning uchun brauzer kodi o'zgarmagan. Firestore'ga server endi Admin SDK emas,
+  `web/src/lib/server/firestore-rest.ts` (HTTPS) orqali yozadi — Workers'da gRPC yo'q.
+- **Mahalliy sinov:** `WORFIX_TARGET=cloudflare ALLOW_DEMO=1 npx opennextjs-cloudflare build && npx wrangler dev`.
+- Firebase → Authentication → Settings → **Authorized domains** ga `worfix.site` ni qo'shing.
+
 ## 3. Firebase'da domenni ruxsat etish
 
 Firebase console → Authentication → Settings → **Authorized domains** → **Add domain** → Netlify bergan manzil
