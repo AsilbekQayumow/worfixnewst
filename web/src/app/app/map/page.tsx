@@ -9,6 +9,7 @@ import { TerritoryMap, type MapArea, type MapMission } from "@/components/territ
 import { Avatar, Button, Dialog, Segmented, Skeleton, useToast } from "@/components/ui";
 import { GroupMark } from "@/components/group-bits";
 import { buzz, celebrate } from "@/lib/fx";
+import { personColor } from "@/lib/map-colors";
 import { distanceM, TERRITORY, type Shape } from "@/lib/domain/territory";
 import type { GeoPoint } from "@/lib/domain/types";
 import { useTracker } from "@/lib/geo/tracker";
@@ -67,9 +68,9 @@ function TerritoryGame({ onList }: { onList: () => void }) {
   useEffect(() => { gps.locate(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const d = q.data;
-  const accent = "var(--accent)";
+  const myColor = me ? personColor(me.id) : "#16a34a";
   const areas: MapArea[] = useMemo(() => (d?.areas ?? []).map((a) => ({
-    id: a.id, shape: a.shape, relation: a.relation, name: a.name, color: a.group?.color ?? personColor(a.userId),
+    id: a.id, shape: a.shape, relation: a.relation, name: a.name, color: personColor(a.userId),
   })), [d]);
   const missions: MapMission[] = useMemo(() => (d?.missions ?? []).flatMap((m) => m.coordinates ? [{
     id: m.id, title: m.title, category: m.category, coordinates: m.coordinates, inMyArea: m.inMyArea, firstLook: Boolean(m.firstLookUntil), joined: m.joined,
@@ -128,7 +129,7 @@ function TerritoryGame({ onList }: { onList: () => void }) {
   return (
     <div className="mapx" data-capturing={capturing || undefined}>
       <TerritoryMap
-        areas={areas} missions={capturing ? [] : missions} me={here} trace={gps.points} flash={flash} focus={focus} selected={selected}
+        areas={areas} missions={capturing ? [] : missions} me={here} trace={gps.points} flash={flash} myColor={myColor} focus={focus} selected={selected}
         onMission={(id) => { setSelected(id); setSheet(false); buzz(8); }}
       />
 
@@ -224,8 +225,8 @@ function TerritoryGame({ onList }: { onList: () => void }) {
               )}
 
               <div className="mapx-legend t-small secondary">
-                <span><i style={{ background: accent }} />{t("tm.legendMine")}</span>
-                {d.me.group && <span><i style={{ background: d.me.group.color }} />{t("tm.legendGroup")}</span>}
+                <span><i style={{ background: myColor }} />{t("tm.legendMine")}</span>
+                {d.me.group && <span><i className="solid" />{t("tm.legendGroup")}</span>}
                 <span><i className="dash" />{t("tm.legendOther")}</span>
               </div>
             </>
@@ -360,14 +361,6 @@ function BoardList({ title, rows }: { title: string; rows: { id: string; name: s
       </ol>
     </section>
   );
-}
-
-/** A steady colour per person (no violet), for people outside any group. */
-function personColor(id: string) {
-  const palette = ["#c2410c", "#0e7490", "#be123c", "#4d7c0f", "#1d4ed8", "#a16207", "#0f766e"];
-  let h = 0;
-  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
-  return palette[h % palette.length];
 }
 
 export default function MapPage() {

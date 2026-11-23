@@ -976,6 +976,7 @@ a.mcard:hover { border-color: var(--line-strong); }
 .mapx-legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: auto; padding-top: 8px; border-top: 1px solid var(--line); }
 .mapx-legend span { display: inline-flex; align-items: center; gap: 6px; }
 .mapx-legend i { width: 14px; height: 10px; border-radius: 3px; opacity: 0.75; }
+.mapx-legend i.solid { background: transparent; border: 1.5px solid var(--text-2); }
 .mapx-legend i.dash { background: transparent; border: 1.5px dashed var(--text-2); }
 
 .board-mini { display: flex; flex-direction: column; gap: 4px; }

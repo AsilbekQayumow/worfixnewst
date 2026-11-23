@@ -6,6 +6,7 @@ import type { Shape } from "@/lib/domain/territory";
 import type { Category, GeoPoint } from "@/lib/domain/types";
 import { useI18n } from "@/lib/i18n";
 import { renderToStaticMarkup } from "react-dom/server";
+import { shade } from "@/lib/map-colors";
 import { CATEGORY_ICON, Icon } from "./icons";
 
 export interface MapArea { id: string; shape: Shape; relation: "mine" | "group" | "other"; color: string; name: string }
@@ -22,8 +23,8 @@ const reduced = () => typeof window !== "undefined" && window.matchMedia("(prefe
 const css = (name: string, fallback: string) => (typeof document === "undefined" ? fallback : getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback);
 
 const fc = (features: GeoJSON.Feature[]): GeoJSON.FeatureCollection => ({ type: "FeatureCollection", features });
-const areaFeature = (a: MapArea, accent: string): GeoJSON.Feature => ({
-  type: "Feature", id: a.id, properties: { id: a.id, relation: a.relation, name: a.name, color: a.relation === "mine" ? accent : a.color },
+const areaFeature = (a: MapArea): GeoJSON.Feature => ({
+  type: "Feature", id: a.id, properties: { id: a.id, relation: a.relation, name: a.name, color: a.color, line: shade(a.color) },
   geometry: { type: "MultiPolygon", coordinates: a.shape },
 });
 
@@ -46,7 +47,7 @@ function missionEl(m: MapMission) {
  * The game map: this month's areas, the missions on it, where I am and — while capturing — the loop being walked.
  * `flash` briefly fills a newly taken area. Positron/dark vector tiles, raster OpenStreetMap as a fallback.
  */
-export function TerritoryMap({ areas, missions, me, trace, flash, focus, onMission, selected, height = "100%" }: {
+export function TerritoryMap({ areas, missions, me, trace, flash, focus, onMission, selected, myColor, height = "100%" }: {
   areas: MapArea[];
   missions: MapMission[];
   me: (GeoPoint & { accuracy?: number | null }) | null;
@@ -55,6 +56,8 @@ export function TerritoryMap({ areas, missions, me, trace, flash, focus, onMissi
   focus: { point: GeoPoint; zoom?: number; key: string } | null;
   onMission: (id: string) => void;
   selected: string | null;
+  /** The player's own colour: the loop being walked and a newly taken area. */
+  myColor?: string;
   height?: string | number;
 }) {
   const { t } = useI18n();
@@ -67,8 +70,8 @@ export function TerritoryMap({ areas, missions, me, trace, flash, focus, onMissi
   const [failed, setFailed] = useState(false);
   const pick = useRef(onMission);
   pick.current = onMission;
-  const latest = useRef({ areas, me });
-  latest.current = { areas, me };
+  const latest = useRef({ areas, me, myColor });
+  latest.current = { areas, me, myColor };
 
   useEffect(() => {
     let cancelled = false;
@@ -110,7 +113,7 @@ export function TerritoryMap({ areas, missions, me, trace, flash, focus, onMissi
   useEffect(() => {
     const m = map.current;
     if (!m || !ready || m.getSource("areas")) return;
-    const accent = css("--accent", "#0a6a2c");
+    const accent = latest.current.myColor ?? css("--accent", "#0a6a2c");
     m.addSource("areas", { type: "geojson", data: fc([]) });
     m.addSource("flash", { type: "geojson", data: fc([]) });
     m.addSource("trace", { type: "geojson", data: fc([]) });
@@ -119,7 +122,7 @@ export function TerritoryMap({ areas, missions, me, trace, flash, focus, onMissi
       "fill-opacity": ["match", ["get", "relation"], "mine", 0.26, "group", 0.2, 0.13],
     } });
     m.addLayer({ id: "areas-line", type: "line", source: "areas", layout: { "line-join": "round" }, paint: {
-      "line-color": ["get", "color"], "line-width": ["match", ["get", "relation"], "mine", 2.6, 1.6],
+      "line-color": ["get", "line"], "line-width": ["match", ["get", "relation"], "mine", 2.6, 1.6],
       "line-dasharray": ["match", ["get", "relation"], "other", ["literal", [2, 1.5]], ["literal", [1, 0]]],
     } });
     m.addLayer({ id: "flash-fill", type: "fill", source: "flash", paint: { "fill-color": accent, "fill-opacity": 0 } });
@@ -140,9 +143,20 @@ export function TerritoryMap({ areas, missions, me, trace, flash, focus, onMissi
   useEffect(() => {
     const src = map.current?.getSource("areas") as GeoJSONSource | undefined;
     if (!src) return;
-    const accent = css("--accent", "#0a6a2c");
-    src.setData(fc(areas.map((a) => areaFeature(a, accent))));
+    src.setData(fc(areas.map(areaFeature)));
   }, [areas, ready]);
+
+  // My own colour for the walked loop and the new-area flash (it can arrive after the layers exist).
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !ready || !myColor || !m.getLayer("trace-line")) return;
+    const dark = shade(myColor);
+    m.setPaintProperty("trace-line", "line-color", myColor);
+    m.setPaintProperty("trace-close", "line-color", myColor);
+    m.setPaintProperty("trace-start", "circle-stroke-color", dark);
+    m.setPaintProperty("flash-fill", "fill-color", myColor);
+    m.setPaintProperty("flash-line", "line-color", dark);
+  }, [myColor, ready]);
 
   // The loop being walked: the path, a dashed line back to the start, and the start point.
   useEffect(() => {
