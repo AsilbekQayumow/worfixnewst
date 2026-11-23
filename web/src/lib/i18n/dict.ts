@@ -145,6 +145,7 @@ const R: Record<string, Row> = {
   "site.login": ["Kirish", "Войти", "Sign in"],
   "site.join": ["Qo‘shilish", "Присоединиться", "Join"],
   "site.footer": ["Mahallangizdagi ko‘ngillilik ishlari — surat, GPS va inson tekshiruvi bilan tasdiqlangan", "Волонтёрство рядом с домом — с подтверждением фото, GPS и проверкой человеком", "Volunteering near home, confirmed by photos, GPS and a human reviewer"],
+  "site.rights": ["© 2026 WORFIX. Barcha huquqlar himoyalangan.", "© 2026 WORFIX. Все права защищены.", "© 2026 WORFIX. All rights reserved."],
   "site.forOrgs": ["Tashkilotlar uchun", "Для организаций", "For organizations"],
 
   // landing

@@ -61,6 +61,7 @@ export function SiteFooter() {
         <div className="stack g8">
           <Logo />
           <p className="t-small" style={{ maxWidth: 360 }}>{t("site.footer")}</p>
+          <p className="t-small muted">{t("site.rights")}</p>
         </div>
         <div className="row g24 wrap t-small">
           <Link href="/missions" className="link">{t("site.missions")}</Link>

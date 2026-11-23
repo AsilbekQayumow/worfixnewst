@@ -8,7 +8,7 @@
   "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
   // Next route-group chunks ("(public)", "(auth)") are requested as %28…%29; the asset server
   // redirects that to the literal form and browsers loop. worker.ts serves them instead.
-  "assets": { "directory": ".open-next/assets", "binding": "ASSETS", "run_worker_first": ["/_next/static/chunks/app/*"] },
+  "assets": { "directory": ".open-next/assets", "binding": "ASSETS", "html_handling": "none", "not_found_handling": "none", "run_worker_first": ["/_next/static/chunks/app/*"] },
   "services": [{ "binding": "WORKER_SELF_REFERENCE", "service": "worfix" }],
   "workers_dev": true,
   "preview_urls": false,
