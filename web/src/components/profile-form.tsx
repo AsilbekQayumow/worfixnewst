@@ -5,6 +5,8 @@ import { detectLocation, loadGeo, type GeoCountry } from "@/lib/geo";
 import { useErrorText, useI18n } from "@/lib/i18n";
 import { api, ValidationError, type SelfUser } from "@/lib/store/api";
 import { avatarFromFile } from "@/lib/store/media";
+import { MAP_COLORS, personColor } from "@/lib/map-colors";
+import { AVATAR_PRESETS, PresetArt } from "./avatar-presets";
 import { CATEGORY_ICON, Icon } from "./icons";
 import { Avatar, Button, Checkbox, Field, Notice, Select, TextArea, TextInput, useToast } from "./ui";
 import { UZ_DISTRICTS } from "@/lib/geo/uz-districts";
@@ -34,6 +36,7 @@ export function ProfileForm({ me, onboarding, onSaved }: { me: SelfUser; onboard
   const [guardian, setGuardian] = useState(false);
   const age = birthYear ? new Date().getFullYear() - Number(birthYear) : null;
   const [avatar, setAvatar] = useState<string | null>(me.avatar);
+  const [mapColor, setMapColor] = useState<string | null>(me.mapColor ?? null);
   const [geo, setGeo] = useState<GeoCountry[]>([]);
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -49,7 +52,7 @@ export function ProfileForm({ me, onboarding, onSaved }: { me: SelfUser; onboard
     e.preventDefault();
     setBusy(true); setError(null); setFields({});
     try {
-      await api.updateProfile(form, { avatar, onboarded: onboarding, ...(needAge ? { birthYear: Number(birthYear) || 0, guardianConsent: guardian } : {}) });
+      await api.updateProfile(form, { avatar, mapColor, onboarded: onboarding, ...(needAge ? { birthYear: Number(birthYear) || 0, guardianConsent: guardian } : {}) });
       toast(t("pf.saved"));
       onSaved?.();
     } catch (err) {
@@ -75,6 +78,33 @@ export function ProfileForm({ me, onboarding, onSaved }: { me: SelfUser; onboard
           <span className="t-small muted">{t("pf.photoHint")}</span>
         </div>
       </div>
+
+      <fieldset className="stack g8">
+        <legend className="label">{t("pf.presets")}</legend>
+        <div className="avatar-picks" role="radiogroup" aria-label={t("pf.presets")}>
+          {AVATAR_PRESETS.map((id) => (
+            <button key={id} type="button" role="radio" aria-checked={avatar === `preset:${id}`} aria-label={id} className="avatar-pick"
+              data-on={avatar === `preset:${id}` || undefined} onClick={() => setAvatar(`preset:${id}`)}>
+              <PresetArt id={id} />
+            </button>
+          ))}
+        </div>
+      </fieldset>
+
+      {me.role === "volunteer" && (
+        <fieldset className="stack g8">
+          <legend className="label">{t("pf.mapColor")}</legend>
+          <div className="row g8 wrap" role="radiogroup" aria-label={t("pf.mapColor")}>
+            <button type="button" role="radio" aria-checked={!mapColor} className="color-pick auto" data-on={!mapColor || undefined}
+              style={{ ["--c" as string]: personColor(me.id) }} onClick={() => setMapColor(null)}>{t("pf.autoColor")}</button>
+            {MAP_COLORS.map((c) => (
+              <button key={c} type="button" role="radio" aria-checked={mapColor === c} aria-label={c} className="color-pick"
+                data-on={mapColor === c || undefined} style={{ ["--c" as string]: c }} onClick={() => setMapColor(c)} />
+            ))}
+          </div>
+          <span className="t-small muted">{t("pf.mapColorHint")}</span>
+        </fieldset>
+      )}
 
       <div className="grid cols-2">
         <TextInput label={t("auth.fullName")} value={form.fullName} onChange={(e) => set("fullName", e.target.value)} error={fields.fullName} autoComplete="name" />

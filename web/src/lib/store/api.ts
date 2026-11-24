@@ -4,6 +4,7 @@
  * Never trusts caller-supplied role, status, reward or verification values: it re-reads stored records.
  * Errors carry i18n keys (lib/i18n/dict.ts).
  */
+import { MAP_COLORS } from "../map-colors";
 import { agentOrgId, assertActive, canEnterArea, canManageMission, DomainError, isAdmin, isAgentOrg, type Area } from "../domain/permissions";
 import { computeMissionReward, dayKey, levelForXp, nextCertificateLevel } from "../domain/rewards";
 import { makeOrderCode, normaliseCode } from "../domain/certificates";
@@ -136,7 +137,7 @@ function canSee(db: DB, viewer: UserProfile, target: UserProfile) {
 function person(u: UserProfile) {
   return {
     id: u.id, fullName: u.fullName, username: u.username, avatar: u.avatar, city: u.city, province: u.province, country: u.country,
-    district: u.district ?? "", mahalla: u.mahalla ?? "",
+    district: u.district ?? "", mahalla: u.mahalla ?? "", mapColor: u.mapColor ?? null,
     level: levelForXp(u.xp), xp: u.xp, hours: u.totalVolunteerHours, impact: u.totalImpact, streak: u.streak, privacy: privacyOf(u),
   };
 }
@@ -415,7 +416,7 @@ export const api = {
   },
 
   /* ---- profile & settings ---- */
-  async updateProfile(input: Partial<ProfileInput>, extra: { avatar?: string | null; onboarded?: boolean; birthYear?: number | null; guardianConsent?: boolean } = {}) {
+  async updateProfile(input: Partial<ProfileInput>, extra: { avatar?: string | null; mapColor?: string | null; onboarded?: boolean; birthYear?: number | null; guardianConsent?: boolean } = {}) {
     await ready();
     const data = unwrap(validateProfile(input));
     if (extra.birthYear !== undefined) {
@@ -429,6 +430,7 @@ export const api = {
       if (db.users.some((x) => x.id !== u.id && x.username === data.username)) throw new ValidationError({ username: "e.usernameTaken" });
       Object.assign(u, data, { updatedAt: nowIso() });
       if (extra.avatar !== undefined) u.avatar = extra.avatar;
+      if (extra.mapColor !== undefined) u.mapColor = extra.mapColor && MAP_COLORS.includes(extra.mapColor) ? extra.mapColor : null;
       if (extra.onboarded) u.onboarded = true;
       log(db, u, "user.update_profile", "users", u.id);
     });
@@ -1797,7 +1799,7 @@ export const api = {
       const g = groupOf(db, t.userId);
       const relation: "mine" | "group" | "other" = t.userId === u.id ? "mine" : side.has(t.userId) ? "group" : "other";
       return {
-        id: t.id, userId: t.userId, name: owner?.fullName ?? "—", avatar: owner?.avatar ?? null, areaM2: t.areaM2, shape: decodeShape(t.shape)!,
+        id: t.id, userId: t.userId, name: owner?.fullName ?? "—", avatar: owner?.avatar ?? null, mapColor: owner?.mapColor ?? null, areaM2: t.areaM2, shape: decodeShape(t.shape)!,
         center: t.center, relation, group: g ? { id: g.id, name: g.name, color: g.color } : null, updatedAt: t.updatedAt,
       };
     }).filter((a) => a.shape);
@@ -1831,7 +1833,7 @@ export const api = {
         canCapture: u.role === "volunteer",
       },
       board: {
-        people: users.slice(0, 5).map((t) => { const x = db.users.find((y) => y.id === t.userId); return { id: t.userId, name: x?.fullName ?? "—", avatar: x?.avatar ?? null, areaM2: t.areaM2, me: t.userId === u.id }; }),
+        people: users.slice(0, 5).map((t) => { const x = db.users.find((y) => y.id === t.userId); return { id: t.userId, name: x?.fullName ?? "—", avatar: x?.avatar ?? null, mapColor: x?.mapColor ?? null, areaM2: t.areaM2, me: t.userId === u.id }; }),
         groups: groups.slice(0, 5).map(([id, m2]) => { const g = db.groups.find((x) => x.id === id)!; return { id, name: g.name, color: g.color, areaM2: m2, mine: id === myGroup?.id }; }),
       },
     };

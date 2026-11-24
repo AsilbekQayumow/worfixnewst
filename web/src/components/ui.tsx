@@ -1,4 +1,5 @@
 "use client";
+import { isPreset, PresetArt } from "./avatar-presets";
 import Link from "next/link";
 import {
   createContext, useCallback, useContext, useEffect, useId, useRef, useState,
@@ -161,7 +162,7 @@ export function Avatar({ name, src, size = 36 }: { name: string; src?: string | 
   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("") || "·";
   return (
     <span className="avatar" style={{ width: size, height: size, fontSize: Math.round(size * 0.38) }} aria-hidden>
-      {src ? <img src={src} alt="" /> : initials}
+      {src && isPreset(src) ? <PresetArt id={src.slice(7)} /> : src && !src.startsWith("preset:") ? <img src={src} alt="" /> : initials}
     </span>
   );
 }

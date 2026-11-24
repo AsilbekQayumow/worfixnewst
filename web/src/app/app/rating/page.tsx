@@ -1,4 +1,5 @@
 "use client";
+import { personColor } from "@/lib/map-colors";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
@@ -56,7 +57,7 @@ function Rating() {
                 <li key={r.id} className="row-item" data-me={r.isMe || undefined}>
                   <span className={`board-pos pos-${i + 1}`}>{i + 1}</span>
                   <Link href={entity === "groups" ? `/app/groups/${r.id}` : r.isMe ? "/app/profile" : `/app/people/${r.id}`} className="row g12 grow" style={{ minWidth: 0 }}>
-                    {entity === "groups" ? <GroupMark name={r.name} color={r.color} size={36} /> : <Avatar name={r.name} src={r.avatar} size={36} />}
+                    {entity === "groups" ? <GroupMark name={r.name} color={r.color} size={36} /> : <span className="map-tint" style={{ ["--tint" as string]: personColor(r.id, "mapColor" in r ? (r.mapColor as string | null) : null) }}><Avatar name={r.name} src={r.avatar} size={36} /></span>}
                     <span className="stack" style={{ minWidth: 0 }}>
                       <span className="truncate" style={{ fontWeight: 500 }}>{r.isMe && entity === "volunteers" ? t("a.you") : r.name}</span>
                       <span className="t-small secondary truncate">{t("lvl.short", { n: r.level })}{r.members ? ` · ${t("gr.members", { n: r.members })}` : ""}{r.sub ? ` · ${r.sub}` : ""}</span>

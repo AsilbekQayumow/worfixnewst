@@ -68,9 +68,9 @@ function TerritoryGame({ onList }: { onList: () => void }) {
   useEffect(() => { gps.locate(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const d = q.data;
-  const myColor = me ? personColor(me.id) : "#16a34a";
+  const myColor = me ? personColor(me.id, me.mapColor) : "#16a34a";
   const areas: MapArea[] = useMemo(() => (d?.areas ?? []).map((a) => ({
-    id: a.id, shape: a.shape, relation: a.relation, name: a.name, color: personColor(a.userId),
+    id: a.id, shape: a.shape, relation: a.relation, name: a.name, color: personColor(a.userId, a.mapColor),
   })), [d]);
   const missions: MapMission[] = useMemo(() => (d?.missions ?? []).flatMap((m) => m.coordinates ? [{
     id: m.id, title: m.title, category: m.category, coordinates: m.coordinates, inMyArea: m.inMyArea, firstLook: Boolean(m.firstLookUntil), joined: m.joined,
@@ -217,7 +217,7 @@ function TerritoryGame({ onList }: { onList: () => void }) {
                 <div className="stack g16">
                   {d.board.people.length === 0 ? <p className="t-small secondary">{t("tm.boardEmpty")}</p> : (
                     <>
-                      <BoardList title={t("tm.people")} rows={d.board.people.map((p) => ({ id: p.id, name: p.name, area: p.areaM2, me: p.me, mark: <Avatar name={p.name} src={p.avatar} size={28} /> }))} />
+                      <BoardList title={t("tm.people")} rows={d.board.people.map((p) => ({ id: p.id, name: p.name, area: p.areaM2, me: p.me, mark: <span className="map-tint" style={{ ["--tint" as string]: personColor(p.id, p.mapColor) }}><Avatar name={p.name} src={p.avatar} size={28} /></span> }))} />
                       {d.board.groups.length > 0 && <BoardList title={t("tm.groups")} rows={d.board.groups.map((g) => ({ id: g.id, name: g.name, area: g.areaM2, me: g.mine, mark: <GroupMark name={g.name} color={g.color} size={28} />, href: `/app/groups/${g.id}` }))} />}
                     </>
                   )}

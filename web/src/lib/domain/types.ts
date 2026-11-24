@@ -95,6 +95,8 @@ export interface UserProfile {
   /** v3: district (tuman) and neighbourhood (mahalla), for the local leaderboards */
   district?: string;
   mahalla?: string;
+  /** v4: the player's own colour on the territory map (one of MAP_COLORS); unset = derived from the id */
+  mapColor?: string | null;
   /** v3: how the account signs in */
   authProvider?: "email" | "phone" | "telegram";
   /** v3: set when the phone number was confirmed by SMS (Firebase phone sign-in) */

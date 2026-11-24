@@ -257,6 +257,34 @@ ul, ol { margin: 0; padding: 0; list-style: none; }
 /* ── avatar ── */
 .avatar { border-radius: 50%; background: var(--raised); color: var(--text-2); display: grid; place-items: center; font-weight: 500; overflow: hidden; flex: none; }
 .avatar img { width: 100%; height: 100%; object-fit: cover; }
+.my-tree .tree-box { width: 96px; height: 96px; flex: none; border-radius: 20px; background: color-mix(in oklab, #4ea35c 10%, var(--raised)); overflow: hidden; }
+.my-tree[data-thirst="1"] .tree-box { background: color-mix(in oklab, #c9a24a 12%, var(--raised)); }
+.my-tree[data-thirst="2"] .tree-box { background: color-mix(in oklab, #b0703a 14%, var(--raised)); }
+.tree-sway { transform-origin: 60px 92px; animation: tree-sway 4s ease-in-out infinite; }
+.my-tree[data-thirst="2"] .tree-sway { animation: none; }
+@keyframes tree-sway { 0%, 100% { transform: rotate(-1.2deg); } 50% { transform: rotate(1.2deg); } }
+.tree-bloom { transform-box: fill-box; transform-origin: center; animation: bloom-in 600ms var(--ease-out) both; animation-delay: calc(var(--i) * 90ms + 300ms); }
+@keyframes bloom-in { from { opacity: 0; transform: scale(0.3); } }
+@media (prefers-reduced-motion: reduce) { .tree-sway, .tree-bloom { animation: none; } }
+.showcase { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 12px; }
+.showcase li { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; animation: invite-in 480ms var(--ease-spring) both; animation-delay: calc(var(--i) * 60ms); }
+.showcase li span { font-size: 12px; line-height: 1.3; color: var(--text-2); }
+.avatar-picks { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 8px; max-width: 520px; }
+.avatar-pick { aspect-ratio: 1; padding: 0; border: 0; border-radius: 50%; overflow: hidden; cursor: pointer; background: none; box-shadow: 0 0 0 1px var(--line);
+  transition: transform 160ms var(--ease-out), box-shadow 160ms var(--ease-out); }
+.avatar-pick[data-on] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
+.avatar-pick:active { transform: scale(0.94); }
+@media (hover: hover) and (pointer: fine) { .avatar-pick:hover { transform: translateY(-2px); } }
+.color-pick { width: 32px; height: 32px; border-radius: 50%; border: 0; padding: 0; cursor: pointer; background: var(--c); box-shadow: 0 0 0 1px rgb(0 0 0 / .08);
+  transition: transform 160ms var(--ease-out), box-shadow 160ms var(--ease-out); }
+.color-pick.auto { width: auto; padding: 0 12px 0 30px; border-radius: 16px; background: var(--raised); color: var(--text); font-size: 13px; position: relative; }
+.color-pick.auto::before { content: ""; position: absolute; left: 8px; top: 9px; width: 14px; height: 14px; border-radius: 50%; background: var(--c); }
+.color-pick[data-on] { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--text); }
+.color-pick:active { transform: scale(0.92); }
+fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+/* the player's map colour as a ring and a corner dot (leaderboards) */
+.map-tint { position: relative; display: inline-flex; border-radius: 50%; box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--tint); flex: none; }
+.map-tint::after { content: ""; position: absolute; right: -3px; bottom: -3px; width: 11px; height: 11px; border-radius: 50%; background: var(--tint); box-shadow: 0 0 0 2px var(--surface); }
 
 /* ── progress ── */
 .bar { height: 6px; border-radius: 3px; background: var(--raised); overflow: hidden; }

@@ -1,7 +1,9 @@
 "use client";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
-import { AchievementGrid } from "@/components/achievements";
+import { AchievementGrid, Medal } from "@/components/achievements";
+import { MyTree } from "@/components/my-tree";
+import type { AchievementState } from "@/lib/domain/achievements";
 import { CertificateCanvas } from "@/components/certificate";
 import { Icon } from "@/components/icons";
 import { useMe } from "@/components/providers";
@@ -16,8 +18,21 @@ import { RankLadder } from "@/components/rank";
 
 type Tab = "overview" | "achievements" | "certificates";
 
+const TIER_RANK = { gold: 3, silver: 2, bronze: 1 } as const;
+/** The best unlocked medal of each family, gold first: up to eight. */
+function showcase(list: AchievementState[]) {
+  const best = new Map<string, AchievementState>();
+  for (const a of list) {
+    if (!a.unlocked) continue;
+    const key = a.family + (a.cause ?? "");
+    const cur = best.get(key);
+    if (!cur || TIER_RANK[a.tier] > TIER_RANK[cur.tier]) best.set(key, a);
+  }
+  return [...best.values()].sort((a, b) => TIER_RANK[b.tier] - TIER_RANK[a.tier]).slice(0, 8);
+}
+
 function Profile() {
-  const { t } = useI18n();
+  const { t, lang } = useI18n();
   const f = useFmt();
   const { me } = useMe();
   const initial = useSearchParams().get("tab");
@@ -56,6 +71,18 @@ function Profile() {
             <Stat label={t("home.app.hours")} value={Math.round(me.totalVolunteerHours * 10) / 10} />
             <Stat label={t("home.app.done")} value={ins.data?.approved ?? "—"} />
           </div>
+          <MyTree count={ins.data?.approved ?? 0} last={me.lastApprovedDay} />
+          <section className="card pad stack g16">
+            <div className="row between g12">
+              <h3 className="t-h3">{t("pf.showcase")}</h3>
+              <Button size="sm" variant="ghost" onClick={() => setTab("achievements")}>{t("pf.showcaseAll")}</Button>
+            </div>
+            {!ins.data ? <Skeleton rows={1} height={72} /> : showcase(ins.data.achievements).length === 0
+              ? <p className="t-small secondary">{t("pf.showcaseEmpty")}</p>
+              : <ul className="showcase">{showcase(ins.data.achievements).map((a, i) => (
+                  <li key={a.id} style={{ ["--i" as string]: i }}><Medal a={a} size={52} /><span>{a.title[lang]}</span></li>
+                ))}</ul>}
+          </section>
           <section className="card pad stack g16">
             <h3 className="t-h3">{t("rk.title")}</h3>
             <RankLadder xp={me.xp} />

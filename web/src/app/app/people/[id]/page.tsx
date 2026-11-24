@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Medal } from "@/components/achievements";
+import { MyTree } from "@/components/my-tree";
 import { Icon } from "@/components/icons";
 import { Avatar, Button, ButtonLink, CategoryTag, DifficultyTag, Empty, Skeleton, Stat, useToast } from "@/components/ui";
 import { levelTitleKey } from "@/lib/domain/rewards";
@@ -55,6 +56,8 @@ export default function PersonPage() {
             <Stat label={t("home.app.hours")} value={Math.round(p.hours * 10) / 10} />
             <Stat label={t("home.app.achievements")} value={<>{d.achievementCount}<span className="t-small muted"> / 54</span></>} />
           </div>
+
+          <MyTree own={false} count={d.missionCount} last={d.missions.reduce<string | null>((m, x) => (!m || x.at > m ? x.at : m), null)} />
 
           <div className="split-wide">
             <section className="stack g12" style={{ minWidth: 0 }}>

@@ -77,7 +77,7 @@ export function volunteerBoard(opts: {
     .filter((u) => u.id === viewer.id || (u.privacy ?? "public") !== "private")
     .map((u) => {
       const xp = opts.period === "month" ? monthly.get(u.id) ?? 0 : u.xp;
-      return { id: u.id, name: u.fullName, avatar: u.avatar, xp, level: levelForXp(u.xp), sub: [u.mahalla, u.district].filter(Boolean).join(", ") || u.city, isMe: u.id === viewer.id };
+      return { id: u.id, name: u.fullName, avatar: u.avatar, mapColor: u.mapColor ?? null, xp, level: levelForXp(u.xp), sub: [u.mahalla, u.district].filter(Boolean).join(", ") || u.city, isMe: u.id === viewer.id };
     })
     .filter((r) => r.xp > 0 || r.isMe)
     .sort((a, b) => b.xp - a.xp || a.name.localeCompare(b.name));
