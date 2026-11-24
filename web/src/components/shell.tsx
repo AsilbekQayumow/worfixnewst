@@ -76,12 +76,19 @@ function isCurrent(item: NavItem, path: string, tab: string | null) {
   return item.exact ? path === p : path === p || path.startsWith(`${p}/`);
 }
 
+/** v5: each section keeps one colour, in the sidebar and the tab bar. */
+const TONE: Partial<Record<IconName, string>> = {
+  home: "var(--accent)", map: "var(--sky)", message: "var(--berry)", trophy: "var(--sun)", bag: "var(--flame)", user: "var(--sea)",
+  bell: "var(--coral)", settings: "var(--muted)", flag: "var(--sky)", shield: "var(--sea)", building: "var(--flame)", users: "var(--berry)", send: "var(--sky)",
+};
+const tone = (i: IconName) => ({ ["--tone" as string]: TONE[i] ?? "var(--accent)" });
+
 function NavLinks({ items, path, tab }: { items: NavItem[]; path: string; tab: string | null }) {
   return (
     <>
       {items.map((i) => (
-        <Link key={i.href} href={i.href} aria-current={isCurrent(i, path, tab) ? "page" : undefined}>
-          <Icon name={i.icon} />
+        <Link key={i.href} href={i.href} aria-current={isCurrent(i, path, tab) ? "page" : undefined} style={tone(i.icon)}>
+          <span className="nav-ico"><Icon name={i.icon} size={18} /></span>
           <span className="grow truncate">{i.label}</span>
           {i.badge ? <span className="count-badge">{i.badge}</span> : null}
         </Link>
@@ -178,7 +185,12 @@ function ShellInner({ area, children }: { area: Area; children: ReactNode }) {
         <header className="topbar">
           <Logo href={homeForRole(me.role)} compact />
           <div className="row g4">
-            {area === "volunteer" && <Link href="/app/shop" className="btn btn-ghost btn-sm" aria-label={t("nav.shop")}><Coins value={me.points} size={14} /></Link>}
+            {area === "volunteer" && (
+              <span className="hud-chips">
+                <Link href="/app/profile" className="hud-chip flame" data-off={me.streak ? undefined : ""} aria-label={t("home.app.streak")}><Icon name="flame" size={17} />{me.streak}</Link>
+                <Link href="/app/shop" className="hud-chip" aria-label={t("nav.shop")}><Coins value={me.points} size={15} /></Link>
+              </span>
+            )}
             {area !== "volunteer" && (
               <Link href={area === "admin" ? "/admin/chat" : "/org/chat"} className="btn btn-ghost btn-sm btn-icon" aria-label={t("nav.chat")} style={{ position: "relative" }}>
                 <Icon name="message" size={18} />
@@ -199,8 +211,8 @@ function ShellInner({ area, children }: { area: Area; children: ReactNode }) {
         </main>
         <nav className="tabbar" aria-label={t("nav.main")}>
           {nav.main.filter((i) => i.mobile).map((i) => (
-            <Link key={i.href} href={i.href} aria-current={isCurrent(i, path, tab) ? "page" : undefined}>
-              <Icon name={i.icon} size={20} />
+            <Link key={i.href} href={i.href} aria-current={isCurrent(i, path, tab) ? "page" : undefined} style={tone(i.icon)}>
+              <span className="nav-ico"><Icon name={i.icon} size={19} /></span>
               <span className="truncate" style={{ maxWidth: "100%", padding: "0 2px" }}>{i.label}</span>
               {i.badge ? <span className="count-badge">{i.badge}</span> : null}
             </Link>

@@ -1,11 +1,11 @@
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono, Onest, Unbounded } from "next/font/google";
+import { JetBrains_Mono, Nunito } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { PwaRegister } from "@/components/pwa";
 import "./globals.css";
+import "./theme-play.css";
 
-const onest = Onest({ subsets: ["latin", "latin-ext", "cyrillic"], variable: "--font-onest", display: "swap" });
-const unbounded = Unbounded({ subsets: ["latin", "latin-ext", "cyrillic"], weight: ["400", "500"], variable: "--font-unbounded", display: "swap" });
+const nunito = Nunito({ subsets: ["latin", "latin-ext", "cyrillic"], weight: ["400", "500", "600", "700", "800", "900"], variable: "--font-nunito", display: "swap" });
 const mono = JetBrains_Mono({ subsets: ["latin", "cyrillic"], weight: ["400", "500"], variable: "--font-jetbrains", display: "swap" });
 
 export const metadata: Metadata = {
@@ -21,12 +21,12 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   interactiveWidget: "resizes-content",
-  themeColor: [{ media: "(prefers-color-scheme: light)", color: "#f6f3ec" }, { media: "(prefers-color-scheme: dark)", color: "#141310" }],
+  themeColor: [{ media: "(prefers-color-scheme: light)", color: "#f4f8f1" }, { media: "(prefers-color-scheme: dark)", color: "#0e1915" }],
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="uz" suppressHydrationWarning className={`${onest.variable} ${unbounded.variable} ${mono.variable}`}>
+    <html lang="uz" suppressHydrationWarning className={`${nunito.variable} ${mono.variable}`}>
       <head>
         <script
           // Set the theme before paint so dark-mode users don't see a light flash.

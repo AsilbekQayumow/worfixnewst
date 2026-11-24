@@ -28,8 +28,8 @@ function cssFont(v: string, fallback: string) {
 /** Draws the certificate onto a canvas (A4 landscape at 150 dpi). Shared by the preview, PNG download and print. */
 async function draw(canvas: HTMLCanvasElement, c: CertificateView, text: (k: string, v?: Record<string, string | number>) => string, date: (iso: string) => string) {
   await document.fonts.ready.catch(() => undefined);
-  const display = cssFont("--font-unbounded", "sans-serif");
-  const body = cssFont("--font-onest", "sans-serif");
+  const display = cssFont("--font-nunito", "sans-serif");
+  const body = cssFont("--font-nunito", "sans-serif");
   const mono = cssFont("--font-jetbrains", "monospace");
   canvas.width = W;
   canvas.height = H;

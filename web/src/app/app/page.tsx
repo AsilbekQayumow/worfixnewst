@@ -7,12 +7,10 @@ import { GroupSpot } from "@/components/group-bits";
 import { Icon } from "@/components/icons";
 import { MissionCard } from "@/components/mission-card";
 import { useMe } from "@/components/providers";
-import { PageHead } from "@/components/shell";
 import { Avatar, ButtonLink, Coins, Empty, Notice, Progress, Skeleton, Status, VerificationStatusTag } from "@/components/ui";
-import { levelProgress } from "@/lib/domain/rewards";
+import { levelProgress, levelTitleKey, rankFor } from "@/lib/domain/rewards";
 import { NewsStrip } from "@/components/news";
-import { RankLadder } from "@/components/rank";
-import { MyReport } from "@/components/report";
+import { RankBadge } from "@/components/rank";
 import { SignalRow } from "@/components/signals";
 import { useFmt, useI18n } from "@/lib/i18n";
 import { api, isVerifiedAccount } from "@/lib/store/api";
@@ -29,15 +27,33 @@ export default function Home() {
   const d = q.data;
 
   return (
-    <div className="stack g24 enter">
-      <PageHead
-        title={f.today().replace(/^./, (c) => c.toUpperCase())}
-        sub={t("home.app.sub")}
-        actions={<>
-          <ButtonLink href="/app/signals?new=1" icon="zap">{t("sg.call")}</ButtonLink>
+    <div className="stack g24 enter home5">
+      <section className="hello5">
+        <div className="hello5-main">
+          <Link href="/app/profile" className="hello5-avatar" aria-label={t("nav.profile")}><Avatar name={me.fullName} src={me.avatar} size={68} /></Link>
+          <div className="stack g4" style={{ minWidth: 0 }}>
+            <span className="t-small hello5-date">{f.today().replace(/^./, (c) => c.toUpperCase())}</span>
+            <h1 className="t-h1 truncate">{t("h5.hello", { name: me.fullName.split(/\s+/)[0] })}</h1>
+          </div>
+        </div>
+        <Link href="/app/profile" className="hello5-level">
+          <RankBadge rank={rankFor(lp.level)} size={44} />
+          <span className="stack g8 grow" style={{ minWidth: 0 }}>
+            <span className="row between g8"><strong>{t("lvl.long", { n: lp.level })} · {t(levelTitleKey(lp.level))}</strong><span className="t-small num">{f.num(me.xp)} XP</span></span>
+            <Progress value={lp.fraction} />
+            <span className="t-small secondary num">{t("home.app.xpToNext", { n: f.num(lp.next - me.xp), level: lp.level + 1 })}</span>
+          </span>
+        </Link>
+        <div className="hello5-chips">
+          <span className="hello5-chip" style={{ ["--tone" as string]: "var(--flame)" }} title={t("home.app.streakHint")}><Icon name="flame" size={20} /><b className="num">{me.streak}</b><span>{t("h5.days")}</span></span>
+          <Link href="/app/shop" className="hello5-chip" style={{ ["--tone" as string]: "var(--sun)" }}><Coins value={f.num(me.points)} size={18} /><span>Fixcoin</span></Link>
+          <Link href="/app/profile?tab=achievements" className="hello5-chip" style={{ ["--tone" as string]: "var(--berry)" }}><Icon name="award" size={20} /><b className="num">{d?.unlocked ?? "·"}</b><span>{t("h5.badges")}</span></Link>
+        </div>
+        <div className="hello5-actions">
           <ButtonLink href="/app/missions?agent=1" variant="primary" icon="radar">{t("home.app.agent")}</ButtonLink>
-        </>}
-      />
+          <ButtonLink href="/app/signals?new=1" variant="secondary" icon="zap">{t("sg.call")}</ButtonLink>
+        </div>
+      </section>
 
       <AnnouncementBanner />
       {!isVerifiedAccount(me) && <Notice tone="warn">{t("home.app.verify")} <Link className="link" href="/verify-email?next=/app">{t("md.verifyLink")}</Link></Notice>}
@@ -49,30 +65,7 @@ export default function Home() {
       )}
       {d && d.needsInfo > 0 && <Notice tone="info">{t("home.app.needsInfo", { n: d.needsInfo })} <Link className="link" href="/app/map?view=list&tab=active">{t("nav.missions")}</Link></Notice>}
 
-      <div className="grid home-top">
-        <section className="card pad stack g16">
-          <RankLadder xp={me.xp} />
-          <span className="t-small secondary num">{t("home.app.xpToNext", { n: f.num(lp.next - me.xp), level: lp.level + 1 })}{d?.nextCertificate ? ` · ${t("home.app.nextCert", { n: d.nextCertificate })}` : ""}</span>
-        </section>
-        <Link href="/app/shop" className="card pad stack g8">
-          <span className="stat-label">{t("coin.balance")}</span>
-          <Coins value={f.num(me.points)} size={24} className="stat-value" />
-          <span className="t-small accent-text row g4">{t("home.app.toShop")} <Icon name="arrowRight" size={14} /></span>
-        </Link>
-        <div className="card pad stack g8">
-          <span className="stat-label">{t("home.app.streak")}</span>
-          <span className="row g8 stat-value"><Icon name="flame" size={22} style={{ color: me.streak ? "var(--brass)" : "var(--muted)" }} />{me.streak}</span>
-          <span className="t-small muted">{t("home.app.streakHint")}</span>
-        </div>
-      </div>
-
-      <NewsStrip />
-
-      <PulseCounter />
-
-      <ResultsStrip />
-
-      <MyReport />
+      {me.role === "volunteer" && <div className="spots5"><MapSpot /><GroupSpot /></div>}
 
       <div className="split-wide">
         <div className="stack g24" style={{ minWidth: 0 }}>
@@ -108,8 +101,6 @@ export default function Home() {
         </div>
 
         <aside className="stack g16">
-          {me.role === "volunteer" && <MapSpot />}
-          {me.role === "volunteer" && <GroupSpot />}
           {d?.next && (
             <Link href="/app/profile?tab=achievements" className="card pad row g12">
               <Medal a={d.next} />
@@ -138,16 +129,12 @@ export default function Home() {
               </ol>
             )}
           </section>
-          {d && (
-            <div className="card pad grid cols-2" style={{ gap: 12 }}>
-              <div className="stack"><span className="t-small secondary">{t("home.app.done")}</span><span className="t-h2 num">{d.approved}</span></div>
-              <div className="stack"><span className="t-small secondary">{t("home.app.hours")}</span><span className="t-h2 num">{Math.round(me.totalVolunteerHours * 10) / 10}</span></div>
-              <div className="stack"><span className="t-small secondary">{t("home.app.achievements")}</span><span className="t-h2 num">{d.unlocked}<span className="t-small muted"> / {d.achievements.length}</span></span></div>
-              <div className="stack"><span className="t-small secondary">{t("home.app.certs")}</span><span className="t-h2 num">{d.certificates}</span></div>
-            </div>
-          )}
         </aside>
       </div>
+
+      <PulseCounter />
+      <ResultsStrip />
+      <NewsStrip />
     </div>
   );
 }

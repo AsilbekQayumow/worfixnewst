@@ -1,5 +1,5 @@
 "use client";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { CATEGORIES, type Category } from "@/lib/domain/types";
 import { useI18n } from "@/lib/i18n";
 import { api } from "@/lib/store/api";
@@ -14,6 +14,11 @@ export function Explore({ base }: { base: "/missions" | "/app/missions" }) {
   const { t } = useI18n();
   const { me } = useMe();
   const [cat, setCat] = useState<Category | "all">("all");
+  // v5: the landing's cause tiles link here as ?cat=<category>
+  useEffect(() => {
+    const c = new URLSearchParams(window.location.search).get("cat");
+    if (c && (CATEGORIES as readonly string[]).includes(c)) setCat(c as Category);
+  }, []);
   const [q, setQ] = useState("");
   const list = useApi(() => api.listMissions({ scope: "public", category: cat, q }), [cat, q]);
   const cats = useMemo(() => {

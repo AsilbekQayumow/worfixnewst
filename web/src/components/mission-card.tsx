@@ -2,8 +2,8 @@
 import Link from "next/link";
 import type { Category, Difficulty, GeoPoint } from "@/lib/domain/types";
 import { useFmt, useI18n } from "@/lib/i18n";
-import { Icon } from "./icons";
-import { CategoryTag, Coins, DifficultyTag } from "./ui";
+import { CATEGORY_ICON, Icon } from "./icons";
+import { Coins, DifficultyTag } from "./ui";
 
 export interface MissionCardData {
   id: string;
@@ -27,9 +27,9 @@ export function MissionCard({ m, href, aside }: { m: MissionCardData; href: stri
   const f = useFmt();
   const left = Math.max(0, m.capacity - m.participantsCount);
   return (
-    <Link href={href} className="mcard">
+    <Link href={href} className={`mcard cat-${m.category}`}>
       <div className="row between g8">
-        <CategoryTag category={m.category} />
+        <span className="mcard-cat"><span className="mcard-ico"><Icon name={CATEGORY_ICON[m.category]} size={18} /></span>{t(`cat.${m.category}`)}</span>
         <DifficultyTag difficulty={m.difficulty} />
       </div>
       <div className="stack g8">
@@ -37,7 +37,6 @@ export function MissionCard({ m, href, aside }: { m: MissionCardData; href: stri
         <span className="row g8 t-small secondary"><Icon name="pin" size={16} /><span className="truncate">{m.location}</span></span>
         <span className="row g8 t-small secondary"><Icon name="calendar" size={16} /><span>{f.dayTime(m.date)} · {f.duration(m.duration)}</span></span>
       </div>
-      {m.coordinates && <span className="t-meta">{f.coords(m.coordinates.lat, m.coordinates.lng)}</span>}
       <div className="mcard-foot">
         <span className="reward">
           <span className="xp num">+{m.rewardXP} XP</span>

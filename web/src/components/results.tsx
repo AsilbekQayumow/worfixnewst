@@ -155,7 +155,7 @@ async function drawCard(d: Awaited<ReturnType<typeof api.shareStats>>, words: { 
   const g = c.getContext("2d")!;
   const color = personColor(d.id, d.mapColor), dark = shade(color, 0.35);
   await document.fonts.ready;
-  const display = fontOf("--font-unbounded", "sans-serif"), body = fontOf("--font-onest", "sans-serif");
+  const display = fontOf("--font-nunito", "sans-serif"), body = fontOf("--font-nunito", "sans-serif");
 
   g.fillStyle = "#f6f1e7"; g.fillRect(0, 0, W, H);
   // the player's area: a soft blob in their colour
@@ -185,12 +185,12 @@ async function drawCard(d: Awaited<ReturnType<typeof api.shareStats>>, words: { 
   g.lineWidth = 8; g.strokeStyle = color; g.beginPath(); g.arc(ax + as / 2, ay + as / 2, as / 2 + 10, 0, Math.PI * 2); g.stroke();
 
   g.textAlign = "left"; g.textBaseline = "alphabetic";
-  g.fillStyle = "#1d1a16"; g.font = `500 52px ${display}`;
+  g.fillStyle = "#1d1a16"; g.font = `900 56px ${display}`;
   g.fillText(d.name, 96, 360, 880);
   g.fillStyle = "#6b6357"; g.font = `400 34px ${body}`;
   g.fillText(words.level, 96, 412);
 
-  g.fillStyle = "#1d1a16"; g.font = `500 64px ${display}`;
+  g.fillStyle = "#1d1a16"; g.font = `900 68px ${display}`;
   const title = words.title;
   g.fillText(title, 96, 560, 900);
 
@@ -203,16 +203,16 @@ async function drawCard(d: Awaited<ReturnType<typeof api.shareStats>>, words: { 
   let y = 690;
   for (const [n, label] of rows) {
     g.fillStyle = color; g.fillRect(96, y - 52, 10, 64);
-    g.fillStyle = "#1d1a16"; g.font = `500 72px ${display}`;
+    g.fillStyle = "#1d1a16"; g.font = `900 76px ${display}`;
     g.fillText(n, 136, y + 8);
     const w = g.measureText(n).width;
-    g.fillStyle = "#4a443b"; g.font = `400 36px ${body}`;
+    g.fillStyle = "#4a443b"; g.font = `700 36px ${body}`;
     g.fillText(label, 136 + w + 24, y + 4, W - 136 - w - 24 - 80);
     y += 118;
   }
 
   g.fillStyle = "#1d1a16"; g.fillRect(0, H - 120, W, 120);
-  g.fillStyle = "#f6f1e7"; g.font = `500 40px ${display}`;
+  g.fillStyle = "#f6f1e7"; g.font = `900 42px ${display}`;
   g.fillText("WORFIX", 96, H - 46);
   g.font = `400 32px ${body}`; g.textAlign = "right";
   g.fillText("worfix.site", W - 96, H - 48);

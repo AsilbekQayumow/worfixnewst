@@ -3,6 +3,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { AchievementGrid, Medal } from "@/components/achievements";
 import { MyTree } from "@/components/my-tree";
+import { personColor } from "@/lib/map-colors";
 import { ShareCard } from "@/components/results";
 import type { AchievementState } from "@/lib/domain/achievements";
 import { CertificateCanvas } from "@/components/certificate";
@@ -16,8 +17,9 @@ import { useFmt, useI18n } from "@/lib/i18n";
 import { api } from "@/lib/store/api";
 import { useApi } from "@/lib/store/hooks";
 import { RankLadder } from "@/components/rank";
+import { MyReport } from "@/components/report";
 
-type Tab = "overview" | "achievements" | "certificates";
+type Tab = "overview" | "report" | "achievements" | "certificates";
 
 const TIER_RANK = { gold: 3, silver: 2, bronze: 1 } as const;
 /** The best unlocked medal of each family, gold first: up to eight. */
@@ -37,7 +39,7 @@ function Profile() {
   const f = useFmt();
   const { me } = useMe();
   const initial = useSearchParams().get("tab");
-  const [tab, setTab] = useState<Tab>(initial === "achievements" || initial === "certificates" ? initial : "overview");
+  const [tab, setTab] = useState<Tab>(initial === "achievements" || initial === "certificates" || initial === "report" ? initial : "overview");
   const ins = useApi(() => api.myInsights());
   const certs = useApi(() => api.myCertificates());
   const [open, setOpen] = useState<Certificate | null>(null);
@@ -47,8 +49,8 @@ function Profile() {
   return (
     <div className="stack g24 enter">
       <PageHead title={t("nav.profile")} actions={<>{me.role === "volunteer" && <ShareCard />}<ButtonLink href="/app/settings" icon="edit">{t("pf.edit")}</ButtonLink></>} />
-      <section className="row g20 wrap">
-        <Avatar name={me.fullName} src={me.avatar} size={88} />
+      <section className="row g20 wrap profile5-head" style={{ ["--tint" as string]: personColor(me.id, me.mapColor) }}>
+        <span className="profile5-avatar"><Avatar name={me.fullName} src={me.avatar} size={96} /></span>
         <div className="stack g8 grow" style={{ minWidth: 220 }}>
           <h2 className="t-h1">{me.fullName}</h2>
           <span className="secondary">@{me.username} · {t("lvl.long", { n: lp.level })} · {t(levelTitleKey(lp.level))}{me.city ? ` · ${me.city}` : ""}</span>
@@ -60,6 +62,7 @@ function Profile() {
 
       <Tabs value={tab} onChange={setTab} items={[
         { value: "overview", label: t("pf.overview") },
+        ...(me.role === "volunteer" ? [{ value: "report" as Tab, label: t("h5.report") }] : []),
         { value: "achievements", label: t("pf.achievements"), count: ins.data?.unlocked },
         { value: "certificates", label: t("pf.certificates"), count: certs.data?.length },
       ]} />
@@ -110,6 +113,8 @@ function Profile() {
           )}
         </div>
       )}
+
+      {tab === "report" && <MyReport />}
 
       {tab === "achievements" && (ins.data ? <AchievementGrid list={ins.data.achievements} /> : <Skeleton rows={4} height={140} />)}
 
