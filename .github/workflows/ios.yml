@@ -1,0 +1,50 @@
+# Builds the WORFIX iOS app on a macOS runner (unsigned): checks that the Swift code compiles and produces an
+# .ipa that can be signed later (Xcode, or Sideloadly / AltStore with an Apple ID for testing on a phone).
+name: iOS build
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths: ["mobile/**", ".github/workflows/ios.yml"]
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Capacitor sync
+        working-directory: mobile
+        run: |
+          npm ci
+          npx cap sync ios
+      - name: Xcode version
+        run: xcodebuild -version
+      - name: Build (unsigned)
+        working-directory: mobile/ios/App
+        run: |
+          set -o pipefail
+          xcodebuild -project App.xcodeproj -scheme App -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            build | tee xcodebuild.log | grep -E "error:|warning: .*(Worfix|Native|Shared)|BUILD" || true
+          test -d build/Build/Products/Release-iphoneos/App.app
+      - name: Package .ipa
+        working-directory: mobile/ios/App
+        run: |
+          mkdir -p Payload
+          cp -R build/Build/Products/Release-iphoneos/App.app Payload/
+          ls Payload/App.app/PlugIns
+          zip -qry WORFIX-unsigned.ipa Payload
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WORFIX-ios
+          path: mobile/ios/App/WORFIX-unsigned.ipa
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: xcodebuild-log
+          path: mobile/ios/App/xcodebuild.log

@@ -1,0 +1,39 @@
+{
+  "project_info": {
+    "project_number": "351884326312",
+    "project_id": "worfix3",
+    "storage_bucket": "worfix3.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:351884326312:android:c355de4c11619f4067199d",
+        "android_client_info": {
+          "package_name": "site.worfix.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "351884326312-guhlo40ilma7uhnenbeu89dot81dqrg4.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAf86UEVgQtG4EdNqfhlwjIpMkQmnQq4mc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "351884326312-85e1jmt8boamkda1msoksvih103psarr.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

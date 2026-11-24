@@ -105,4 +105,10 @@ embed.dst_subfolder_spec = "13" # PlugIns
 end
 
 project.save
+
+# A shared "App" scheme (CI builds with xcodebuild -scheme App)
+scheme = Xcodeproj::XCScheme.new
+scheme.configure_with_targets(app, nil, launch_target: true)
+scheme.save_as(project.path, "App", true)
+
 puts "App.xcodeproj: App + WorfixWidgets + WorfixShare wired"
