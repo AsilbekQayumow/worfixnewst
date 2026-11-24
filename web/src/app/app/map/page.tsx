@@ -10,7 +10,8 @@ import { Avatar, Button, Dialog, Segmented, Skeleton, useToast } from "@/compone
 import { GroupMark } from "@/components/group-bits";
 import { buzz, celebrate } from "@/lib/fx";
 import { personColor } from "@/lib/map-colors";
-import { distanceM, TERRITORY, type Shape } from "@/lib/domain/territory";
+import { distanceM, overlapShape, TERRITORY, type Shape } from "@/lib/domain/territory";
+import { SeasonReplay } from "@/components/season-replay";
 import type { GeoPoint } from "@/lib/domain/types";
 import { useTracker } from "@/lib/geo/tracker";
 import { useErrorText, useFmt, useI18n } from "@/lib/i18n";
@@ -56,6 +57,8 @@ function TerritoryGame({ onList }: { onList: () => void }) {
   const [tab, setTab] = useState<"missions" | "season">("missions");
   const [intro, setIntro] = useState(false);
   const [flash, setFlash] = useState<Shape | null>(null);
+  const [taken, setTaken] = useState<{ shape: Shape; color: string }[] | null>(null);
+  const [replay, setReplay] = useState(false);
   const [focus, setFocus] = useState<{ point: GeoPoint; zoom?: number; key: string } | null>(null);
   const [result, setResult] = useState<Capture | null>(null);
   const [busy, setBusy] = useState(false);
@@ -106,10 +109,12 @@ function TerritoryGame({ onList }: { onList: () => void }) {
     closing.current = true;
     setBusy(true);
     try {
+      const before = areas.filter((a) => a.relation === "other");
       const r = await api.captureTerritory(gps.points, { forceClose: force });
       setResult(r);
       if (r.ok) {
         gps.reset();
+        if (r.takenFrom.length) setTaken(before.flatMap((a) => { const part = overlapShape(a.shape, r.shape); return part ? [{ shape: part, color: a.color }] : []; }));
         setFlash(r.shape);
         buzz(40);
         window.setTimeout(() => celebrate(null, 120), 350);
@@ -129,7 +134,8 @@ function TerritoryGame({ onList }: { onList: () => void }) {
   return (
     <div className="mapx" data-capturing={capturing || undefined}>
       <TerritoryMap
-        areas={areas} missions={capturing ? [] : missions} me={here} trace={gps.points} flash={flash} myColor={myColor} focus={focus} selected={selected}
+        areas={areas} missions={capturing ? [] : missions} me={here} trace={gps.points} flash={flash} taken={taken} myColor={myColor}
+        hot={d?.hot && !capturing ? { point: d.hot.point, label: t("tm.hot", { n: d.hot.people }) } : null} focus={focus} selected={selected}
         onMission={(id) => { setSelected(id); setSheet(false); buzz(8); }}
       />
 
@@ -215,6 +221,7 @@ function TerritoryGame({ onList }: { onList: () => void }) {
                 )
               ) : (
                 <div className="stack g16">
+                  {d.me.captures > 0 && <Button icon="play" onClick={() => setReplay(true)}>{t("tl.open")}</Button>}
                   {d.board.people.length === 0 ? <p className="t-small secondary">{t("tm.boardEmpty")}</p> : (
                     <>
                       <BoardList title={t("tm.people")} rows={d.board.people.map((p) => ({ id: p.id, name: p.name, area: p.areaM2, me: p.me, mark: <span className="map-tint" style={{ ["--tint" as string]: personColor(p.id, p.mapColor) }}><Avatar name={p.name} src={p.avatar} size={28} /></span> }))} />
@@ -253,6 +260,10 @@ function TerritoryGame({ onList }: { onList: () => void }) {
       {capturing && (
         <CaptureHud gps={gps} busy={busy} onFinish={() => finish(true)} onCancel={() => setConfirmCancel(true)} />
       )}
+
+      <Dialog open={replay} onClose={() => setReplay(false)} title={t("tl.title")} wide>
+        {replay && <SeasonReplay color={myColor} />}
+      </Dialog>
 
       <Dialog open={confirmCancel} onClose={() => setConfirmCancel(false)} title={t("tm.c.cancel")} footer={<>
         <Button variant="ghost" onClick={() => setConfirmCancel(false)}>{t("tm.e.keep")}</Button>

@@ -34,6 +34,7 @@ import {
   type CaptureError, type Shape, type TracePoint,
 } from "../domain/territory";
 import { commit, FIREBASE, getDB, hashPassword, nowIso, ready, SESSION_KEY, uid, type DB } from "./db";
+import type { GeoPoint } from "../domain/types";
 
 export class ValidationError extends Error {
   constructor(public fields: Errors) {
@@ -200,6 +201,28 @@ const chatIdOf = (a: string, b: string) => [a, b].sort().join("_");
 export const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 /* ───────────────────────── api ───────────────────────── */
+
+/** v4: this week's busiest spot: people on missions held in the last seven days, else areas walked this week (~1 km cells). */
+function hotSpot(db: DB, live: Territory[], now: number): { point: GeoPoint; people: number } | null {
+  const week = now - 7 * 86_400_000;
+  const cells = new Map<string, { w: number; lat: number; lng: number; people: number }>();
+  const add = (p: GeoPoint, w: number, people: number) => {
+    const key = `${Math.round(p.lat * 100)}:${Math.round(p.lng * 100)}`;
+    const c = cells.get(key) ?? { w: 0, lat: 0, lng: 0, people: 0 };
+    c.w += w; c.lat += p.lat * w; c.lng += p.lng * w; c.people += people;
+    cells.set(key, c);
+  };
+  for (const m of db.missions) {
+    const at = Date.parse(m.date);
+    if (!m.coordinates || at < week || at > now || m.participantsCount < 1 || (m.status !== "published" && m.status !== "closed")) continue;
+    add(m.coordinates, m.participantsCount, m.participantsCount);
+  }
+  if (!cells.size) for (const t of live) if (t.center && Date.parse(t.updatedAt) > week) add(t.center, Math.max(1, t.captures), 1);
+  let best: { w: number; lat: number; lng: number; people: number } | null = null;
+  for (const c of cells.values()) if (!best || c.w > best.w) best = c;
+  if (!best || best.people < 2) return null;
+  return { point: { lat: best.lat / best.w, lng: best.lng / best.w }, people: best.people };
+}
 
 export const api = {
   ready,
@@ -1823,7 +1846,7 @@ export const api = {
     const capturesToday = db.territoryCaptures.filter((c) => c.userId === u.id && Date.parse(c.createdAt) > since).length;
     const ignored = mineT && mineShape ? ignoredMissions(db, mineT, mineShape) : [];
     return {
-      season: seasonOf(), areas, missions,
+      season: seasonOf(), areas, missions, hot: hotSpot(db, live, now),
       me: {
         areaM2: mineT?.areaM2 ?? 0, lostM2: mineT?.lostM2 ?? 0, captures: mineT?.captures ?? 0,
         rank: mineT && mineT.areaM2 > 0 ? users.findIndex((t) => t.userId === u.id) + 1 : null, of: users.length,
@@ -1837,6 +1860,18 @@ export const api = {
         groups: groups.slice(0, 5).map(([id, m2]) => { const g = db.groups.find((x) => x.id === id)!; return { id, name: g.name, color: g.color, areaM2: m2, mine: id === myGroup?.id }; }),
       },
     };
+  },
+
+  /** v4: my captures this season in order, for the season replay. */
+  async seasonTimeline() {
+    await ready();
+    const db = getDB();
+    const u = actor(db);
+    const season = seasonOf();
+    const steps = db.territoryCaptures.filter((c) => c.userId === u.id && c.season === season).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+      .map((c) => ({ at: c.createdAt, areaM2: c.areaM2, gainedM2: c.gainedM2, loop: decodeShape(c.loop ?? null) }));
+    const mine = liveTerritories(db).find((t) => t.userId === u.id);
+    return { season, steps, final: decodeShape(mine?.shape ?? null), areaM2: mine?.areaM2 ?? 0 };
   },
 
   /** Light summary for Home: my area and rank this month. */
@@ -1904,7 +1939,7 @@ export const api = {
         const gained = Math.max(0, mine.areaM2 - before);
         db.territoryCaptures.push({
           id: uid(), userId: u.id, groupId: g?.id ?? null, season, areaM2: res.areaM2, gainedM2: gained, distanceM: stats.distanceM, durationS: stats.durationS,
-          maxSpeedKmh: stats.maxSpeedKmh, droppedFast: stats.droppedFast, takenFrom, createdAt: nowIso(),
+          maxSpeedKmh: stats.maxSpeedKmh, droppedFast: stats.droppedFast, takenFrom, createdAt: nowIso(), loop: encodeShape(res.shape),
         });
         const now = Date.now();
         const inside = db.missions.filter((m) => m.status === "published" && m.source !== "agent" && Date.parse(m.date) > now && contains(res.shape, m.coordinates)).length;

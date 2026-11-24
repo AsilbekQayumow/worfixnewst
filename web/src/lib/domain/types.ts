@@ -533,6 +533,8 @@ export interface TerritoryCapture {
   droppedFast: number;
   takenFrom: { userId: string; areaM2: number }[];
   createdAt: string;
+  /** v4: the loop itself (encoded MultiPolygon), for the season replay */
+  loop?: string;
 }
 
 /** v3.2: someone asks to join a group; any member can let them in. `${groupId}_${userId}` */

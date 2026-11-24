@@ -145,6 +145,13 @@ export function subtractShape(a: Shape, b: Shape): Shape | null {
   return keep.length ? round(keep) : null;
 }
 
+/** The part of `a` inside `b` (null when they do not meet). */
+export function overlapShape(a: Shape, b: Shape): Shape | null {
+  const i = intersect(featureCollection([asFeature(a), asFeature(b)]));
+  const s = toShape(i as Feature<Polygon | MultiPolygon> | null);
+  return s ? round(s) : null;
+}
+
 export function overlapM2(a: Shape, b: Shape) {
   const i = intersect(featureCollection([asFeature(a), asFeature(b)]));
   return i ? Math.round(turfArea(i)) : 0;

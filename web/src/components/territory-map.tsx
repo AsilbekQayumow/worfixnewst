@@ -19,6 +19,9 @@ const RASTER: StyleSpecification = {
   layers: [{ id: "osm", type: "raster", source: "osm", paint: { "raster-saturation": -0.6 } }],
 };
 const themeNow = () => (typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light");
+/** Dark map with the dark theme, and in the evening (19:00–06:00 local) whatever the theme. */
+export const isNight = (d = new Date()) => d.getHours() >= 19 || d.getHours() < 6;
+const styleNow = () => (themeNow() === "dark" || isNight() ? "dark" : "light");
 const reduced = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const css = (name: string, fallback: string) => (typeof document === "undefined" ? fallback : getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback);
 
@@ -47,12 +50,16 @@ function missionEl(m: MapMission) {
  * The game map: this month's areas, the missions on it, where I am and — while capturing — the loop being walked.
  * `flash` briefly fills a newly taken area. Positron/dark vector tiles, raster OpenStreetMap as a fallback.
  */
-export function TerritoryMap({ areas, missions, me, trace, flash, focus, onMission, selected, myColor, height = "100%" }: {
+export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, focus, onMission, selected, myColor, height = "100%" }: {
   areas: MapArea[];
   missions: MapMission[];
   me: (GeoPoint & { accuracy?: number | null }) | null;
   trace: GeoPoint[];
   flash: Shape | null;
+  /** Parts of other people's areas a new loop just took: they flare in their owner's colour and give way. */
+  taken?: { shape: Shape; color: string }[] | null;
+  /** This week's busiest spot: a slow pulse with a label. */
+  hot?: { point: GeoPoint; label: string } | null;
   focus: { point: GeoPoint; zoom?: number; key: string } | null;
   onMission: (id: string) => void;
   selected: string | null;
@@ -76,6 +83,7 @@ export function TerritoryMap({ areas, missions, me, trace, flash, focus, onMissi
   useEffect(() => {
     let cancelled = false;
     let observer: MutationObserver | null = null;
+    let clock = 0;
     void import("maplibre-gl").then((ml) => {
       if (cancelled || !box.current) return;
       lib.current = ml;
@@ -83,7 +91,7 @@ export function TerritoryMap({ areas, missions, me, trace, flash, focus, onMissi
       const c = latest.current.me ?? (a0 ? { lng: a0[0], lat: a0[1] } : { lat: 39.6542, lng: 66.9597 });
       let raster = false;
       const m = new ml.Map({
-        container: box.current, style: STYLE[themeNow()], center: [c.lng, c.lat], zoom: 14.2, attributionControl: { compact: true },
+        container: box.current, style: STYLE[styleNow()], center: [c.lng, c.lat], zoom: 14.2, attributionControl: { compact: true },
         dragRotate: false, pitchWithRotate: false, touchPitch: false, fadeDuration: 0,
       });
       m.touchZoomRotate.disableRotation();
@@ -95,12 +103,16 @@ export function TerritoryMap({ areas, missions, me, trace, flash, focus, onMissi
       m.on("style.load", () => setReady((n) => n + 1));
       m.once("load", () => box.current?.querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show"));
       map.current = m;
-      observer = new MutationObserver(() => { if (!raster) m.setStyle(STYLE[themeNow()]); });
+      let current = styleNow();
+      const restyle = () => { const next = styleNow(); if (!raster && next !== current) { current = next; m.setStyle(STYLE[next]); } };
+      observer = new MutationObserver(restyle);
+      clock = window.setInterval(restyle, 60_000);
       observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     }).catch(() => { if (!cancelled) setFailed(true); });
     return () => {
       cancelled = true;
       observer?.disconnect();
+      window.clearInterval(clock);
       pins.current.forEach((p) => p.remove());
       pins.current.clear();
       meMarker.current?.remove();
@@ -117,6 +129,7 @@ export function TerritoryMap({ areas, missions, me, trace, flash, focus, onMissi
     m.addSource("areas", { type: "geojson", data: fc([]) });
     m.addSource("flash", { type: "geojson", data: fc([]) });
     m.addSource("trace", { type: "geojson", data: fc([]) });
+    m.addSource("taken", { type: "geojson", data: fc([]) });
     m.addLayer({ id: "areas-fill", type: "fill", source: "areas", paint: {
       "fill-color": ["get", "color"],
       "fill-opacity": ["match", ["get", "relation"], "mine", 0.26, "group", 0.2, 0.13],
@@ -125,16 +138,23 @@ export function TerritoryMap({ areas, missions, me, trace, flash, focus, onMissi
       "line-color": ["get", "line"], "line-width": ["match", ["get", "relation"], "mine", 2.6, 1.6],
       "line-dasharray": ["match", ["get", "relation"], "other", ["literal", [2, 1.5]], ["literal", [1, 0]]],
     } });
+    m.addLayer({ id: "taken-fill", type: "fill", source: "taken", paint: { "fill-color": ["get", "color"], "fill-opacity": 0 } });
+    m.addLayer({ id: "taken-line", type: "line", source: "taken", paint: { "line-color": ["get", "color"], "line-width": 3, "line-opacity": 0, "line-dasharray": [1.5, 1] } });
     m.addLayer({ id: "flash-fill", type: "fill", source: "flash", paint: { "fill-color": accent, "fill-opacity": 0 } });
     m.addLayer({ id: "flash-line", type: "line", source: "flash", paint: { "line-color": accent, "line-width": 4, "line-opacity": 0 } });
+    m.addLayer({ id: "trace-glow", type: "line", source: "trace", filter: ["==", ["get", "k"], "path"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": accent, "line-width": 28, "line-opacity": 0.35, "line-blur": 10 } });
     m.addLayer({ id: "trace-casing", type: "line", source: "trace", filter: ["==", ["get", "k"], "path"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#ffffff", "line-width": 9, "line-opacity": 0.95 } });
     m.addLayer({ id: "trace-close", type: "line", source: "trace", filter: ["==", ["get", "k"], "close"], layout: { "line-cap": "round" }, paint: { "line-color": accent, "line-width": 2.5, "line-dasharray": [1, 1.6], "line-opacity": 0.8 } });
     m.addLayer({ id: "trace-line", type: "line", source: "trace", filter: ["==", ["get", "k"], "path"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": accent, "line-width": 5 } });
+    m.addLayer({ id: "trace-halo", type: "circle", source: "trace", filter: ["==", ["get", "k"], "head"], paint: { "circle-radius": 14, "circle-color": accent, "circle-opacity": 0.25, "circle-blur": 0.4 } });
+    m.addLayer({ id: "trace-head", type: "circle", source: "trace", filter: ["==", ["get", "k"], "head"], paint: { "circle-radius": 6, "circle-color": accent, "circle-stroke-color": "#ffffff", "circle-stroke-width": 2.5 } });
     m.addLayer({ id: "trace-start", type: "circle", source: "trace", filter: ["==", ["get", "k"], "start"], paint: { "circle-radius": 8, "circle-color": "#ffffff", "circle-stroke-color": accent, "circle-stroke-width": 4 } });
     try {
       m.addLayer({ id: "areas-name", type: "symbol", source: "areas", minzoom: 13.5, layout: {
         "text-field": ["get", "name"], "text-size": 12, "text-font": ["Noto Sans Regular"], "text-allow-overlap": false, "symbol-placement": "point",
-      }, paint: { "text-color": css("--text", "#1b1b1b"), "text-halo-color": css("--surface", "#ffffff"), "text-halo-width": 1.6 } });
+      }, paint: styleNow() === "dark"
+        ? { "text-color": "#f3f0e8", "text-halo-color": "#16181c", "text-halo-width": 1.6 }
+        : { "text-color": css("--text", "#1b1b1b"), "text-halo-color": css("--surface", "#ffffff"), "text-halo-width": 1.6 } });
     } catch { /* raster fallback has no glyphs */ }
     setReady((n) => n + 1);
   }, [ready]);
@@ -153,6 +173,9 @@ export function TerritoryMap({ areas, missions, me, trace, flash, focus, onMissi
     const dark = shade(myColor);
     m.setPaintProperty("trace-line", "line-color", myColor);
     m.setPaintProperty("trace-close", "line-color", myColor);
+    m.setPaintProperty("trace-glow", "line-color", myColor);
+    m.setPaintProperty("trace-halo", "circle-color", myColor);
+    m.setPaintProperty("trace-head", "circle-color", myColor);
     m.setPaintProperty("trace-start", "circle-stroke-color", dark);
     m.setPaintProperty("flash-fill", "fill-color", myColor);
     m.setPaintProperty("flash-line", "line-color", dark);
@@ -169,8 +192,61 @@ export function TerritoryMap({ areas, missions, me, trace, flash, focus, onMissi
       { type: "Feature", properties: { k: "start" }, geometry: { type: "Point", coordinates: first } },
       ...(line.length > 1 ? [{ type: "Feature" as const, properties: { k: "path" }, geometry: { type: "LineString" as const, coordinates: line } }] : []),
       ...(line.length > 2 ? [{ type: "Feature" as const, properties: { k: "close" }, geometry: { type: "LineString" as const, coordinates: [last, first] } }] : []),
+      ...(line.length > 1 ? [{ type: "Feature" as const, properties: { k: "head" }, geometry: { type: "Point" as const, coordinates: last } }] : []),
     ]));
   }, [trace, ready]);
+
+  // The head of the walked line breathes while a loop is being walked.
+  const walking = trace.length > 1;
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !ready || !walking || reduced() || !m.getLayer("trace-halo")) return;
+    let raf = 0;
+    const step = (now: number) => {
+      const k = (Math.sin(now / 420) + 1) / 2;
+      m.setPaintProperty("trace-halo", "circle-radius", 11 + 9 * k);
+      m.setPaintProperty("trace-halo", "circle-opacity", 0.32 - 0.2 * k);
+      raf = requestAnimationFrame(step);
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [walking, ready]);
+
+  // Ground taken from others flares in its owner's colour, then gives way to the new area.
+  useEffect(() => {
+    const m = map.current;
+    const src = m?.getSource("taken") as GeoJSONSource | undefined;
+    if (!m || !src || !taken?.length) return;
+    src.setData(fc(taken.map((x) => ({ type: "Feature" as const, properties: { color: x.color }, geometry: { type: "MultiPolygon" as const, coordinates: x.shape } }))));
+    if (reduced()) return;
+    let raf = 0;
+    const t0 = performance.now();
+    const step = (now: number) => {
+      const k = Math.min(1, (now - t0) / 1500);
+      const pulse = k < 0.5 ? Math.abs(Math.sin(k * Math.PI * 4)) : 1 - (k - 0.5) / 0.5;
+      m.setPaintProperty("taken-fill", "fill-opacity", 0.5 * pulse);
+      m.setPaintProperty("taken-line", "line-opacity", pulse);
+      m.setPaintProperty("taken-line", "line-width", 3 + 5 * (1 - pulse));
+      if (k < 1) raf = requestAnimationFrame(step);
+      else src.setData(fc([]));
+    };
+    raf = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(raf);
+  }, [taken, ready]);
+
+  // This week's busiest spot.
+  const hotMarker = useRef<MlMarker | null>(null);
+  useEffect(() => {
+    const m = map.current, ml = lib.current;
+    hotMarker.current?.remove(); hotMarker.current = null;
+    if (!m || !ml || !hot) return;
+    const el = document.createElement("div");
+    el.className = "tm-hot";
+    el.innerHTML = `<span class="tm-hot-ring"></span><span class="tm-hot-ring r2"></span><span class="tm-hot-label"></span>`;
+    (el.querySelector(".tm-hot-label") as HTMLElement).textContent = hot.label;
+    hotMarker.current = new ml.Marker({ element: el, anchor: "center" }).setLngLat([hot.point.lng, hot.point.lat]).addTo(m);
+    return () => { hotMarker.current?.remove(); hotMarker.current = null; };
+  }, [hot?.point.lat, hot?.point.lng, hot?.label, ready > 0]);
 
   // A newly taken area fills in, glows, then settles into the areas layer.
   useEffect(() => {

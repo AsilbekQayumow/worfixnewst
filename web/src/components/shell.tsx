@@ -112,6 +112,22 @@ function ShellInner({ area, children }: { area: Area; children: ReactNode }) {
     void api.claimApprovedJoins().then((g) => { if (g) toast(t("jr.joinedToast", { group: g.name })); }).catch(() => {});
   }, [me, t, toast]);
 
+  // v4: success moments: a verified mission (XP went up) or a new level since my last visit.
+  useEffect(() => {
+    if (!me || me.role !== "volunteer") return;
+    const key = `worfix.moments.${me.id}`;
+    let seen: { xp: number; level: number } | null = null;
+    try { seen = JSON.parse(localStorage.getItem(key) ?? "null"); } catch { /* ignore */ }
+    try { localStorage.setItem(key, JSON.stringify({ xp: me.xp, level: me.level })); } catch { /* ignore */ }
+    if (!seen || me.xp <= seen.xp) return;
+    const gained = me.xp - seen.xp, levelled = me.level > seen.level;
+    const id = window.setTimeout(() => {
+      void import("@/lib/fx").then(({ celebrate, buzz }) => { celebrate(null, levelled ? 140 : 80); buzz(levelled ? 60 : 30); });
+      toast(levelled ? t("mo.level", { n: me.level }) : t("mo.approved", { n: gained }));
+    }, 600);
+    return () => window.clearTimeout(id);
+  }, [me?.id, me?.xp, me?.level]); // eslint-disable-line react-hooks/exhaustive-deps
+
   useEffect(() => {
     if (me === undefined) return;
     if (me === null) { router.replace(`/login?next=${encodeURIComponent(path)}`); return; }
