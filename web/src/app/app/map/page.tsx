@@ -12,6 +12,7 @@ import { buzz, celebrate } from "@/lib/fx";
 import { personColor } from "@/lib/map-colors";
 import { distanceM, overlapShape, TERRITORY, type Shape } from "@/lib/domain/territory";
 import { SeasonReplay } from "@/components/season-replay";
+import { BeforeAfter } from "@/components/results";
 import type { GeoPoint } from "@/lib/domain/types";
 import { useTracker } from "@/lib/geo/tracker";
 import { useErrorText, useFmt, useI18n } from "@/lib/i18n";
@@ -59,6 +60,7 @@ function TerritoryGame({ onList }: { onList: () => void }) {
   const [flash, setFlash] = useState<Shape | null>(null);
   const [taken, setTaken] = useState<{ shape: Shape; color: string }[] | null>(null);
   const [replay, setReplay] = useState(false);
+  const [doneId, setDoneId] = useState<string | null>(null);
   const [focus, setFocus] = useState<{ point: GeoPoint; zoom?: number; key: string } | null>(null);
   const [result, setResult] = useState<Capture | null>(null);
   const [busy, setBusy] = useState(false);
@@ -82,6 +84,8 @@ function TerritoryGame({ onList }: { onList: () => void }) {
   const sorted = useMemo(() => [...(d?.missions ?? [])].sort((a, b) =>
     Number(b.inMyArea) - Number(a.inMyArea) || (here && a.coordinates && b.coordinates ? distanceM(here, a.coordinates) - distanceM(here, b.coordinates) : Date.parse(a.date) - Date.parse(b.date))), [d, here]);
   const sel = d?.missions.find((m) => m.id === selected) ?? null;
+  const doneSel = d?.done.find((x) => x.id === doneId) ?? null;
+  const donePins = useMemo(() => (d?.done ?? []).map((x) => ({ id: x.id, point: x.point })), [d]);
 
   // The loop closes on its own when the walker comes back to the start.
   useEffect(() => {
@@ -135,8 +139,9 @@ function TerritoryGame({ onList }: { onList: () => void }) {
     <div className="mapx" data-capturing={capturing || undefined}>
       <TerritoryMap
         areas={areas} missions={capturing ? [] : missions} me={here} trace={gps.points} flash={flash} taken={taken} myColor={myColor}
+        done={capturing ? [] : donePins} onDone={(id) => { setDoneId(id); setSelected(null); setSheet(false); buzz(8); }}
         hot={d?.hot && !capturing ? { point: d.hot.point, label: t("tm.hot", { n: d.hot.people }) } : null} focus={focus} selected={selected}
-        onMission={(id) => { setSelected(id); setSheet(false); buzz(8); }}
+        onMission={(id) => { setSelected(id); setDoneId(null); setSheet(false); buzz(8); }}
       />
 
       {/* top bar over the map */}
@@ -253,6 +258,17 @@ function TerritoryGame({ onList }: { onList: () => void }) {
             <span className="t-small num" style={{ fontWeight: 500 }}>+{sel.rewardXP} XP · +{sel.rewardPoints} Fixcoin</span>
             <Button variant="primary" size="sm" onClick={() => router.push(`/app/missions/${sel.id}`)}>{sel.joined ? t("tm.joined") : t("tm.open")}<Icon name="arrowRight" size={16} /></Button>
           </div>
+        </div>
+      )}
+
+      {/* work already done here */}
+      {doneSel && !capturing && !sel && (
+        <div className="mapx-card done-card" key={doneSel.id}>
+          <button type="button" className="mapx-card-x" onClick={() => setDoneId(null)} aria-label={t("a.close")}><Icon name="x" size={16} /></button>
+          <span className="t-small secondary row g8"><Icon name="checkCircle" size={16} />{t("dn.title")} · {f.date(doneSel.at)}</span>
+          <div className="done-ba"><BeforeAfter before={doneSel.before} after={doneSel.after} label={doneSel.title} hint /></div>
+          <strong style={{ paddingRight: 8 }}>{doneSel.title}</strong>
+          <Link href={`/app/people/${doneSel.person.id}`} className="row g8 t-small secondary"><Avatar name={doneSel.person.name} src={doneSel.person.avatar} size={22} />{doneSel.person.name}</Link>
         </div>
       )}
 

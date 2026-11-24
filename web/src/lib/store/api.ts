@@ -202,6 +202,29 @@ export const REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
 
 /* ───────────────────────── api ───────────────────────── */
 
+/** v4: a verified result with its before and after photos, if its owner lets the viewer see it. */
+function resultOf(db: DB, viewer: UserProfile, sub: Submission) {
+  if (sub.verificationStatus !== "approved" || sub.images.length < 2) return null;
+  const owner = db.users.find((x) => x.id === sub.userId);
+  const m = db.missions.find((x) => x.id === sub.missionId);
+  if (!owner || !m || owner.status === "deleted" || !canSee(db, viewer, owner)) return null;
+  return {
+    id: sub.id, missionId: m.id, title: m.title, category: m.category, point: m.coordinates, at: sub.reviewedAt ?? sub.timestamp,
+    before: sub.images[0].dataUrl, after: sub.images[sub.images.length - 1].dataUrl,
+    person: { id: owner.id, name: owner.fullName, avatar: owner.avatar },
+  };
+}
+export type WorkResult = NonNullable<ReturnType<typeof resultOf>>;
+
+/** v4: what one verified submission did (its grant, else the mission's own numbers). */
+function impactOf(db: DB, sub: Submission): Record<string, number> {
+  if (sub.grant?.impact && Object.keys(sub.grant.impact).length) return sub.grant.impact;
+  const m = db.missions.find((x) => x.id === sub.missionId);
+  const out: Record<string, number> = {};
+  for (const im of m?.impactMetrics ?? []) out[im.label] = (out[im.label] ?? 0) + im.amountPerVolunteer;
+  return out;
+}
+
 /** v4: this week's busiest spot: people on missions held in the last seven days, else areas walked this week (~1 km cells). */
 function hotSpot(db: DB, live: Territory[], now: number): { point: GeoPoint; people: number } | null {
   const week = now - 7 * 86_400_000;
@@ -1847,6 +1870,8 @@ export const api = {
     const ignored = mineT && mineShape ? ignoredMissions(db, mineT, mineShape) : [];
     return {
       season: seasonOf(), areas, missions, hot: hotSpot(db, live, now),
+      done: db.submissions.filter((x) => x.verificationStatus === "approved" && x.images.length >= 2 && Date.parse(x.reviewedAt ?? x.timestamp) > now - 90 * 86_400_000)
+        .flatMap((x) => { const r = resultOf(db, u, x); return r && r.point ? [{ ...r, point: r.point }] : []; }).slice(0, 80),
       me: {
         areaM2: mineT?.areaM2 ?? 0, lostM2: mineT?.lostM2 ?? 0, captures: mineT?.captures ?? 0,
         rank: mineT && mineT.areaM2 > 0 ? users.findIndex((t) => t.userId === u.id) + 1 : null, of: users.length,
@@ -1872,6 +1897,48 @@ export const api = {
       .map((c) => ({ at: c.createdAt, areaM2: c.areaM2, gainedM2: c.gainedM2, loop: decodeShape(c.loop ?? null) }));
     const mine = liveTerritories(db).find((t) => t.userId === u.id);
     return { season, steps, final: decodeShape(mine?.shape ?? null), areaM2: mine?.areaM2 ?? 0 };
+  },
+
+  /** v4: the newest verified before/after results I may see. */
+  async recentResults(limit = 8) {
+    await ready();
+    const db = getDB();
+    const u = actor(db);
+    return db.submissions.filter((x) => x.verificationStatus === "approved" && x.images.length >= 2)
+      .sort((a, b) => (b.reviewedAt ?? b.timestamp).localeCompare(a.reviewedAt ?? a.timestamp))
+      .flatMap((x) => { const r = resultOf(db, u, x); return r ? [r] : []; }).slice(0, limit);
+  },
+
+  /** v4: the whole platform this week: verified missions, people, hours and the biggest results. */
+  async communityPulse() {
+    await ready();
+    const db = getDB();
+    const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+    const subs = db.submissions.filter((x) => x.verificationStatus === "approved" && (x.reviewedAt ?? x.timestamp) >= since);
+    const impact: Record<string, number> = {};
+    let hours = 0;
+    for (const x of subs) {
+      for (const [k, v] of Object.entries(impactOf(db, x))) impact[k] = (impact[k] ?? 0) + v;
+      hours += x.grant?.hours ?? (db.missions.find((m) => m.id === x.missionId)?.duration ?? 0) / 60;
+    }
+    return {
+      missions: subs.length, people: new Set(subs.map((x) => x.userId)).size, hours: Math.round(hours),
+      impact: Object.entries(impact).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([label, amount]) => ({ label, amount: Math.round(amount * 10) / 10 })),
+    };
+  },
+
+  /** v4: numbers for my shareable result card. */
+  async shareStats() {
+    await ready();
+    const db = getDB();
+    const u = actor(db);
+    const mine = liveTerritories(db).find((t) => t.userId === u.id);
+    const approved = db.submissions.filter((x) => x.userId === u.id && x.verificationStatus === "approved").length;
+    return {
+      name: u.fullName, avatar: u.avatar, mapColor: u.mapColor ?? null, id: u.id, level: levelForXp(u.xp), xp: u.xp,
+      areaM2: mine?.areaM2 ?? 0, missions: approved, hours: Math.round(u.totalVolunteerHours * 10) / 10,
+      impact: Object.entries(u.impact).sort((a, b) => b[1] - a[1]).slice(0, 2).map(([label, amount]) => ({ label, amount })),
+    };
   },
 
   /** Light summary for Home: my area and rank this month. */

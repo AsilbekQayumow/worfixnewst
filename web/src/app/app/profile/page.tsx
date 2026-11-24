@@ -3,6 +3,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { AchievementGrid, Medal } from "@/components/achievements";
 import { MyTree } from "@/components/my-tree";
+import { ShareCard } from "@/components/results";
 import type { AchievementState } from "@/lib/domain/achievements";
 import { CertificateCanvas } from "@/components/certificate";
 import { Icon } from "@/components/icons";
@@ -45,7 +46,7 @@ function Profile() {
 
   return (
     <div className="stack g24 enter">
-      <PageHead title={t("nav.profile")} actions={<ButtonLink href="/app/settings" icon="edit">{t("pf.edit")}</ButtonLink>} />
+      <PageHead title={t("nav.profile")} actions={<>{me.role === "volunteer" && <ShareCard />}<ButtonLink href="/app/settings" icon="edit">{t("pf.edit")}</ButtonLink></>} />
       <section className="row g20 wrap">
         <Avatar name={me.fullName} src={me.avatar} size={88} />
         <div className="stack g8 grow" style={{ minWidth: 220 }}>

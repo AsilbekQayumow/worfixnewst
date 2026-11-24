@@ -1,4 +1,5 @@
 "use client";
+import { PulseCounter, ResultsStrip } from "@/components/results";
 import { AnnouncementBanner } from "@/components/admin-comms";
 import Link from "next/link";
 import { Medal } from "@/components/achievements";
@@ -66,6 +67,10 @@ export default function Home() {
       </div>
 
       <NewsStrip />
+
+      <PulseCounter />
+
+      <ResultsStrip />
 
       <MyReport />
 

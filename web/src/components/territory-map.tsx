@@ -50,7 +50,7 @@ function missionEl(m: MapMission) {
  * The game map: this month's areas, the missions on it, where I am and — while capturing — the loop being walked.
  * `flash` briefly fills a newly taken area. Positron/dark vector tiles, raster OpenStreetMap as a fallback.
  */
-export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, focus, onMission, selected, myColor, height = "100%" }: {
+export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, done, onDone, focus, onMission, selected, myColor, height = "100%" }: {
   areas: MapArea[];
   missions: MapMission[];
   me: (GeoPoint & { accuracy?: number | null }) | null;
@@ -58,6 +58,9 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, fo
   flash: Shape | null;
   /** Parts of other people's areas a new loop just took: they flare in their owner's colour and give way. */
   taken?: { shape: Shape; color: string }[] | null;
+  /** v4: places where verified work was done (a check pin; tapping shows the before/after photos). */
+  done?: { id: string; point: GeoPoint }[];
+  onDone?: (id: string) => void;
   /** This week's busiest spot: a slow pulse with a label. */
   hot?: { point: GeoPoint; label: string } | null;
   focus: { point: GeoPoint; zoom?: number; key: string } | null;
@@ -233,6 +236,29 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, fo
     raf = requestAnimationFrame(step);
     return () => cancelAnimationFrame(raf);
   }, [taken, ready]);
+
+  // Work already done.
+  const donePins = useRef<MlMarker[]>([]);
+  const pickDone = useRef(onDone);
+  pickDone.current = onDone;
+  useEffect(() => {
+    const m = map.current, ml = lib.current;
+    donePins.current.forEach((p) => p.remove());
+    donePins.current = [];
+    if (!m || !ml || !done?.length) return;
+    const check = renderToStaticMarkup(<Icon name="check" size={14} strokeWidth={2.4} />);
+    done.forEach((x, i) => {
+      const el = document.createElement("button");
+      el.type = "button";
+      el.className = "tm-done";
+      el.setAttribute("aria-label", t("dn.title"));
+      el.style.setProperty("--i", String(Math.min(i, 12)));
+      el.innerHTML = check;
+      el.addEventListener("click", (e) => { e.stopPropagation(); pickDone.current?.(x.id); });
+      donePins.current.push(new ml.Marker({ element: el, anchor: "center" }).setLngLat([x.point.lng, x.point.lat]).addTo(m));
+    });
+    return () => { donePins.current.forEach((p) => p.remove()); donePins.current = []; };
+  }, [done, ready > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // This week's busiest spot.
   const hotMarker = useRef<MlMarker | null>(null);
