@@ -6,6 +6,8 @@
 import { handleMissions, handleVerify } from "../ai/handlers";
 import { handleGeocode, handleRoute } from "../map/server";
 import { handleAiReview, handleShopFulfil } from "./handlers";
+import { handlePushRegister, handlePushSend, handlePushUnregister } from "./push";
+import { handleWidget, handleWidgetToken } from "./widget";
 
 export const FUNCTIONS: Record<string, { method: "GET" | "POST"; run: (req: Request) => Promise<Response> }> = {
   "ai-missions": { method: "POST", run: handleMissions },
@@ -14,4 +16,10 @@ export const FUNCTIONS: Record<string, { method: "GET" | "POST"; run: (req: Requ
   "shop-fulfil": { method: "POST", run: handleShopFulfil },
   "map-route": { method: "POST", run: handleRoute },
   "map-geocode": { method: "GET", run: handleGeocode },
+  // v5: the WORFIX app (Android/iOS)
+  "push-register": { method: "POST", run: handlePushRegister },
+  "push-unregister": { method: "POST", run: handlePushUnregister },
+  "push-send": { method: "POST", run: handlePushSend },
+  "widget-token": { method: "POST", run: handleWidgetToken },
+  "widget": { method: "GET", run: handleWidget },
 };

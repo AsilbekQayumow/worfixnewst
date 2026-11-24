@@ -1,10 +1,12 @@
 "use client";
 import { useRouter } from "next/navigation";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { LANGS, PRIVACY_MODES, type PrivacyMode } from "@/lib/domain/types";
 import { useErrorText, useI18n } from "@/lib/i18n";
 import { api, ValidationError } from "@/lib/store/api";
 import { FIREBASE } from "@/lib/store/db";
+import { isNative } from "@/lib/native";
+import { AppSettings } from "./app-settings";
 import { Icon, type IconName } from "./icons";
 import { LANG_LABEL } from "./lang-switch";
 import { ProfileForm } from "./profile-form";
@@ -33,6 +35,8 @@ export function SettingsView() {
   const errText = useErrorText();
   const router = useRouter();
   const pwa = useInstall();
+  const [native, setNative] = useState(false);
+  useEffect(() => setNative(isNative()), []);
 
   const [personal, setPersonal] = useState(() => ({
     phone: me?.phone ?? "", birthYear: me?.birthYear ? String(me.birthYear) : "", privacy: (me?.privacy ?? "public") as PrivacyMode, feedVisible: me?.feedVisible ?? true,
@@ -108,10 +112,14 @@ export function SettingsView() {
         </div>
       </Section>
 
-      <Section id="install" title={t("set.install")} sub={t("set.installSub")}>
+      {native ? (
+        <Section id="app" title={t("nt.appSection")}>
+          <AppSettings />
+        </Section>
+      ) : <Section id="install" title={t("set.install")} sub={t("set.installSub")}>
         {pwa.state === "ready" ? <Button variant="primary" icon="download" onClick={() => void pwa.install()}>{t("set.installBtn")}</Button>
           : <p className="t-small secondary">{pwa.state === "installed" ? t("set.installed") : pwa.state === "ios" ? t("set.installIos") : t("set.installManual")}</p>}
-      </Section>
+      </Section>}
 
       {volunteer && (
         <Section id="profile" title={t("set.profile")} sub={t("set.profileSub")}>
@@ -188,6 +196,11 @@ export function SettingsView() {
           {me.role !== "admin" && me.role !== "super_admin" && <Button variant="danger" icon="trash" onClick={() => setDel(true)}>{t("set.delete")}</Button>}
         </div>
         {!FIREBASE && <p className="t-small muted" style={{ marginTop: 12 }}>{t("set.demoData")}</p>}
+      </Section>
+
+      {/* v5: on phones the sidebar (with its sign-out button) is hidden, so signing out lives here too */}
+      <Section id="signout" title={t("a.logout")}>
+        <Button icon="logout" onClick={async () => { await api.logout(); window.location.replace("/login"); }}>{t("a.logout")}</Button>
       </Section>
 
       <Dialog open={del} onClose={() => setDel(false)} title={t("set.deleteTitle")} footer={<>

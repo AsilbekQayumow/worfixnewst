@@ -1,0 +1,76 @@
+/** v5: the WORFIX app (Android/iOS): pushes, widgets, the walk panel, biometrics, sharing into the app. */
+export const R5: Record<string, [string, string, string]> = {
+  // pushes (rendered on the server)
+  "push.invite": ["Sizni missiyaga taklif qildi", "Приглашает вас на миссию", "Invited you to a mission"],
+  "push.groupInvite": ["Sizni guruhga taklif qildi", "Приглашает вас в группу", "Invited you to a group"],
+  "push.streak.t": ["🔥 {n} kunlik seriyangiz bugun tugaydi", "🔥 Серия из {n} дн. сгорит сегодня", "🔥 Your {n}-day streak ends today"],
+  "push.streak.b": ["Bugun bitta missiya bajaring, seriya davom etadi.", "Выполните сегодня одну миссию, и серия продолжится.", "Do one mission today to keep it going."],
+
+  // widgets (rendered on the server)
+  "wg.streak": ["Seriya", "Серия", "Streak"],
+  "wg.streakDays": ["{n} kunlik seriya", "Серия {n} дн.", "{n}-day streak"],
+  "wg.streakNone": ["Seriya yo'q", "Серии пока нет", "No streak yet"],
+  "wg.streakToday": ["Bugun missiya bajaring", "Выполните миссию сегодня", "Do a mission today"],
+  "wg.streakSafe": ["Bugun bajarildi ✓", "Сегодня выполнено ✓", "Done for today ✓"],
+  "wg.streakStart": ["Missiya bajaring, seriya boshlanadi", "Выполните миссию, и начнётся серия", "Do a mission to start one"],
+  "wg.level": ["Daraja", "Уровень", "Level"],
+  "wg.mission": ["Yaqindagi missiya", "Миссия рядом", "Mission nearby"],
+  "wg.join": ["Qo'shilish", "Участвовать", "Join"],
+  "wg.area": ["Mening hududim", "Моя территория", "My area"],
+  "wg.rank": ["Bu oy #{n}", "#{n} в этом месяце", "#{n} this month"],
+  "wg.noMission": ["Yaqin orada yangi missiya yo'q", "Новых миссий рядом пока нет", "No new missions nearby yet"],
+  "wg.noArea": ["Hali hudud yo'q. Xaritada aylana yurib chiqing", "Территории пока нет. Обойдите круг на карте", "No area yet. Walk a loop on the map"],
+  "wg.walk": ["Hudud chizish", "Захватить", "Walk a loop"],
+  "wg.open": ["Ochish", "Открыть", "Open"],
+  "wg.signIn": ["Ko'rish uchun WORFIX ilovasiga kiring", "Войдите в приложение WORFIX", "Sign in to the WORFIX app"],
+
+  // the live walk panel (lock screen / notification)
+  "nt.walkChannel": ["Hudud yurish", "Захват территории", "Territory walk"],
+  "nt.walkTitle": ["Hudud chizilmoqda", "Идёт захват территории", "Walking a loop"],
+  "nt.walkDistance": ["Yurildi", "Пройдено", "Walked"],
+  "nt.walkArea": ["Maydon", "Площадь", "Area"],
+  "nt.walkHint": ["Boshlang'ich nuqtaga qayting, hudud yopiladi", "Вернитесь к старту, и круг замкнётся", "Get back to the start to close the loop"],
+  "nt.walkToStart": ["Boshlanishgacha {d}", "До старта {d}", "{d} to the start"],
+  "nt.walkClosed": ["Halqa yopildi! Hududni olish uchun ilovani oching", "Круг замкнут! Откройте приложение, чтобы забрать территорию", "Loop closed! Open the app to claim the area"],
+  "nt.walkStop": ["To'xtatish", "Остановить", "Stop"],
+
+  // sharing photos into the app
+  "nt.shareTitle": ["{n} ta rasm qabul qilindi", "Получено фото: {n}", "{n} photo(s) received"],
+  "nt.shareBody": ["Qaysi missiya hisobotiga qo'shamiz?", "В отчёт какой миссии добавить?", "Which mission report should they go to?"],
+  "nt.shareNone": ["Hozir hisobot kutayotgan missiyangiz yo'q. Avval missiyaga qo'shiling va uni boshlang.", "Сейчас нет миссий, ждущих отчёт. Сначала присоединитесь к миссии и начните её.", "No mission is waiting for a report. Join a mission and start it first."],
+  "nt.shareFind": ["Missiya topish", "Найти миссию", "Find a mission"],
+  "nt.shareAdded": ["Rasmlar hisobotga qo'shildi", "Фото добавлены в отчёт", "Photos added to the report"],
+  "nt.shareStart": ["Rasmlar tayyor. Missiyani boshlang, ular hisobotga tushadi", "Фото ждут. Начните миссию, и они попадут в отчёт", "Photos are ready. Start the mission and they go into the report"],
+  "nt.shareDiscard": ["Bekor qilish", "Отменить", "Discard"],
+
+  // app lock and biometric sign-in
+  "nt.lockTitle": ["WORFIX qulflangan", "WORFIX заблокирован", "WORFIX is locked"],
+  "nt.lockBody": ["Davom etish uchun barmoq izi yoki yuz bilan tasdiqlang", "Подтвердите отпечатком пальца или лицом", "Confirm with your fingerprint or face to continue"],
+  "nt.unlock": ["Ochish", "Разблокировать", "Unlock"],
+  "nt.bioTitle": ["WORFIX", "WORFIX", "WORFIX"],
+  "nt.bioReason": ["Bu sizligingizni tasdiqlang", "Подтвердите, что это вы", "Confirm it's you"],
+  "nt.bioLogin": ["Barmoq izi bilan kirish", "Войти по отпечатку", "Sign in with fingerprint"],
+  "nt.faceLogin": ["Face ID bilan kirish", "Войти через Face ID", "Sign in with Face ID"],
+  "nt.bioOffer": ["Keyingi safar barmoq izi bilan kirasizmi?", "В следующий раз входить по отпечатку?", "Sign in with biometrics next time?"],
+  "nt.bioOfferBody": ["Parolingiz faqat shu telefonda, shifrlangan holda saqlanadi. Uni faqat barmoq izi yoki yuzingiz ochadi.", "Пароль хранится только на этом телефоне в зашифрованном виде и открывается только вашим отпечатком или лицом.", "Your password stays on this phone only, encrypted, and only your fingerprint or face can unlock it."],
+  "nt.bioEnable": ["Yoqish", "Включить", "Turn on"],
+  "nt.later": ["Keyinroq", "Позже", "Later"],
+  "nt.bioFailed": ["Tasdiqlab bo'lmadi. Parol bilan kiring", "Не удалось подтвердить. Войдите с паролем", "Couldn't confirm. Sign in with your password"],
+  "nt.bioStale": ["Saqlangan parol eskirgan. Parol bilan kiring, keyin qayta yoqing", "Сохранённый пароль устарел. Войдите с паролем и включите снова", "The saved password is out of date. Sign in with your password and turn it on again"],
+
+  // settings → app
+  "nt.appSection": ["Ilova", "Приложение", "App"],
+  "nt.lockToggle": ["Ilovani barmoq izi bilan qulflash", "Блокировать приложение отпечатком", "Lock the app with biometrics"],
+  "nt.lockHint": ["Ilova 1 daqiqadan ko'p yopiq tursa, ochishda tasdiq so'raladi", "Если приложение было свёрнуто дольше минуты, попросим подтверждение", "After a minute in the background the app asks to confirm it's you"],
+  "nt.bioLoginToggle": ["Barmoq izi bilan kirish", "Вход по отпечатку", "Biometric sign-in"],
+  "nt.bioLoginHint": ["Yoqish uchun hisobdan chiqib, parol bilan qayta kiring", "Чтобы включить, выйдите и войдите с паролем", "To turn it on, sign out and sign in with your password"],
+  "nt.bioLoginOn": ["Yoqilgan. Chiqqaningizdan keyin parolsiz kirasiz", "Включён. После выхода войдёте без пароля", "On. After signing out you can sign back in without the password"],
+  "nt.bioNone": ["Bu telefonda barmoq izi yoki Face ID sozlanmagan", "На телефоне не настроены отпечаток или Face ID", "No fingerprint or Face ID is set up on this phone"],
+  "nt.notifs": ["Push-bildirishnomalar", "Push-уведомления", "Push notifications"],
+  "nt.notifsHint": ["Hudud bosib olinganda, missiya tasdiqlanganda va seriya tugayotganda xabar keladi. Telefon sozlamalarida o'chirish mumkin.", "Сообщим, когда заберут территорию, подтвердят миссию или сгорает серия. Отключаются в настройках телефона.", "You hear when someone takes your area, a mission is approved or your streak is about to end. Turn them off in the phone settings."],
+  "nt.openSettings": ["Telefon sozlamalari", "Настройки телефона", "Phone settings"],
+  "nt.widgets": ["Widgetlar", "Виджеты", "Widgets"],
+  "nt.widgetsHint": ["Ish stolini bosib turing → Widgetlar → WORFIX. Daraxt, seriya, yaqindagi missiya, hudud va jamoa pulsi bor.", "Удерживайте рабочий стол → Виджеты → WORFIX. Есть дерево, серия, миссия рядом, территория и пульс сообщества.", "Long-press the home screen → Widgets → WORFIX. There are the tree, streak, nearby mission, area and community pulse."],
+  "nt.version": ["Ilova versiyasi {v}", "Версия приложения {v}", "App version {v}"],
+  "nt.saved": ["Rasm galereyaga saqlandi", "Изображение сохранено в галерею", "Saved to your gallery"],
+};

@@ -4,6 +4,7 @@ import { I18nProvider, useI18n } from "@/lib/i18n";
 import { api, type SelfUser } from "@/lib/store/api";
 import { onSyncError } from "@/lib/store/db";
 import { useApi } from "@/lib/store/hooks";
+import { NativeBridge } from "./native-bridge";
 import { ToastProvider, useToast } from "./ui";
 
 type Theme = "light" | "dark";
@@ -57,6 +58,7 @@ export function Providers({ children }: { children: ReactNode }) {
         <ToastProvider>
           <MeProvider>
             <SyncErrors />
+            <NativeBridge />
             {children}
           </MeProvider>
         </ToastProvider>

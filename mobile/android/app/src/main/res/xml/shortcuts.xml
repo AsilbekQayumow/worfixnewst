@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Long-press the app icon: Map, Missions, Walk a loop -->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut android:shortcutId="walk" android:enabled="true" android:icon="@drawable/sc_walk"
+        android:shortcutShortLabel="@string/shortcut_walk" android:shortcutLongLabel="@string/shortcut_walk_long">
+        <intent android:action="android.intent.action.VIEW" android:data="https://worfix.site/app/map?walk=1"
+            android:targetPackage="site.worfix.app" android:targetClass="site.worfix.app.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="missions" android:enabled="true" android:icon="@drawable/sc_missions"
+        android:shortcutShortLabel="@string/shortcut_missions" android:shortcutLongLabel="@string/shortcut_missions_long">
+        <intent android:action="android.intent.action.VIEW" android:data="https://worfix.site/app/missions"
+            android:targetPackage="site.worfix.app" android:targetClass="site.worfix.app.MainActivity" />
+    </shortcut>
+    <shortcut android:shortcutId="map" android:enabled="true" android:icon="@drawable/sc_map"
+        android:shortcutShortLabel="@string/shortcut_map" android:shortcutLongLabel="@string/shortcut_map_long">
+        <intent android:action="android.intent.action.VIEW" android:data="https://worfix.site/app/map"
+            android:targetPackage="site.worfix.app" android:targetClass="site.worfix.app.MainActivity" />
+    </shortcut>
+</shortcuts>

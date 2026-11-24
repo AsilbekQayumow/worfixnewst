@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="worfix_green">#1FA84A</color>
+    <color name="worfix_green_lip">#13803A</color>
+    <color name="worfix_sky">#1C9BF0</color>
+    <color name="worfix_sun">#FFBF1F</color>
+    <color name="worfix_coral">#FF6248</color>
+    <color name="worfix_berry">#EC4F93</color>
+    <color name="worfix_sea">#10B3A3</color>
+    <color name="worfix_flame">#FF8A1F</color>
+    <!-- widgets follow the system theme -->
+    <color name="w_bg">#FFFFFF</color>
+    <color name="w_bg_soft">#F4F8F1</color>
+    <color name="w_ink">#14251B</color>
+    <color name="w_muted">#5D6F63</color>
+    <color name="w_line">#E1E9DC</color>
+    <color name="w_accent_soft">#DDF5E3</color>
+    <color name="w_sun_soft">#FFF3CF</color>
+    <color name="w_sky_soft">#DCF0FD</color>
+    <color name="w_flame_soft">#FFE8D2</color>
+    <color name="w_berry_soft">#FDE1EE</color>
+</resources>

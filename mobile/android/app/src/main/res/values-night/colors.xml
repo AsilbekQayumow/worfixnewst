@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="w_bg">#16241E</color>
+    <color name="w_bg_soft">#0E1915</color>
+    <color name="w_ink">#E9F3EC</color>
+    <color name="w_muted">#9CB0A3</color>
+    <color name="w_line">#24392F</color>
+    <color name="w_accent_soft">#173A26</color>
+    <color name="w_sun_soft">#3A2F0E</color>
+    <color name="w_sky_soft">#10304A</color>
+    <color name="w_flame_soft">#3B2510</color>
+    <color name="w_berry_soft">#3B1529</color>
+</resources>

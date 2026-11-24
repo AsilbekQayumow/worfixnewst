@@ -3,6 +3,8 @@
  * prefers reduced motion, and cleans up after itself.
  */
 
+import { haptic, isNative } from "./native";
+
 const reduced = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const PALETTE = ["#4daa27", "#6cc24a", "#0a6a2c", "#e0a84a", "#9a5b0b", "#cfe8bf"];
@@ -76,5 +78,8 @@ export function celebrate(from?: { x: number; y: number } | HTMLElement | null, 
 
 /** Short haptic tick on phones that support it. */
 export function buzz(ms = 12) {
-  if (typeof navigator !== "undefined" && "vibrate" in navigator && !reduced()) { try { navigator.vibrate(ms); } catch { /* ignore */ } }
+  if (typeof navigator === "undefined" || reduced()) return;
+  // v5: real haptics in the WORFIX app (a short tap, a firm one, or the "success" pattern for big moments).
+  if (isNative()) { haptic(ms >= 40 ? "success" : ms >= 18 ? "medium" : "light"); return; }
+  if ("vibrate" in navigator) { try { navigator.vibrate(ms); } catch { /* ignore */ } }
 }

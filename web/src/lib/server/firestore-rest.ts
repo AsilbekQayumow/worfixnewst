@@ -215,6 +215,9 @@ export class WriteBatch {
   constructor(protected readonly db: Firestore) {}
   set(ref: DocRef, data: object) { this.writes.push(setWrite(ref, data)); return this; }
   update(ref: DocRef, data: object) { this.writes.push(updateWrite(ref, data)); return this; }
+  /** Writes only when the document does not exist yet (the whole batch fails otherwise). */
+  create(ref: DocRef, data: object) { this.writes.push({ ...setWrite(ref, data), currentDocument: { exists: false } }); return this; }
+  delete(ref: DocRef) { this.writes.push({ delete: ref.name }); return this; }
   async commit() { if (this.writes.length) await this.db.commit(this.writes, null); }
 }
 
@@ -251,6 +254,10 @@ export class Firestore {
   }
 
   doc(path: string) { return new DocRef(this, path); }
+  /** An OAuth access token of the service account (Firestore, FCM and other Google APIs). */
+  token() { return this.opt.emulatorHost ? Promise.resolve("owner") : accessToken(this.opt.serviceAccount!); }
+  get projectId() { return this.opt.projectId; }
+  get emulator() { return Boolean(this.opt.emulatorHost); }
   collection(id: string) { return new CollectionRef(this, id); }
   batch() { return new WriteBatch(this); }
 

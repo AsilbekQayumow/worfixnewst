@@ -517,3 +517,37 @@ a.hello5-chip:active { transform: translateY(3px); box-shadow: 0 1px 0 rgb(0 0 0
   .stat-value { font-size: 24px; }
 }
 .hero5 .hero5-accent .word:last-of-type { margin-right: 0; }
+
+/* ───────────── v5: the WORFIX app (Android/iOS) ───────────── */
+/* Wide screens (tablets) in the app: keep content below the status bar; phones already use the safe areas. */
+@media (min-width: 861px) {
+  html.is-native .shell { padding-top: env(safe-area-inset-top); }
+}
+html.is-native { -webkit-tap-highlight-color: transparent; }
+html.is-native body { overscroll-behavior-y: none; }
+
+/* Sharing photos into the app: pick the mission report */
+.share-pick {
+  display: flex; align-items: center; gap: 12px; width: 100%; padding: 12px 14px; text-align: left; color: var(--ink);
+  background: var(--surface); border: 2px solid var(--line); border-radius: var(--r-md); box-shadow: 0 3px 0 var(--line);
+  font: inherit; cursor: pointer; transition: transform 0.14s var(--ease-out), box-shadow 0.14s var(--ease-out), border-color 0.14s var(--ease-out);
+}
+.share-pick:active { transform: translateY(2px); box-shadow: 0 1px 0 var(--line); }
+@media (hover: hover) and (pointer: fine) { .share-pick:hover { border-color: var(--accent); } }
+.share-pick-ico { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Biometric app lock */
+.app-lock {
+  position: fixed; inset: 0; z-index: 400; display: grid; place-items: center; padding: 24px;
+  background: radial-gradient(120% 80% at 50% 0%, color-mix(in srgb, var(--accent) 22%, var(--bg)) 0%, var(--bg) 60%);
+  animation: app-lock-in 0.24s var(--ease-out) both;
+}
+.app-lock-card { display: grid; justify-items: center; gap: 12px; text-align: center; max-width: 340px; }
+.app-lock-badge {
+  display: grid; place-items: center; width: 112px; height: 112px; margin-bottom: 8px; border-radius: 32px;
+  background: var(--surface); box-shadow: 0 6px 0 var(--line); animation: app-lock-bob 3s ease-in-out infinite;
+}
+@keyframes app-lock-in { from { opacity: 0; } }
+@keyframes app-lock-bob { 50% { transform: translateY(-6px); } }
+@media (prefers-reduced-motion: reduce) { .app-lock, .app-lock-badge { animation: none; } }

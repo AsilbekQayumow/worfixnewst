@@ -259,6 +259,31 @@ export async function deleteAuthUser() {
   await deleteUser(authUser).catch(() => signOut(auth));
 }
 
+/** Calls a server function (/.netlify/functions/<name>) as the signed-in user. */
+export async function callFunction(name: string, body?: unknown, method: "GET" | "POST" = "POST") {
+  const token = await idToken();
+  return fetch(`/.netlify/functions/${name}`, {
+    method,
+    headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+    body: method === "POST" ? JSON.stringify(body ?? {}) : undefined,
+  });
+}
+
+/**
+ * v5: new notifications for other people and new chat messages I sent also go out as phone pushes.
+ * The server re-reads each document and decides; this only says which ones are new.
+ */
+async function pushNew(ops: { name: SyncedName; id: string; data: Doc | null }[], before: Snapshot) {
+  const uid = authUser?.uid;
+  if (!uid) return;
+  const had = (name: SyncedName) => new Set((before[name] ?? []).map((d) => d.id));
+  const oldN = had("notifications"), oldM = had("messages");
+  const notifications = ops.filter((o) => o.name === "notifications" && o.data && !oldN.has(o.id) && (o.data as unknown as { userId: string }).userId !== uid).map((o) => o.id);
+  const messages = ops.filter((o) => o.name === "messages" && o.data && !oldM.has(o.id) && (o.data as unknown as { from: string }).from === uid).map((o) => o.id);
+  if (!notifications.length && !messages.length) return;
+  await callFunction("push-send", { notifications, messages }).catch(() => undefined);
+}
+
 /** Writes exactly the documents that differ between two snapshots (≤ 450 writes per batch). */
 export async function push(before: Snapshot, after: Snapshot) {
   init();
@@ -282,6 +307,7 @@ export async function push(before: Snapshot, after: Snapshot) {
       }
       await batch.commit();
     }
+    void pushNew(ops, before);
   } catch (e) {
     const err = e as { code?: string; message: string };
     handlers?.onError(err.code === "permission-denied" ? "e.serverDenied" : "e.saveFailed");

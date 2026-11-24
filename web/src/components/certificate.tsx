@@ -1,4 +1,5 @@
 "use client";
+import { saveImage } from "@/lib/native";
 import QRCode from "qrcode";
 import { useEffect, useRef, useState } from "react";
 import { levelTitleKey } from "@/lib/domain/rewards";
@@ -159,10 +160,8 @@ export function CertificateCanvas({ c, actions = true }: { c: CertificateView; a
 
   const download = () => {
     if (!ref.current) return;
-    const a = document.createElement("a");
-    a.href = ref.current.toDataURL("image/png");
-    a.download = `WORFIX-${c.verificationCode}.png`;
-    a.click();
+    // v5: saveImage downloads in a browser and saves to the gallery in the app.
+    void saveImage(ref.current.toDataURL("image/png"), `WORFIX-${c.verificationCode}.png`).catch(() => {});
   };
 
   const print = () => {

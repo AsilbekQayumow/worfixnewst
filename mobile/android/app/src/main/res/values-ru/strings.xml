@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="share_label">В отчёт WORFIX</string>
+    <string name="widget_tree">Моё дерево</string>
+    <string name="widget_tree_desc">Дерево, которое растёт вместе с миссиями</string>
+    <string name="widget_streak">Серия и уровень</string>
+    <string name="widget_streak_desc">Серия, уровень и XP</string>
+    <string name="widget_mission">Миссия рядом</string>
+    <string name="widget_mission_desc">Ближайшая к вам новая миссия</string>
+    <string name="widget_area">Моя территория</string>
+    <string name="widget_area_desc">Ваша территория и место в этом месяце</string>
+    <string name="widget_pulse">Пульс сообщества</string>
+    <string name="widget_pulse_desc">Что сделали на платформе за неделю</string>
+    <string name="widget_sign_in">Войдите в приложение WORFIX</string>
+    <string name="widget_loading">Загрузка…</string>
+    <string name="shortcut_map">Карта</string>
+    <string name="shortcut_map_long">Карта территорий</string>
+    <string name="shortcut_missions">Миссии</string>
+    <string name="shortcut_missions_long">Найти новую миссию</string>
+    <string name="shortcut_walk">Захватить</string>
+    <string name="shortcut_walk_long">Начать захват территории</string>
+    <string name="walk_channel">Захват территории</string>
+    <string name="walk_title">Идёт захват территории</string>
+    <string name="walk_distance">Пройдено</string>
+    <string name="walk_area">Площадь</string>
+    <string name="walk_hint">Вернитесь к старту, и круг замкнётся</string>
+    <string name="walk_closed">Круг замкнут! Откройте приложение, чтобы забрать территорию</string>
+    <string name="walk_stop">Остановить</string>
+    <string name="walk_alerts">Уведомления о захвате</string>
+    <string name="walk_gps">Ждём GPS…</string>
+    <string name="push_channel">Уведомления WORFIX</string>
+</resources>

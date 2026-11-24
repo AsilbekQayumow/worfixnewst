@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="share_label">To a WORFIX report</string>
+    <string name="widget_tree">My tree</string>
+    <string name="widget_tree_desc">Your tree grows with every verified mission</string>
+    <string name="widget_streak">Streak and level</string>
+    <string name="widget_streak_desc">Your daily streak, level and XP</string>
+    <string name="widget_mission">Mission nearby</string>
+    <string name="widget_mission_desc">The closest new mission to you</string>
+    <string name="widget_area">My area</string>
+    <string name="widget_area_desc">The area you hold this month and your rank</string>
+    <string name="widget_pulse">Community pulse</string>
+    <string name="widget_pulse_desc">What volunteers did this week</string>
+    <string name="widget_sign_in">Sign in to the WORFIX app</string>
+    <string name="widget_loading">Loading…</string>
+    <string name="shortcut_map">Map</string>
+    <string name="shortcut_map_long">Territory map</string>
+    <string name="shortcut_missions">Missions</string>
+    <string name="shortcut_missions_long">Find a new mission</string>
+    <string name="shortcut_walk">Walk a loop</string>
+    <string name="shortcut_walk_long">Start walking a loop</string>
+    <string name="walk_channel">Territory walk</string>
+    <string name="walk_title">Walking a loop</string>
+    <string name="walk_distance">Walked</string>
+    <string name="walk_area">Area</string>
+    <string name="walk_hint">Get back to the start to close the loop</string>
+    <string name="walk_closed">Loop closed! Open the app to claim the area</string>
+    <string name="walk_stop">Stop</string>
+    <string name="walk_alerts">Walk alerts</string>
+    <string name="walk_gps">Waiting for GPS…</string>
+    <string name="push_channel">WORFIX notifications</string>
+</resources>

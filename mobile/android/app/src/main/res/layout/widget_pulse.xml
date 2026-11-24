@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/w_root"
+    android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical"
+    android:background="@drawable/w_card_green" android:padding="14dp" android:gravity="center_vertical">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:gravity="center_vertical">
+        <ImageView android:layout_width="16dp" android:layout_height="16dp" android:src="@drawable/ic_w_check_white" android:contentDescription="@null" />
+        <TextView android:id="@+id/p_title" android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:layout_marginStart="6dp"
+            android:text="@string/widget_pulse" android:textColor="#E6FFFFFF" android:textSize="12sp" android:textStyle="bold" android:maxLines="1" android:ellipsize="end" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:orientation="horizontal" android:layout_marginTop="8dp">
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:id="@+id/p_missions" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="128"
+                android:textColor="#FFFFFF" android:textSize="24sp" android:textStyle="bold" android:maxLines="1" />
+            <TextView android:id="@+id/p_missions_label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text=""
+                android:textColor="#D9FFFFFF" android:textSize="11sp" android:maxLines="2" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:id="@+id/p_people" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="64"
+                android:textColor="#FFFFFF" android:textSize="24sp" android:textStyle="bold" android:maxLines="1" />
+            <TextView android:id="@+id/p_people_label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text=""
+                android:textColor="#D9FFFFFF" android:textSize="11sp" android:maxLines="2" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_weight="1" android:layout_height="wrap_content" android:orientation="vertical">
+            <TextView android:id="@+id/p_hours" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="310"
+                android:textColor="#FFFFFF" android:textSize="24sp" android:textStyle="bold" android:maxLines="1" />
+            <TextView android:id="@+id/p_hours_label" android:layout_width="wrap_content" android:layout_height="wrap_content" android:text=""
+                android:textColor="#D9FFFFFF" android:textSize="11sp" android:maxLines="2" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

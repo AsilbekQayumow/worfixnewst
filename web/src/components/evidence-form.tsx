@@ -1,10 +1,11 @@
 "use client";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { postAi } from "@/lib/ai/client";
 import type { VerifyResult } from "@/lib/ai/missions";
 import { distanceM } from "@/lib/domain/checks";
 import type { Category, Evidence, GeoPoint, GpsFix } from "@/lib/domain/types";
 import { useErrorText, useFmt, useI18n } from "@/lib/i18n";
+import { isNative, nativePhoto, onSharedFiles, sharedFiles, takeSharedFiles } from "@/lib/native";
 import { api } from "@/lib/store/api";
 import { getPosition, prepareImage, thumbForAi } from "@/lib/store/media";
 import { Icon } from "./icons";
@@ -46,7 +47,7 @@ export function EvidenceForm({ mission, resubmission, lastFix }: { mission: Miss
   const checklist = mission.checklist ?? [];
   const needs = mission.difficulty === "hard" ? 2 : 1;
 
-  const add = async (files: FileList | null, source: "camera" | "library") => {
+  const add = async (files: FileList | File[] | null, source: "camera" | "library") => {
     if (!files?.length) return;
     setBusyPhoto(true);
     setError(null);
@@ -63,6 +64,27 @@ export function EvidenceForm({ mission, resubmission, lastFix }: { mission: Miss
       if (lib.current) lib.current.value = "";
     }
   };
+
+  // v5 (app): the native camera, and photos shared into the app (Share → WORFIX) land here.
+  const snap = async () => {
+    if (!isNative()) { cam.current?.click(); return; }
+    try {
+      const file = await nativePhoto();
+      if (file) await add([file], "camera");
+    } catch (e) {
+      setError(errText(e));
+    }
+  };
+  useEffect(() => {
+    const takeShared = () => {
+      if (!sharedFiles().length) return;
+      const files = takeSharedFiles();
+      void add(files, "library").then(() => toast(t("nt.shareAdded")));
+      document.getElementById("evidence")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    };
+    takeShared();
+    return onSharedFiles(takeShared);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const submit = async () => {
     setError(null);
@@ -122,7 +144,7 @@ export function EvidenceForm({ mission, resubmission, lastFix }: { mission: Miss
         <div className="row g8 wrap">
           <input ref={cam} type="file" accept="image/*" capture="environment" hidden onChange={(e) => void add(e.target.files, "camera")} />
           <input ref={lib} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden onChange={(e) => void add(e.target.files, "library")} />
-          <Button variant="ink" icon="camera" onClick={() => cam.current?.click()} disabled={busy || photos.length >= 6} loading={busyPhoto}>
+          <Button variant="ink" icon="camera" onClick={() => void snap()} disabled={busy || photos.length >= 6} loading={busyPhoto}>
             {photos.length === 0 ? t("ev.before") : t("ev.after")}
           </Button>
           <Button variant="ghost" icon="image" onClick={() => lib.current?.click()} disabled={busy || photos.length >= 6}>{t("ev.gallery")}</Button>

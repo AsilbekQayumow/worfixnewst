@@ -2,6 +2,7 @@ import type { Lang } from "../domain/types";
 import { R3 } from "./dict-v3";
 import { R31 } from "./dict-v31";
 import { R32 } from "./dict-v32";
+import { R5 } from "./dict-v5";
 
 /** [O‘zbekcha, Русский, English] */
 type Row = [string, string, string];
@@ -1070,7 +1071,7 @@ const R: Record<string, Row> = {
   "ai.noPlaces": ["Yaqin atrofda xaritada belgilangan ochiq joy topilmadi", "Рядом не нашлось отмеченных на карте мест", "No mapped public places were found nearby"],
 };
 
-Object.assign(R, R3, R31, R32);
+Object.assign(R, R3, R31, R32, R5);
 
 function build(i: 0 | 1 | 2): Record<string, string> {
   const out: Record<string, string> = {};

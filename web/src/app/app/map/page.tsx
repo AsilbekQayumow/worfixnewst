@@ -52,7 +52,13 @@ function TerritoryGame({ onList }: { onList: () => void }) {
   const router = useRouter();
   const { me } = useMe();
   const q = useApi(() => api.territoryMap());
-  const gps = useTracker();
+  const myColor = me ? personColor(me.id, me.mapColor) : "#16a34a";
+  // v5: in the app the phone records the walk itself and shows it on the lock screen.
+  const walkLabels = useMemo(() => ({
+    channel: t("nt.walkChannel"), title: t("nt.walkTitle"), distance: t("nt.walkDistance"), area: t("nt.walkArea"), hint: t("nt.walkHint"),
+    toStart: t("nt.walkToStart", { d: "{d}" }), closed: t("nt.walkClosed"), stop: t("nt.walkStop"),
+  }), [t]);
+  const gps = useTracker({ color: myColor, labels: walkLabels });
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<"missions" | "season">("missions");
   const [intro, setIntro] = useState(false);
@@ -69,9 +75,19 @@ function TerritoryGame({ onList }: { onList: () => void }) {
 
   useEffect(() => { try { if (!localStorage.getItem(INTRO_KEY)) setIntro(true); } catch { /* ignore */ } }, []);
   useEffect(() => { gps.locate(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // App shortcut / widget "Walk a loop" (?walk=1): start right away.
+  const params = useSearchParams();
+  const autoWalk = useRef(false);
+  useEffect(() => {
+    if (params.get("walk") !== "1" || autoWalk.current || gps.status !== "idle" || !me) return;
+    autoWalk.current = true;
+    setIntro(false); // straight to the walk: no intro over it
+    try { localStorage.setItem(INTRO_KEY, "1"); } catch { /* ignore */ }
+    router.replace("/app/map", { scroll: false });
+    startCapture();
+  }, [params, gps.status, me]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const d = q.data;
-  const myColor = me ? personColor(me.id, me.mapColor) : "#16a34a";
   const areas: MapArea[] = useMemo(() => (d?.areas ?? []).map((a) => ({
     id: a.id, shape: a.shape, relation: a.relation, name: a.name, color: personColor(a.userId, a.mapColor),
   })), [d]);

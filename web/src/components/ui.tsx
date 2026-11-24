@@ -1,4 +1,5 @@
 "use client";
+import { createPortal } from "react-dom";
 import { isPreset, PresetArt } from "./avatar-presets";
 import Link from "next/link";
 import {
@@ -253,7 +254,9 @@ export function Dialog({ open, onClose, title, children, wide, footer }: { open:
     return () => { document.removeEventListener("keydown", onKey); document.body.style.overflow = ""; prev?.focus(); };
   }, [open, onClose]);
   if (!open) return null;
-  return (
+  // Rendered into <body>: inside an animated or transformed block a fixed overlay would be trapped behind
+  // later content (seen on phones: the share card under the profile header).
+  const view = (
     <div className="scrim" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div ref={ref} className={cx("dialog", wide && "dialog-wide")} role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined}>
         <div className="row between g12" style={{ padding: "16px 20px", borderBottom: "1px solid var(--line)" }}>
@@ -265,6 +268,7 @@ export function Dialog({ open, onClose, title, children, wide, footer }: { open:
       </div>
     </div>
   );
+  return typeof document === "undefined" ? view : createPortal(view, document.body);
 }
 
 /* ── toasts ── */

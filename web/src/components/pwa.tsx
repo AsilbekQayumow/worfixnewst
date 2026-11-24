@@ -25,7 +25,8 @@ export function useInstall(): { state: InstallState; install: () => Promise<void
   const [env, setEnv] = useState<{ standalone: boolean; ios: boolean }>({ standalone: false, ios: false });
   useEffect(() => {
     setEnv({
-      standalone: matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true,
+      // v5: inside the WORFIX app (Android/iOS) there is nothing to install.
+      standalone: matchMedia("(display-mode: standalone)").matches || (navigator as Navigator & { standalone?: boolean }).standalone === true || /WorfixApp\//.test(navigator.userAgent),
       ios: /iphone|ipad|ipod/i.test(navigator.userAgent),
     });
     const l = () => tick((n) => n + 1);

@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">WORFIX</string>
+    <string name="title_activity_main" translatable="false">WORFIX</string>
+    <string name="package_name" translatable="false">site.worfix.app</string>
+    <string name="custom_url_scheme" translatable="false">site.worfix.app</string>
+    <string name="share_label">WORFIX hisobotiga</string>
+    <string name="widget_tree">Mening daraxtim</string>
+    <string name="widget_tree_desc">Missiyalar bilan o\'sadigan daraxtingiz</string>
+    <string name="widget_streak">Seriya va daraja</string>
+    <string name="widget_streak_desc">Kunlik seriya, daraja va XP</string>
+    <string name="widget_mission">Yaqindagi missiya</string>
+    <string name="widget_mission_desc">Sizga eng yaqin yangi missiya</string>
+    <string name="widget_area">Mening hududim</string>
+    <string name="widget_area_desc">Bu oy olgan hududingiz va o\'rningiz</string>
+    <string name="widget_pulse">Jamoa pulsi</string>
+    <string name="widget_pulse_desc">Shu hafta platformada qilingan ishlar</string>
+    <string name="widget_sign_in">Ko\'rish uchun WORFIX ilovasiga kiring</string>
+    <string name="widget_loading">Yuklanmoqda…</string>
+    <string name="shortcut_map">Xarita</string>
+    <string name="shortcut_map_long">Hududlar xaritasi</string>
+    <string name="shortcut_missions">Missiyalar</string>
+    <string name="shortcut_missions_long">Yangi missiya topish</string>
+    <string name="shortcut_walk">Hudud chizish</string>
+    <string name="shortcut_walk_long">Hududni chizishni boshlash</string>
+    <string name="walk_channel">Hudud yurish</string>
+    <string name="walk_title">Hudud chizilmoqda</string>
+    <string name="walk_distance">Yurildi</string>
+    <string name="walk_area">Maydon</string>
+    <string name="walk_hint">Boshlang\'ich nuqtaga qayting, hudud yopiladi</string>
+    <string name="walk_closed">Halqa yopildi! Hududni olish uchun ilovani oching</string>
+    <string name="walk_stop">To\'xtatish</string>
+    <string name="walk_alerts">Hudud xabarlari</string>
+    <string name="walk_gps">GPS kutilmoqda…</string>
+    <string name="push_channel">WORFIX xabarlari</string>
+</resources>

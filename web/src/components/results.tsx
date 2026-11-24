@@ -13,9 +13,10 @@ import { useFmt, useI18n } from "@/lib/i18n";
 import { personColor, shade } from "@/lib/map-colors";
 import { api, type WorkResult } from "@/lib/store/api";
 import { useApi } from "@/lib/store/hooks";
+import { isNative, saveImage, shareImage } from "@/lib/native";
 import { isPreset, PresetArt } from "./avatar-presets";
 import { Icon } from "./icons";
-import { Avatar, Button, CategoryTag, Dialog, Skeleton } from "./ui";
+import { Avatar, Button, CategoryTag, Dialog, Skeleton, useToast } from "./ui";
 
 export function BeforeAfter({ before, after, label, hint = false }: { before: string; after: string; label: string; hint?: boolean }) {
   const { t } = useI18n();
@@ -236,13 +237,27 @@ export function ShareCard() {
     return () => { cancelled = true; };
   }, [open, t]);
   const file = () => new File([blob.current!], "worfix-natija.png", { type: "image/png" });
+  // v5: in the app, save to the gallery and share through the phone's own share sheet.
+  const native = isNative();
+  const toast = useToast();
+  const asDataUrl = () => new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob.current!);
+  });
   const canShare = typeof navigator !== "undefined" && "canShare" in navigator && url !== null && navigator.canShare({ files: [file()] });
   return (
     <>
       <Button icon="share" onClick={() => setOpen(true)}>{t("sc.open")}</Button>
       <Dialog open={open} onClose={() => setOpen(false)} title={t("sc.open")} footer={url ? <>
-        <a className="btn btn-ghost" href={url} download="worfix-natija.png"><Icon name="download" size={16} />{t("sc.download")}</a>
-        {canShare && <Button variant="primary" icon="share" onClick={() => void navigator.share({ files: [file()], text: t("sc.text") }).catch(() => {})}>{t("sc.share")}</Button>}
+        {native ? <>
+          <Button variant="ghost" icon="download" onClick={() => void asDataUrl().then((d) => saveImage(d, "worfix-natija.png")).then((ok) => ok && toast(t("nt.saved"))).catch(() => {})}>{t("sc.download")}</Button>
+          <Button variant="primary" icon="share" onClick={() => void asDataUrl().then((d) => shareImage(d, t("sc.text"))).catch(() => {})}>{t("sc.share")}</Button>
+        </> : <>
+          <a className="btn btn-ghost" href={url} download="worfix-natija.png"><Icon name="download" size={16} />{t("sc.download")}</a>
+          {canShare && <Button variant="primary" icon="share" onClick={() => void navigator.share({ files: [file()], text: t("sc.text") }).catch(() => {})}>{t("sc.share")}</Button>}
+        </>}
       </> : null}>
         {url ? <img src={url} alt={t("sc.alt")} className="share-preview" /> : <Skeleton rows={1} height={420} />}
       </Dialog>

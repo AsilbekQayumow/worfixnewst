@@ -5,21 +5,13 @@
  */
 import { useI18n } from "@/lib/i18n";
 
-export const TREE_STAGES = [0, 1, 3, 10, 25] as const;
-
-export function treeOf(count: number, last: string | null | undefined, now = Date.now()) {
-  let stage = 0;
-  TREE_STAGES.forEach((min, i) => { if (count >= min) stage = i; });
-  const days = last ? Math.floor((now - new Date(last).getTime()) / 86400000) : null;
-  const thirst = count === 0 || days === null ? 0 : days >= 21 ? 2 : days >= 7 ? 1 : 0;
-  const next = TREE_STAGES[stage + 1] ?? null;
-  return { stage, thirst, next, toNext: next === null ? 0 : next - count };
-}
+export { TREE_STAGES, treeOf } from "@/lib/domain/tree";
+import { treeOf } from "@/lib/domain/tree";
 
 const LEAF = ["#4ea35c", "#7d9a4a", "#a39a5a"];
 const DEEP = ["#3e8f4c", "#6f8a40", "#8f8650"];
 
-function Art({ stage, thirst }: { stage: number; thirst: number }) {
+export function TreeArt({ stage, thirst }: { stage: number; thirst: number }) {
   const leaf = LEAF[thirst], deep = DEEP[thirst];
   const droop = thirst * 6;
   return (
@@ -63,7 +55,7 @@ export function MyTree({ count, last, own = true }: { count: number; last: strin
   const tr = treeOf(count, last);
   return (
     <section className="card pad row g16 my-tree" data-thirst={tr.thirst}>
-      <div className="tree-box"><Art stage={tr.stage} thirst={tr.thirst} /></div>
+      <div className="tree-box"><TreeArt stage={tr.stage} thirst={tr.thirst} /></div>
       <div className="stack g4 grow" style={{ minWidth: 180 }}>
         <span className="t-small secondary">{t(own ? "tree.title" : "tree.titleOther")}</span>
         <span className="t-h3">{t(`tree.s${tr.stage}`)}</span>

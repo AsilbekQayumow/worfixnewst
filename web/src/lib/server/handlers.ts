@@ -14,6 +14,7 @@ import { reviewSubmission } from "../domain/verification";
 import { LANGS, type Lang, type Mission, type MissionParticipant, type Notification, type Order, type PromoCode, type Submission, type Territory, type UserProfile } from "../domain/types";
 import { bboxOf, centerOf, contains, decay, decodeShape, encodeShape, seasonOf, shapeArea, TERRITORY } from "../domain/territory";
 import { adminDb, adminReady, caller, notConfigured, tooMany } from "./admin";
+import { pushNotification } from "./push";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 const nowIso = () => new Date().toISOString();
@@ -64,7 +65,9 @@ export async function handleAiReview(req: Request): Promise<Response> {
     }
   }
 
+  const created: Notification[] = [];
   const decision = await db.runTransaction(async (tx) => {
+    created.length = 0;
     const ref = db.doc(`submissions/${s.id}`);
     const cur = (await tx.get(ref)).data() as Submission;
     if (cur.verificationStatus !== "pending" || cur.aiReview?.audit === "overturned") return cur.aiReview?.decision ?? null;
@@ -74,7 +77,7 @@ export async function handleAiReview(req: Request): Promise<Response> {
     const review = decideAi(verdict, checks.checks, checks.score, nowIso());
     if (review.decision === "escalated") {
       tx.update(ref, { aiReview: review, checks: checks.checks, fraudScore: checks.score, fraudFlags: checks.flags });
-      for (const a of admins) { const n = note(a, "submission", "n.toReview", { name: vol.fullName, title: m.title }, "/admin?tab=review"); tx.set(db.doc(`notifications/${n.id}`), n); }
+      for (const a of admins) { const n = note(a, "submission", "n.toReview", { name: vol.fullName, title: m.title }, "/admin?tab=review"); tx.set(db.doc(`notifications/${n.id}`), n); created.push(n); }
       return review.decision;
     }
     const pRef = db.doc(`participants/${cur.missionId}_${cur.userId}`);
@@ -89,11 +92,12 @@ export async function handleAiReview(req: Request): Promise<Response> {
     tx.set(vRef, res.volunteer);
     tx.set(db.doc(`records/${res.record.id}`), res.record);
     for (const c of res.certificates) tx.set(db.doc(`certificates/${c.id}`), c);
-    for (const n of res.notifications) tx.set(db.doc(`notifications/${n.id}`), n);
+    for (const n of res.notifications) { tx.set(db.doc(`notifications/${n.id}`), n); created.push(n); }
     tx.set(db.doc(`audits/${res.audit.id}`), { ...res.audit, actor: AI_REVIEWER_ID, actorRole: "system" });
     if (participant) tx.update(pRef, review.decision === "approved" ? { completionStatus: "completed", attendance: true } : { completionStatus: "joined" });
     return review.decision;
   });
+  await Promise.all(created.map((n) => pushNotification(db, n)));
   return json({ decision });
 }
 
@@ -107,7 +111,9 @@ export async function handleShopFulfil(req: Request): Promise<Response> {
   const { orderId } = ((await req.json().catch(() => ({}))) ?? {}) as { orderId?: string };
   if (!orderId) return json({ error: "e.notFound" }, 400);
   const db = adminDb();
+  let issued: Notification | null = null;
   const out = await db.runTransaction(async (tx) => {
+    issued = null;
     const oRef = db.doc(`orders/${orderId}`);
     const o = (await tx.get(oRef)).data() as Order | undefined;
     if (!o || o.userId !== uid) return { status: 404, body: { error: "e.notFound" } };
@@ -121,8 +127,10 @@ export async function handleShopFulfil(req: Request): Promise<Response> {
     tx.update(oRef, { promoCode: c.code, status: "fulfilled", updatedAt: t });
     const n = note(uid, "reward", "n.promoIssued", { title: o.itemTitle }, "/app/shop?tab=codes");
     tx.set(db.doc(`notifications/${n.id}`), n);
+    issued = n;
     return { status: 200, body: { code: c.code } };
   });
+  if (issued) await pushNotification(db, issued);
   return json(out.body, out.status);
 }
 
@@ -174,6 +182,7 @@ export async function runTerritoryDecay(now = Date.now()) {
     });
     batch.set(db.doc(`notifications/${n.id}`), n);
     await batch.commit();
+    await pushNotification(db, n);
     changed += 1;
   }
   return { season, checked: tSnap.size, shrunk: changed };

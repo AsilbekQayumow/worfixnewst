@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="uz">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>WORFIX</title>
+<style>
+  :root { --bg:#f4f8f1; --ink:#14251b; --muted:#5d6f63; --card:#fff; --accent:#1fa84a; --lip:#13803a; --sky:#3b9cf0; --sun:#ffc531; --coral:#ff6f59; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0e1915; --ink:#e9f3ec; --muted:#9cb0a3; --card:#16241e; } }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body { min-height: 100dvh; display: grid; place-items: center; background: var(--bg); color: var(--ink);
+    font: 16px/1.5 "Nunito", ui-rounded, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; padding: 24px;
+    padding-top: max(24px, env(safe-area-inset-top)); padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+  main { width: min(360px, 100%); text-align: center; }
+  .scene { position: relative; width: 168px; height: 168px; margin: 0 auto 24px; }
+  .disc { position: absolute; inset: 0; border-radius: 50%; background: var(--card); box-shadow: 0 6px 0 rgba(20,37,27,.08); }
+  .ring { position: absolute; inset: 0; border-radius: 50%; border: 3px dashed color-mix(in srgb, var(--accent) 45%, transparent); animation: spin 18s linear infinite; }
+  .logo { position: absolute; left: 50%; top: 50%; width: 96px; transform: translate(-50%, -50%); }
+  .dot { position: absolute; width: 14px; height: 14px; border-radius: 50%; animation: bob 2.6s ease-in-out infinite; }
+  .dot.a { background: var(--sky); left: 4px; top: 30px; }
+  .dot.b { background: var(--sun); right: 8px; top: 18px; animation-delay: .5s; }
+  .dot.c { background: var(--coral); right: 18px; bottom: 14px; animation-delay: 1s; }
+  h1 { font-size: 24px; line-height: 1.2; margin: 0 0 8px; font-weight: 900; }
+  p { margin: 0; color: var(--muted); }
+  button { margin-top: 24px; height: 52px; padding: 0 28px; border: 0; border-radius: 16px; background: var(--accent); color: #fff;
+    font: inherit; font-weight: 800; box-shadow: 0 4px 0 var(--lip); transition: transform .12s ease, box-shadow .12s ease; }
+  button:active { transform: translateY(3px); box-shadow: 0 1px 0 var(--lip); }
+  .wait { margin-top: 16px; font-size: 14px; color: var(--muted); min-height: 21px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes bob { 50% { transform: translateY(-8px); } }
+  @media (prefers-reduced-motion: reduce) { .ring, .dot { animation: none; } }
+</style>
+</head>
+<body>
+<main>
+  <div class="scene" aria-hidden="true"><div class="disc"></div><div class="ring"></div><img class="logo" src="logo.svg" alt=""><i class="dot a"></i><i class="dot b"></i><i class="dot c"></i></div>
+  <h1 id="t"></h1>
+  <p id="d"></p>
+  <button id="b" type="button"></button>
+  <div class="wait" id="w" aria-live="polite"></div>
+</main>
+<script>
+  var L = {
+    uz: ["Internet yo'q", "Ulanish tiklangach WORFIX o'zi ochiladi. Yurgan hududingiz va yozgan hisobotingiz saqlanib qoladi.", "Qayta urinish", "Ulanish tekshirilmoqda…"],
+    ru: ["Нет интернета", "WORFIX откроется сам, когда связь вернётся. Ваш маршрут и черновики сохранены.", "Повторить", "Проверяем соединение…"],
+    en: ["You're offline", "WORFIX opens again by itself when the connection is back. Your walk and drafts are kept.", "Try again", "Checking the connection…"]
+  };
+  var lang = (navigator.language || "uz").slice(0, 2); var s = L[lang] || L.uz;
+  document.documentElement.lang = L[lang] ? lang : "uz";
+  document.getElementById("t").textContent = s[0];
+  document.getElementById("d").textContent = s[1];
+  document.getElementById("b").textContent = s[2];
+  var target = "https://worfix.site/app";
+  function go() { document.getElementById("w").textContent = s[3]; location.replace(target); }
+  document.getElementById("b").onclick = go;
+  window.addEventListener("online", go);
+  setInterval(function () { if (navigator.onLine) go(); }, 15000);
+</script>
+</body>
+</html>

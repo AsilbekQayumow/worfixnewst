@@ -29,6 +29,10 @@ import type {
 import { postAi } from "../ai/client";
 import type { AiMission } from "../ai/missions";
 import * as cloud from "./cloud";
+
+/** v5: work that must run while still signed in (the app unregisters push and widget tokens). */
+const beforeLogout = new Set<() => Promise<unknown>>();
+export function onBeforeLogout(fn: () => Promise<unknown>) { beforeLogout.add(fn); return () => void beforeLogout.delete(fn); }
 import {
   bboxOf, centerOf, cleanTrace, contains, decay, decodeShape, encodeShape, overlapM2, seasonOf, shapeArea, subtractShape, TERRITORY, traceToShape, unionShapes,
   type CaptureError, type Shape, type TracePoint,
@@ -367,6 +371,8 @@ export const api = {
   },
 
   async logout() {
+    // v5: the app forgets this phone's push token and widget token while the user can still prove who they are.
+    await Promise.all([...beforeLogout].map((fn) => fn().catch(() => undefined)));
     if (FIREBASE) return cloud.logOut();
     localStorage.removeItem(SESSION_KEY);
     await commit(() => {});
