@@ -54,11 +54,16 @@ export function BeforeAfter({ before, after, label, hint = false }: { before: st
   );
 }
 
+/** Before/after only makes sense where the work visibly changes a place. */
+export const CHANGES_A_PLACE = new Set(["environment", "water", "recycling"]);
+
 export function ResultCard({ r, hint }: { r: WorkResult; hint?: boolean }) {
   const f = useFmt();
   return (
     <article className="card result-card">
-      <BeforeAfter before={r.before} after={r.after} label={r.title} hint={hint} />
+      {CHANGES_A_PLACE.has(r.category)
+        ? <BeforeAfter before={r.before} after={r.after} label={r.title} hint={hint} />
+        : <div className="ba"><img src={r.after} alt={r.title} draggable={false} /></div>}
       <div className="stack g8" style={{ padding: "12px 14px 14px" }}>
         <Link href={`/app/missions/${r.missionId}`} className="truncate" style={{ fontWeight: 500 }}>{r.title}</Link>
         <div className="row between g8">

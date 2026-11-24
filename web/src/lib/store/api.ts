@@ -1870,8 +1870,6 @@ export const api = {
     const ignored = mineT && mineShape ? ignoredMissions(db, mineT, mineShape) : [];
     return {
       season: seasonOf(), areas, missions, hot: hotSpot(db, live, now),
-      done: db.submissions.filter((x) => x.verificationStatus === "approved" && x.images.length >= 2 && Date.parse(x.reviewedAt ?? x.timestamp) > now - 90 * 86_400_000)
-        .flatMap((x) => { const r = resultOf(db, u, x); return r && r.point ? [{ ...r, point: r.point }] : []; }).slice(0, 80),
       me: {
         areaM2: mineT?.areaM2 ?? 0, lostM2: mineT?.lostM2 ?? 0, captures: mineT?.captures ?? 0,
         rank: mineT && mineT.areaM2 > 0 ? users.findIndex((t) => t.userId === u.id) + 1 : null, of: users.length,
