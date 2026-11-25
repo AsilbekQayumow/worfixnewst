@@ -524,7 +524,16 @@ a.hello5-chip:active { transform: translateY(3px); box-shadow: 0 1px 0 rgb(0 0 0
   html.is-native .shell { padding-top: env(safe-area-inset-top); }
 }
 html.is-native { -webkit-tap-highlight-color: transparent; }
-html.is-native body { overscroll-behavior-y: none; }
+/* The app shell is fixed to the viewport and only `.main` scrolls, the way a native screen does:
+   no document-level rubber-band bounce, no top/tab bars drifting with the page, no browser-chrome feel. */
+html.is-native, html.is-native body { height: 100%; overflow: hidden; overscroll-behavior: none; }
+html.is-native .shell { height: 100%; overflow: hidden; }
+html.is-native .shell-col { display: flex; flex-direction: column; height: 100%; overflow: hidden; }
+html.is-native .main { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
+html.is-native .side { overflow-y: auto; -webkit-overflow-scrolling: touch; }
+/* `.mapx` used to size itself off the old document-scroll viewport math (100dvh minus the bars);
+   now `.main` is already exactly the right size, so just fill it. */
+html.is-native .mapx { height: 100%; }
 
 /* Sharing photos into the app: pick the mission report */
 .share-pick {

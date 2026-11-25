@@ -12,7 +12,7 @@ import { CATEGORY_ICON, Icon } from "./icons";
 export interface MapArea { id: string; shape: Shape; relation: "mine" | "group" | "other"; color: string; name: string }
 export interface MapMission { id: string; title: string; category: Category; coordinates: GeoPoint; inMyArea: boolean; firstLook: boolean; joined: boolean }
 
-const STYLE = { light: "https://tiles.openfreemap.org/styles/positron", dark: "https://tiles.openfreemap.org/styles/dark" };
+const STYLE = { light: "https://tiles.openfreemap.org/styles/liberty", dark: "https://tiles.openfreemap.org/styles/dark" };
 const RASTER: StyleSpecification = {
   version: 8,
   sources: { osm: { type: "raster", tiles: ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"], tileSize: 256, maxzoom: 19, attribution: "© OpenStreetMap" } },
@@ -48,7 +48,7 @@ function missionEl(m: MapMission) {
 
 /**
  * The game map: this month's areas, the missions on it, where I am and — while capturing — the loop being walked.
- * `flash` briefly fills a newly taken area. Positron/dark vector tiles, raster OpenStreetMap as a fallback.
+ * `flash` briefly fills a newly taken area. Liberty/dark vector tiles, raster OpenStreetMap as a fallback.
  */
 export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, done, onDone, focus, onMission, selected, myColor, height = "100%" }: {
   areas: MapArea[];

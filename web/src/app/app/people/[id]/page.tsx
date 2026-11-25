@@ -21,12 +21,12 @@ export default function PersonPage() {
 
   if (q.loading && !q.data) return <Skeleton rows={4} height={100} />;
   const d = q.data;
-  if (!d) return <div className="card"><Empty icon="user" title={t("pp.notFound")} action={<ButtonLink href="/app/friends">{t("nav.friends")}</ButtonLink>} /></div>;
+  if (!d) return <div className="card"><Empty icon="user" title={t("pp.notFound")} action={<ButtonLink href="/app/chat">{t("nav.chat")}</ButtonLink>} /></div>;
   const p = d.person;
 
   return (
     <div className="stack g24 enter">
-      <Link href="/app/friends" className="row g8 t-small secondary" style={{ width: "fit-content" }}><Icon name="arrowLeft" size={16} />{t("nav.friends")}</Link>
+      <Link href="/app/chat" className="row g8 t-small secondary" style={{ width: "fit-content" }}><Icon name="arrowLeft" size={16} />{t("nav.chat")}</Link>
       <section className="row g20 wrap">
         <Avatar name={p.fullName} src={p.avatar} size={88} />
         <div className="stack g8 grow" style={{ minWidth: 220 }}>

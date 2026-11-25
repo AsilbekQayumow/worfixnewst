@@ -233,7 +233,7 @@ function InviteDialog({ open, onClose, missionId, friends }: { open: boolean; on
   return (
     <Dialog open={open} onClose={onClose} title={t("md.inviteTitle")}>
       {friends.length === 0 ? (
-        <Empty icon="users" title={t("md.noFriends")} action={<ButtonLink href="/app/friends" variant="primary">{t("md.findFriends")}</ButtonLink>} />
+        <Empty icon="users" title={t("md.noFriends")} action={<ButtonLink href="/app/chat?find=1" variant="primary">{t("md.findFriends")}</ButtonLink>} />
       ) : (
         <div className="stack g8">
           <p className="t-small secondary" style={{ marginBottom: 8 }}>{t("md.inviteBody")}</p>

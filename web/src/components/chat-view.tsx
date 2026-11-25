@@ -72,7 +72,7 @@ export function ChatView({ openId, base = "/app/chat", kind = "direct", onPickKi
             </ul>
           )
         ) : !direct.data ? <div style={{ padding: 16 }}><Skeleton rows={4} height={48} /></div> : direct.data.length === 0 ? (
-          <Empty icon="message" title={t("chat.noFriends")} action={base === "/app/chat" ? <ButtonLink href="/app/chat?tab=friends" size="sm">{t("fr.find")}</ButtonLink> : undefined} />
+          <Empty icon="message" title={t("chat.noFriends")} action={base === "/app/chat" ? <ButtonLink href="/app/chat?find=1" size="sm">{t("fr.find")}</ButtonLink> : undefined} />
         ) : (
           <ul>
             {direct.data.map((c) => (

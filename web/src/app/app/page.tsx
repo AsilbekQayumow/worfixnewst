@@ -1,5 +1,5 @@
 "use client";
-import { PulseCounter, ResultsStrip } from "@/components/results";
+import { PulseCounter } from "@/components/results";
 import { AnnouncementBanner } from "@/components/admin-comms";
 import Link from "next/link";
 import { Medal } from "@/components/achievements";
@@ -113,7 +113,7 @@ export default function Home() {
             </Link>
           )}
           <section className="card pad stack g12">
-            <div className="row between"><h2 className="t-h3">{t("home.app.board")}</h2><Link href="/app/chat?tab=friends" className="t-small link">{t("nav.friends")}</Link></div>
+            <div className="row between"><h2 className="t-h3">{t("home.app.board")}</h2><Link href="/app/chat?find=1" className="t-small link">{t("fr.find")}</Link></div>
             {!d ? <Skeleton rows={3} height={32} /> : d.board.length <= 1 ? <p className="t-small secondary">{t("home.app.boardEmpty")}</p> : (
               <ol className="stack g8">
                 {d.board.map((p, i) => (
@@ -133,7 +133,6 @@ export default function Home() {
       </div>
 
       <PulseCounter />
-      <ResultsStrip />
       <NewsStrip />
     </div>
   );

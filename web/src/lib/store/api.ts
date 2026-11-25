@@ -1131,7 +1131,7 @@ export const api = {
         notify(db, other.id, "system", "n.friendAccepted", { name: u.fullName }, `/app/people/${u.id}`);
       } else {
         db.friendships.push({ id: `${u.id}_${other.id}`, from: u.id, to: other.id, status: "pending", createdAt: nowIso() });
-        notify(db, other.id, "system", "n.friendRequest", { name: u.fullName }, "/app/friends");
+        notify(db, other.id, "system", "n.friendRequest", { name: u.fullName }, `/app/people/${u.id}`);
       }
       log(db, u, "friend.request", "friendships", `${u.id}_${other.id}`);
     });

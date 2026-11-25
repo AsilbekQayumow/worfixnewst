@@ -162,7 +162,7 @@ export function GroupInviteDialog({ open, onClose, preselect }: { open: boolean;
           <Icon name="users" size={28} className="muted" />
           <strong>{t("gi.noFriends")}</strong>
           <p className="t-small secondary">{t("gi.noFriendsBody")}</p>
-          <a href="/app/chat?tab=friends" className="btn btn-primary btn-sm">{t("gi.findFriends")}</a>
+          <a href="/app/chat?find=1" className="btn btn-primary btn-sm">{t("gi.findFriends")}</a>
         </div>
       ) : (
         <div className="stack g12">

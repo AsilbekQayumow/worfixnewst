@@ -29,7 +29,7 @@ function navItems(area: Area, t: (k: string) => string, b: Badges | undefined): 
     main: [
       { href: "/app", label: t("nav.home"), icon: "home", mobile: true, exact: true, badge: b?.signals },
       { href: "/app/map", label: t("nav.map"), icon: "map", mobile: true, also: ["/app/missions", "/app/explore"] },
-      { href: "/app/chat", label: t("nav.chat"), icon: "message", badge: (b?.messages ?? 0) + (b?.friends ?? 0), mobile: true, also: ["/app/friends", "/app/groups", "/app/people", "/app/join"] },
+      { href: "/app/chat", label: t("nav.chat"), icon: "message", badge: b?.messages, mobile: true, also: ["/app/friends", "/app/groups", "/app/people", "/app/join"] },
       { href: "/app/rating", label: t("nav.rating"), icon: "trophy", mobile: true },
       { href: "/app/shop", label: t("nav.shop"), icon: "bag" },
       { href: "/app/profile", label: t("nav.profile"), icon: "user", mobile: true },
@@ -181,7 +181,7 @@ function ShellInner({ area, children }: { area: Area; children: ReactNode }) {
         </div>
       </aside>
 
-      <div style={{ minWidth: 0 }}>
+      <div className="shell-col" style={{ minWidth: 0 }}>
         <header className="topbar">
           <Logo href={homeForRole(me.role)} compact />
           <div className="row g4">
