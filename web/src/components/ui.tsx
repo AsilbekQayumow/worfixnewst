@@ -162,8 +162,8 @@ export function Coins({ value, size = 16, className }: { value: number | string;
 export function Avatar({ name, src, size = 36 }: { name: string; src?: string | null; size?: number }) {
   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("") || "·";
   return (
-    <span className="avatar" style={{ width: size, height: size, fontSize: Math.round(size * 0.38) }} aria-hidden>
-      {src && isPreset(src) ? <PresetArt id={src.slice(7)} /> : src && !src.startsWith("preset:") ? <img src={src} alt="" /> : initials}
+    <span className="avatar" style={{ width: size, height: size, fontSize: Math.max(9, Math.round(size * 0.38)) }} aria-hidden>
+      {src && isPreset(src) ? <PresetArt id={src.slice(7)} /> : src && !src.startsWith("preset:") ? <img src={src} alt="" /> : size < 26 ? initials.slice(0, 1) : initials}
     </span>
   );
 }

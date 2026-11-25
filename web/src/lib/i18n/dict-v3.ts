@@ -8,11 +8,11 @@ export const R3: Record<string, [string, string, string]> = {
   "my.subMerged": ["Yangi missiyalarni toping va o‘zingiznikilarini kuzating: hammasi bir joyda.", "Находите новые миссии и следите за своими — всё в одном месте.", "Find new missions and follow your own, all in one place."],
 
   // ranks (as in the WORFIX video)
-  "rank.explorer": ["Explorer", "Explorer", "Explorer"],
-  "rank.volunteer": ["Volunteer", "Volunteer", "Volunteer"],
-  "rank.protector": ["Protector", "Protector", "Protector"],
-  "rank.guardian": ["Guardian", "Guardian", "Guardian"],
-  "rank.legend": ["Legend", "Legend", "Legend"],
+  "rank.explorer": ["Kashfiyotchi", "Исследователь", "Explorer"],
+  "rank.volunteer": ["Ko‘ngilli", "Волонтёр", "Volunteer"],
+  "rank.protector": ["Himoyachi", "Защитник", "Protector"],
+  "rank.guardian": ["Qo‘riqchi", "Хранитель", "Guardian"],
+  "rank.legend": ["Afsona", "Легенда", "Legend"],
   "rk.title": ["Unvon yo‘li", "Путь званий", "Rank path"],
   "rk.toNext": ["{rank} unvonigacha {xp} XP", "До звания {rank}: {xp} XP", "{xp} XP to {rank}"],
   "rk.top": ["Eng yuqori unvon. Afsona!", "Высшее звание. Легенда!", "Top rank reached"],

@@ -49,15 +49,15 @@ export default function GroupPage() {
             {d.isOwner && <Button icon="edit" variant="ghost" onClick={() => setEdit(true)}>{t("a.edit")}</Button>}
           </div>
         </div>
-        <div className="grid cols-3" style={{ marginTop: 20 }}>
+        <div className="grid gstats" style={{ marginTop: 20 }}>
           <div className="stack g8">
             <span className="stat-label">{t("gr.level")}</span>
             <span className="stat-value num">{d.level}</span>
             <Progress value={frac} label={t("gr.level")} />
             <span className="t-meta">{f.num(d.xp)} / {f.num(d.levelNext)} XP</span>
           </div>
-          <div className="stack g4"><span className="stat-label">{t("gr.monthXp")}</span><span className="stat-value num">{f.num(d.monthXp)}</span><span className="t-meta">XP</span></div>
-          <div className="stack g4"><span className="stat-label">{t("gr.membersLabel")}</span><span className="stat-value num">{d.members.length}</span><span className="t-meta">/ 30</span></div>
+          <div className="stack g4"><span className="stat-label">{t("gr.monthXp")}</span><span className="stat-value num">{f.num(d.monthXp)} <small className="t-meta">XP</small></span></div>
+          <div className="stack g4"><span className="stat-label">{t("gr.membersLabel")}</span><span className="stat-value num">{d.members.length} <small className="t-meta">/ 30</small></span></div>
         </div>
       </section>
 

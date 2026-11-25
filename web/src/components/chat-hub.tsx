@@ -29,7 +29,7 @@ function PeopleSearch({ onClose }: { onClose: () => void }) {
         <span style={{ position: "absolute", left: 10, top: 11, color: "var(--muted)" }}><Icon name="search" size={18} /></span>
         <button type="button" className="btn btn-ghost btn-sm btn-icon" style={{ position: "absolute", right: 4, top: 4 }} onClick={onClose} aria-label={t("a.close")}><Icon name="x" size={16} /></button>
       </div>
-      {!needle ? null : !people.data ? <Skeleton rows={3} /> : people.data.length === 0 ? <Empty icon="search" title={t("fr.noPeople")} /> : (
+      {!needle ? <Empty icon="users" title={t("fr.searchHintTitle")} body={t("fr.searchHint")} /> : !people.data ? <Skeleton rows={3} /> : people.data.length === 0 ? <Empty icon="search" title={t("fr.noPeople")} /> : (
         <div className="card rows">
           {people.data.map((p) => (
             <PersonRow key={p.id} p={p} sub={p.nearby ? <>{t("fr.nearby")} · {t("lvl.short", { n: p.level })}</> : undefined} actions={

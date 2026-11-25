@@ -13,7 +13,7 @@ import { Avatar, Button, Dialog, Notice, TextArea, TextInput, useToast } from ".
 export function GroupMark({ name, color = GROUP_COLORS[0], size = 40 }: { name: string; color?: string; size?: number }) {
   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "G";
   return (
-    <span className="group-mark" aria-hidden style={{ width: size, height: size, background: color, fontSize: Math.round(size * 0.36) }}>{initials}</span>
+    <span className="group-mark" aria-hidden style={{ width: size, height: size, background: color, fontSize: Math.max(9, Math.round(size * 0.36)) }}>{size < 28 ? initials.slice(0, 1) : initials}</span>
   );
 }
 

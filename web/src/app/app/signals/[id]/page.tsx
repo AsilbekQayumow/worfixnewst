@@ -36,9 +36,9 @@ export default function SignalPage() {
           <span className="signal-dot big" aria-hidden><Icon name="zap" size={22} /></span>
           <div className="stack g4 grow" style={{ minWidth: 0 }}>
             <h1 className="t-h2">{s.title}</h1>
-            <span className="row g8 t-small secondary wrap">
-              {s.author && <><Avatar name={s.author.fullName} src={s.author.avatar} size={20} />{s.isMine ? t("a.you") : s.author.fullName}</>}
-              <span>· {f.relative(s.createdAt)}</span>{s.groupName && <span>· {s.groupName}</span>}
+            <span className="row g8 t-small secondary wrap meta-dots">
+              {s.author && <span className="row g8"><Avatar name={s.author.fullName} src={s.author.avatar} size={20} />{s.isMine ? t("a.you") : s.author.fullName}</span>}
+              <span>{f.relative(s.createdAt)}</span>{s.groupName && <span>{s.groupName}</span>}
             </span>
           </div>
           {s.open ? <Status tone="warn">{t("sg.openUntil", { time: f.time(s.expiresAt) })}</Status> : <Status tone="neutral">{t("sg.closed")}</Status>}

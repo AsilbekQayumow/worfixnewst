@@ -24,7 +24,7 @@ export function NewsStrip({ limit = 4 }: { limit?: number }) {
         <Link href={`/news/${lead.id}`} className="card news-lead" data-cover={Boolean(lead.cover) || undefined}>
           {lead.cover ? <img src={lead.cover} alt="" className="news-cover" /> : <span className="news-cover-empty"><Icon name={CAT_ICON[lead.category]} size={28} /></span>}
           <span className="stack g8 news-body">
-            <span className="row g8 t-small secondary">{lead.pinned && <Icon name="pin" size={14} />}<span>{t(`nw.cat.${lead.category}`)}</span><span>·</span><span>{f.relative(lead.publishAt)}</span></span>
+            <span className="row g8 t-small secondary wrap meta-dots">{lead.pinned && <Icon name="pin" size={14} />}<span>{t(`nw.cat.${lead.category}`)}</span><span>{f.relative(lead.publishAt)}</span></span>
             <span className="t-h3">{lead.title}</span>
             <span className="t-small secondary news-sum">{lead.summary}</span>
           </span>

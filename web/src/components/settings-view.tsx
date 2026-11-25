@@ -91,7 +91,7 @@ export function SettingsView() {
   return (
     <div className="stack g24 enter">
       <PageHead title={t("nav.settings")} />
-      <nav className="row g8 wrap" aria-label={t("nav.settings")}>
+      <nav className="row g8 wrap chip-scroll" aria-label={t("nav.settings")}>
         {nav.map(([id, label]) => <a key={id} href={`#${id}`} className="chip">{label}</a>)}
       </nav>
 

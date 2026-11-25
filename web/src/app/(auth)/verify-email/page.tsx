@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { useMe } from "@/components/providers";
@@ -24,11 +25,23 @@ function Verify() {
     try { await fn(); } catch (e) { setMsg({ tone: "bad", text: errText(e) }); } finally { setBusy(null); }
   };
 
+  if (!me) {
+    return (
+      <div className="stack g20">
+        <div className="stack g8">
+          <h1 className="t-h1">{t("auth.verifyTitle")}</h1>
+          <p className="secondary">{t("auth.verifyNoSession")}</p>
+        </div>
+        <Link href={`/login?next=${encodeURIComponent("/verify-email")}`} className="btn btn-primary btn-lg">{t("auth.login")}</Link>
+      </div>
+    );
+  }
+
   return (
     <div className="stack g20">
       <div className="stack g8">
         <h1 className="t-h1">{t("auth.verifyTitle")}</h1>
-        <p className="secondary">{t("auth.verifySub", { email: me?.email ?? "" })}</p>
+        <p className="secondary">{t("auth.verifySub", { email: me.email })}</p>
       </div>
       {me?.emailVerified && <Notice tone="ok">{t("auth.verified")}</Notice>}
       {msg && <Notice tone={msg.tone}>{msg.text}</Notice>}

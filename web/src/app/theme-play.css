@@ -564,3 +564,54 @@ html.is-native .mapx { height: 100%; }
 @keyframes app-lock-in { from { opacity: 0; } }
 @keyframes app-lock-bob { 50% { transform: translateY(-6px); } }
 @media (prefers-reduced-motion: reduce) { .app-lock, .app-lock-badge { animation: none; } }
+
+/* ── QA pass (Nov 2026) ───────────────────────────────────────────────── */
+/* Sidebar: room for the longest label ("Bildirishnomalar") next to its badge. */
+:root { --side: 264px; }
+/* Segmented controls never wrap a label onto two lines; on a narrow screen they scroll sideways. */
+.seg { max-width: 100%; overflow-x: auto; scrollbar-width: none; }
+.seg::-webkit-scrollbar { display: none; }
+.seg button { white-space: nowrap; flex: none; }
+/* Language switch: a comfortable tap target. */
+.lang-seg button { height: 32px; padding: 0 10px; }
+@media (pointer: coarse) { .lang-seg button { height: 36px; min-width: 38px; } }
+/* Counts in list rows stay on one line. */
+.row-item .t-meta { white-space: nowrap; }
+/* Organisation mission rows: on a phone the count sits above the status, so the title keeps its width. */
+.mrow-side { display: flex; align-items: center; gap: 12px; flex: none; }
+@media (max-width: 600px) {
+  .mrow-side { flex-direction: column; align-items: flex-end; gap: 4px; }
+  .mrow { gap: 10px; padding-right: 10px; }
+}
+/* Group stats: three compact columns at every width. */
+.grid.gstats { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr); }
+.gstats small { font-size: 13px; font-weight: 700; }
+/* Inline meta separated by dots; the dot trails its item so a wrapped line never starts with one. */
+.meta-dots > *:not(:last-child)::after { content: "·"; margin-left: 8px; opacity: .7; }
+/* Shop: two cards per row on phones instead of one very tall column. */
+.shop-grid { grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+.shop-card { padding: 12px; }
+@media (max-width: 600px) {
+  .shop-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .shop-card { padding: 8px; gap: 8px; }
+  .shop-card .t-h3 { font-size: 15px; }
+}
+.clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+/* Chat timestamps and small inline links: readable and tappable. */
+.bubble-time { font-size: 11px; }
+@media (pointer: coarse) {
+  a.t-small.link, .section-title .link, a.row.g8.t-small { display: inline-flex; align-items: center; min-height: 36px; }
+}
+/* Sub-navigation scrolls sideways on a phone instead of dropping one item onto its own row. */
+@media (max-width: 600px) {
+  .subnav { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding-inline: 16px; }
+  .subnav::-webkit-scrollbar { display: none; }
+  .subnav a { flex: none; white-space: nowrap; }
+}
+@media (max-width: 600px) {
+  .chip-scroll { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin-inline: -16px; padding: 2px 16px 6px; }
+  .chip-scroll::-webkit-scrollbar { display: none; }
+  .chip-scroll > * { flex: none; }
+}
+/* News lead without a cover: a slim colour strip on phones so the text keeps the width. */
+@media (max-width: 600px) { .news-lead:not([data-cover]) .news-cover-empty { width: 56px; } }

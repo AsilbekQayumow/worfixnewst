@@ -80,7 +80,7 @@ function Overview() {
             {d.recentActivity.map((a) => (
               <div key={a.id} className="row-item t-small">
                 <span className="t-meta" style={{ width: 120, flex: "none" }}>{f.relative(a.timestamp)}</span>
-                <span className="grow" style={{ fontFamily: "var(--font-mono)", fontSize: 12 }}>{a.action}</span>
+                <span className="grow" title={a.action}>{actionLabel(t, a.action)}</span>
                 <span className="secondary truncate" style={{ maxWidth: 320 }}>{a.detail}</span>
               </div>
             ))}
@@ -278,12 +278,19 @@ function Audit() {
       {q.data.map((a) => (
         <div key={a.id} className="row-item t-small">
           <span className="t-meta" style={{ width: 150, flex: "none" }}>{f.dayTime(a.timestamp)}</span>
-          <span style={{ fontFamily: "var(--font-mono)", fontSize: 12, width: 200, flex: "none" }}>{a.action}</span>
+          <span style={{ width: 220, flex: "none" }} title={a.action}>{actionLabel(t, a.action)}</span>
           <span className="secondary grow truncate">{t(`role.${a.actorRole}`)} · {a.detail || a.resourceId}</span>
         </div>
       ))}
     </div>
   );
+}
+
+/** Readable name for an audit action ("user.login" → "Signed in"); unknown actions fall back to the raw key. */
+function actionLabel(t: (k: string) => string, action: string) {
+  const k = `audit.${action}`;
+  const s = t(k);
+  return s === k ? action : s;
 }
 
 const TABS = ["overview", "review", "moderation", "users", "comms", "shop"] as const;

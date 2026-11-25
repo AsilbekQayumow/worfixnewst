@@ -197,7 +197,7 @@ async function seed(db: DB) {
 
   const person = (over: Partial<UserProfile>): UserProfile => ({
     id: uid(), email: "", emailVerified: true, fullName: "", username: "", avatar: null, bio: "", country: "Uzbekistan",
-    province: "Samarqand Region", city: "Samarkand", feedVisible: true, languages: ["O'zbek", "Русский"], skills: [], interests: ["environment"],
+    province: "Samarqand Region", city: "Samarqand", feedVisible: true, languages: ["O'zbek", "Русский"], skills: [], interests: ["environment"],
     level: 1, xp: 0, points: 0, trustScore: 50, reputation: 0, streak: 0, lastApprovedDay: null, totalVolunteerHours: 0, totalImpact: 0,
     impact: {}, onboarded: true, organizationId: null, role: "volunteer", status: "active", createdAt: ago(60), updatedAt: t, lastLogin: null,
     language: "uz", privacy: "public", phone: "", birthYear: null, district: "Samarqand shahri", mahalla: "Registon", authProvider: "email", ...over,
@@ -216,7 +216,7 @@ async function seed(db: DB) {
     id: orgId, name: "Yashil Samarqand (demo)", logo: null,
     description: "Namoyish uchun tashkilot: shahar bog'lari, ariqlar va mahallalarda ko'ngillilar missiyalarini o'tkazadi. Haqiqiy NNT emas.",
     website: "", email: "org@demo.worfix.uz", phone: "+998 66 000 00 00", address: "Universitet xiyoboni, Samarqand", country: "Uzbekistan",
-    city: "Samarkand", organizationType: "NGO", verificationStatus: "approved", verificationNote: "", ownerId: orgUser.id, members: [orgUser.id],
+    city: "Samarqand", organizationType: "NNT", verificationStatus: "approved", verificationNote: "", ownerId: orgUser.id, members: [orgUser.id],
     rating: 0, totalVolunteers: 0, totalMissions: 0, createdAt: ago(90),
   });
 
@@ -358,7 +358,7 @@ async function seed(db: DB) {
   });
   db.helpSignals.push({
     id: uid(), userId: timur.id, groupId, missionId: null, title: "Ariq bo‘yi — qo‘l kerak", note: "Plastik ko‘p, yana 2–3 kishi kerak.",
-    location: { lat: 39.6626, lng: 66.9851 }, place: "Siyob ariqi", radiusKm: 2, province: "Samarqand Region", district: "Samarqand shahri", city: "Samarkand",
+    location: { lat: 39.6626, lng: 66.9851 }, place: "Siyob ariqi", radiusKm: 2, province: "Samarqand Region", district: "Samarqand shahri", city: "Samarqand",
     responders: [aziza.id], status: "open", createdAt: new Date(Date.now() - 40 * 60_000).toISOString(), expiresAt: new Date(Date.now() + 5 * 3_600_000).toISOString(),
   });
   db.news.push({
@@ -397,5 +397,5 @@ async function seed(db: DB) {
   };
   db.shopItems.push(promoItem);
   for (const c of ["WRFX-7Q2K-BOOK", "WRFX-9M4D-BOOK", "WRFX-3H8T-BOOK"]) db.promoCodes.push({ id: uid(), itemId: promoItem.id, code: c, orderId: null, userId: null, createdAt: t, issuedAt: null });
-  db.audits.push({ id: uid(), actor: "system", actorRole: "system", action: "seed.demo", resource: "system", resourceId: "demo", timestamp: t, detail: "Demo data", ipAddress: null, device: null });
+  db.audits.push({ id: uid(), actor: "system", actorRole: "system", action: "seed.demo", resource: "system", resourceId: "demo", timestamp: t, detail: "", ipAddress: null, device: null });
 }

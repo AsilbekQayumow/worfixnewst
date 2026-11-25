@@ -74,18 +74,18 @@ function Shop() {
         q.data.items.length === 0 ? (
           <div className="card"><Empty icon="bag" title={t("shop.empty")} action={q.data.canPublish ? <Button variant="primary" onClick={() => api.publishCatalog()}>{t("shop.publish")}</Button> : undefined} /></div>
         ) : (
-          <div className="grid" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
+          <div className="grid shop-grid">
             {q.data.items.map((it) => {
               const short = q.data!.balance < it.price;
               return (
-                <article key={it.id} className="card stack g12" style={{ padding: 12 }}>
+                <article key={it.id} className="card stack g12 shop-card">
                   <ShopArt art={it.art} image={it.image} />
                   <div className="stack g4" style={{ padding: "0 4px" }}>
                     <h3 className="t-h3">{it.title[lang]}</h3>
                     {it.delivery === "promo" && <span className="t-small accent-text row g4"><Icon name="ticket" size={14} />{t("shop.promoItem")}</span>}
-                    <p className="t-small secondary">{it.description[lang]}</p>
+                    <p className="t-small secondary clamp-2">{it.description[lang]}</p>
                   </div>
-                  <div className="row between g8" style={{ marginTop: "auto", padding: "0 4px 4px" }}>
+                  <div className="row between g8 wrap" style={{ marginTop: "auto", padding: "0 4px 4px" }}>
                     <Coins value={f.num(it.price)} size={18} className="t-h3" />
                     {it.stock <= 0 ? <Status tone="neutral">{t("shop.out")}</Status> : (
                       <Button size="sm" variant={short ? "ghost" : "primary"} disabled={short} onClick={() => { setCode(null); setConfirm(it); }}>

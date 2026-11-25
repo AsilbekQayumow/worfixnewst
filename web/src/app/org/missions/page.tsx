@@ -24,14 +24,13 @@ export default function OrgMissions() {
       {!q.data ? <Skeleton rows={4} /> : list.length === 0 ? <div className="card"><Empty icon="flag" title={t("org.noMissions")} action={<ButtonLink href="/org/missions/new" variant="primary">{t("nav.newMission")}</ButtonLink>} /></div> : (
         <div className="card rows">
           {list.map((m) => (
-            <Link key={m.id} href={`/org/missions/${m.id}`} className="row-item">
+            <Link key={m.id} href={`/org/missions/${m.id}`} className="row-item mrow">
               <span className={`cat-${m.category}`}><span className="cat-dot" /></span>
               <span className="stack grow" style={{ minWidth: 0 }}>
                 <span className="truncate" style={{ fontWeight: 500 }}>{m.title}</span>
                 <span className="t-small secondary truncate">{f.dayTime(m.date)} · {m.location}</span>
               </span>
-              <span className="t-meta">{m.participantsCount} / {m.capacity}</span>
-              <Status tone={STATUS_TONE[m.status]}>{t(`ms.${m.status}`)}</Status>
+              <span className="mrow-side"><span className="t-meta">{m.participantsCount} / {m.capacity}</span><Status tone={STATUS_TONE[m.status]}>{t(`ms.${m.status}`)}</Status></span>
               <Icon name="chevronRight" size={16} className="muted" />
             </Link>
           ))}

@@ -8,9 +8,9 @@ const FULL: Record<Lang, string> = { uz: "O‘zbekcha", ru: "Русский", en
 export function LangSwitch() {
   const { lang, setLang, t } = useI18n();
   return (
-    <div className="seg" role="group" aria-label={t("set.language")}>
+    <div className="seg lang-seg" role="group" aria-label={t("set.language")}>
       {LANGS.map((l) => (
-        <button key={l} type="button" lang={l} aria-pressed={lang === l} onClick={() => setLang(l)} title={FULL[l]} style={{ padding: "0 8px", height: 26 }}>
+        <button key={l} type="button" lang={l} aria-pressed={lang === l} onClick={() => setLang(l)} title={FULL[l]}>
           {SHORT[l]}
         </button>
       ))}

@@ -51,14 +51,13 @@ export default function OrgHome() {
             {s.upcoming.length === 0 ? <div className="card"><Empty icon="calendar" title={t("org.noUpcoming")} action={<ButtonLink href="/org/missions/new" variant="primary">{t("nav.newMission")}</ButtonLink>} /></div> : (
               <div className="card rows">
                 {s.upcoming.map((m) => (
-                  <Link key={m.id} href={`/org/missions/${m.id}`} className="row-item">
+                  <Link key={m.id} href={`/org/missions/${m.id}`} className="row-item mrow">
                     <span className={`cat-${m.category}`}><span className="cat-dot" /></span>
                     <span className="stack grow" style={{ minWidth: 0 }}>
                       <span className="truncate" style={{ fontWeight: 500 }}>{m.title}</span>
                       <span className="t-small secondary">{f.dayTime(m.date)}</span>
                     </span>
-                    <span className="t-meta">{m.participantsCount} / {m.capacity}</span>
-                    <Status tone="ok">{t("ms.published")}</Status>
+                    <span className="mrow-side"><span className="t-meta">{m.participantsCount} / {m.capacity}</span><Status tone="ok">{t("ms.published")}</Status></span>
                     <Icon name="chevronRight" size={16} className="muted" />
                   </Link>
                 ))}
