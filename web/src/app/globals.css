@@ -5,6 +5,10 @@
    ───────────────────────────────────────────────────────────────────────────── */
 
 :root {
+  /* Self-hosted via @fontsource-variable (see app/layout.tsx) — the actual family names those packages register. */
+  --font-nunito: "Nunito Variable";
+  --font-jetbrains: "JetBrains Mono Variable";
+
   --font-body: var(--font-onest), ui-sans-serif, system-ui, sans-serif;
   --font-display: var(--font-unbounded), var(--font-onest), ui-sans-serif, sans-serif;
   --font-mono: var(--font-jetbrains), ui-monospace, "SF Mono", Menlo, monospace;

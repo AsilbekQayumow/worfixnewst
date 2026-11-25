@@ -1,12 +1,13 @@
 import type { Metadata, Viewport } from "next";
-import { JetBrains_Mono, Nunito } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { PwaRegister } from "@/components/pwa";
+// Self-hosted (not next/font/google): a build in a sandboxed CI runner can't always reach
+// fonts.googleapis.com, and next/font/google's build-time fetch has no graceful fallback for that.
+// These npm packages bundle the actual woff2 files, so the build never touches the network for fonts.
+import "@fontsource-variable/nunito/wght.css";
+import "@fontsource-variable/jetbrains-mono/wght.css";
 import "./globals.css";
 import "./theme-play.css";
-
-const nunito = Nunito({ subsets: ["latin", "latin-ext", "cyrillic"], weight: ["400", "500", "600", "700", "800", "900"], variable: "--font-nunito", display: "swap" });
-const mono = JetBrains_Mono({ subsets: ["latin", "cyrillic"], weight: ["400", "500"], variable: "--font-jetbrains", display: "swap" });
 
 export const metadata: Metadata = {
   title: { default: "WORFIX — ko'ngillilik, tasdiqlangan natija bilan", template: "%s · WORFIX" },
@@ -26,7 +27,7 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="uz" suppressHydrationWarning className={`${nunito.variable} ${mono.variable}`}>
+    <html lang="uz" suppressHydrationWarning>
       <head>
         <script
           // Set the theme before paint so dark-mode users don't see a light flash.
