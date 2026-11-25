@@ -532,7 +532,11 @@ html.is-native .shell-col { display: flex; flex-direction: column; height: 100%;
 html.is-native .main { flex: 1; min-height: 0; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; }
 html.is-native .side { overflow-y: auto; -webkit-overflow-scrolling: touch; }
 /* `.mapx` used to size itself off the old document-scroll viewport math (100dvh minus the bars);
-   now `.main` is already exactly the right size, so just fill it. */
+   now `.main` is already exactly the right size, so just fill it. A percentage height only
+   resolves if every ancestor up to `.main` has an explicit height too — `.main-inner` is
+   `height: auto` everywhere else, so give it a real height on the one route (`.main-bleed`,
+   the map) that needs `.mapx` to fill the screen; other pages are untouched. */
+html.is-native .main-bleed .main-inner { height: 100%; }
 html.is-native .mapx { height: 100%; }
 
 /* Sharing photos into the app: pick the mission report */
