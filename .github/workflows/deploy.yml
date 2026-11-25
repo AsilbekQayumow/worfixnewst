@@ -1,0 +1,42 @@
+name: Deploy to Cloudflare
+
+# Builds the web app and deploys it to Cloudflare Workers (worfix.site) on every push to main
+# that touches web/. Needs two repository secrets, set once in GitHub → Settings → Secrets and
+# variables → Actions:
+#   CLOUDFLARE_API_TOKEN    an API token (Workers Scripts: Edit, Account Settings: Read at least)
+#   CLOUDFLARE_ACCOUNT_ID   the Cloudflare account id the Worker lives under
+# Can also be run by hand from the Actions tab (workflow_dispatch).
+
+on:
+  push:
+    branches: [main]
+    paths: ["web/**", ".github/workflows/deploy.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-cloudflare
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build and deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: bash scripts/deploy-cloudflare.sh
