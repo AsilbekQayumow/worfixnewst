@@ -1,4 +1,5 @@
 "use client";
+import { ReportButton } from "@/components/v6-bits";
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -47,6 +48,7 @@ export default function GroupPage() {
             {d.isMember && <ButtonLink href={`/app/chat/g_${g.id}`} icon="message">{t("gr.chat")}</ButtonLink>}
             {d.isMember && <ButtonLink href="/app/signals?new=1" icon="zap">{t("sg.call")}</ButtonLink>}
             {d.isOwner && <Button icon="edit" variant="ghost" onClick={() => setEdit(true)}>{t("a.edit")}</Button>}
+            {!d.isOwner && <ReportButton type="group" id={g.id} />}
           </div>
         </div>
         <div className="grid gstats" style={{ marginTop: 20 }}>

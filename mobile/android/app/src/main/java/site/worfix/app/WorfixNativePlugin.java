@@ -46,7 +46,9 @@ import site.worfix.app.widgets.WidgetRepo;
     permissions = {
         @Permission(alias = "location", strings = { Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION }),
         @Permission(alias = "notifications", strings = { Manifest.permission.POST_NOTIFICATIONS }),
-        @Permission(alias = "storage", strings = { Manifest.permission.WRITE_EXTERNAL_STORAGE })
+        @Permission(alias = "storage", strings = { Manifest.permission.WRITE_EXTERNAL_STORAGE }),
+        // v6: the step counter for walk fair play (a car moves without steps)
+        @Permission(alias = "activity", strings = { Manifest.permission.ACTIVITY_RECOGNITION })
     }
 )
 public class WorfixNativePlugin extends Plugin {
@@ -142,6 +144,18 @@ public class WorfixNativePlugin extends Plugin {
     private void afterNotifications(PluginCall call) { launchWalk(call); }
 
     private void launchWalk(PluginCall call) {
+        PermissionState steps = getPermissionState("activity");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && steps != PermissionState.GRANTED && steps != PermissionState.DENIED) {
+            requestPermissionForAlias("activity", call, "afterActivity");
+            return;
+        }
+        launchWalkNow(call);
+    }
+
+    @PermissionCallback
+    private void afterActivity(PluginCall call) { launchWalkNow(call); }
+
+    private void launchWalkNow(PluginCall call) {
         JSObject labels = call.getObject("labels", new JSObject());
         WalkService.start(getContext(), call.getString("color", "#1fa84a"), labels.toString(), Boolean.TRUE.equals(call.getBoolean("resume", false)));
         call.resolve();
@@ -165,6 +179,10 @@ public class WorfixNativePlugin extends Plugin {
         r.put("points", arr);
         r.put("total", WalkStore.size(c));
         r.put("running", WalkStore.running);
+        // v6: steps since the walk started (null when the phone has no step counter or no permission) and the mock flag
+        long steps = WalkStore.steps();
+        if (steps >= 0) r.put("steps", steps); else r.put("steps", JSONObject.NULL);
+        r.put("mock", WalkStore.mock);
         call.resolve(r);
     }
 

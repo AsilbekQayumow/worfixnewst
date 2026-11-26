@@ -218,7 +218,7 @@ export function loopAround(center: GeoPoint, r: number, steps = 36, start = Date
   for (let i = 0; i <= steps; i++) {
     const a = (i / steps) * Math.PI * 2;
     const w = 1 + Math.sin(a * 3) * wobble;
-    out.push({ lat: center.lat + Math.cos(a) * dLat * w, lng: center.lng + Math.sin(a) * dLng * w, t: start + i * stepMs, acc: 8 });
+    out.push({ lat: center.lat + Math.cos(a) * dLat * w, lng: center.lng + Math.sin(a) * dLng * w, t: start + i * stepMs, acc: 6 + ((i * 7) % 5) });
   }
   return out;
 }

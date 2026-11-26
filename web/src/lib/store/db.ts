@@ -9,11 +9,21 @@ import { computeMissionReward, crossedCertificateLevels, dayKey, levelForXp } fr
 import { makeVerificationCode } from "../domain/certificates";
 import { sampleCatalog } from "../domain/shop";
 import * as cloud from "./cloud";
+import { track } from "./outbox";
 import type {
   Announcement, AuditLog, Certificate, Cheer, Friendship, Group, GroupMessage, HelpSignal, Message, Mission, MissionParticipant, NewsPost, Notification,
   Order, Organization, PromoCode, ShopItem, Submission, UserProfile, VerificationRecord, Territory, TerritoryCapture, GroupRequest,
 } from "../domain/types";
 import { makeGroupCode } from "../domain/community";
+import type { Report } from "../domain/reports";
+import type { Challenge, ChallengeProgress } from "../domain/challenges";
+import type { Rating } from "../domain/ratings";
+import type { ReminderLog } from "../domain/reminders";
+
+/** v6: following an organization (id `${userId}_${orgId}`). */
+export interface OrgFollow { id: string; userId: string; orgId: string; notify: boolean; createdAt: string }
+/** v6: a private note on a diary entry (id = the submission id). */
+export interface DiaryNote { id: string; userId: string; text: string; updatedAt: string }
 import { bboxOf, centerOf, encodeShape, loopAround, seasonOf, traceToShape } from "../domain/territory";
 
 /** v3: invite code → group (the code is the document id, so it cannot be listed, only looked up). */
@@ -52,6 +62,14 @@ export interface DB {
   territoryCaptures: TerritoryCapture[];
   groupRequests: GroupRequest[];
   promoCodes: PromoCode[];
+  /** v6 */
+  reports: Report[];
+  challenges: Challenge[];
+  challengeProgress: ChallengeProgress[];
+  ratings: Rating[];
+  orgFollows: OrgFollow[];
+  diaryNotes: DiaryNote[];
+  reminderLog: ReminderLog[];
   credentials: Credential[];
   tokens: Token[];
   loginAttempts: Record<string, { count: number; first: number }>;
@@ -93,7 +111,7 @@ function empty(): DB {
   return {
     version: 2, users: [], organizations: [], missions: [], participants: [], submissions: [], records: [], certificates: [], notifications: [],
     audits: [], friendships: [], cheers: [], shopItems: [], orders: [], messages: [], announcements: [],
-    news: [], groups: [], groupCodes: [], groupJoins: [], groupMessages: [], helpSignals: [], territories: [], territoryCaptures: [], groupRequests: [], promoCodes: [], credentials: [], tokens: [], loginAttempts: {},
+    news: [], groups: [], groupCodes: [], groupJoins: [], groupMessages: [], helpSignals: [], territories: [], territoryCaptures: [], groupRequests: [], promoCodes: [], reports: [], challenges: [], challengeProgress: [], ratings: [], orgFollows: [], diaryNotes: [], reminderLog: [], credentials: [], tokens: [], loginAttempts: {},
   };
 }
 
@@ -119,9 +137,11 @@ export function commit(mutator: (db: DB) => void): Promise<void> {
   const db = load();
   const snapshot = JSON.stringify(db);
   let saved: Promise<void> = Promise.resolve();
+  const audits = db.audits.length;
   try {
     mutator(db);
-    if (FIREBASE) saved = cloud.push(JSON.parse(snapshot) as cloud.Snapshot, db as unknown as cloud.Snapshot);
+    // v6: offline or slow → the write waits in Firestore's persistent queue and shows in "Not sent yet"
+    if (FIREBASE) saved = track(cloud.push(JSON.parse(snapshot) as cloud.Snapshot, db as unknown as cloud.Snapshot), db.audits.length > audits ? db.audits[0].action : "change");
     else localStorage.setItem(KEY, JSON.stringify(db));
   } catch (e) {
     cache = JSON.parse(snapshot) as DB;
@@ -397,5 +417,21 @@ async function seed(db: DB) {
   };
   db.shopItems.push(promoItem);
   for (const c of ["WRFX-7Q2K-BOOK", "WRFX-9M4D-BOOK", "WRFX-3H8T-BOOK"]) db.promoCodes.push({ id: uid(), itemId: promoItem.id, code: c, orderId: null, userId: null, createdAt: t, issuedAt: null });
+  // v6: skills (Dilnoza can be found by organizations), skills wanted on two missions, a live monthly challenge, a follow
+  vol.skillSet = [{ id: "first_aid", level: "experienced", proof: "self" }, { id: "lang_en", level: "beginner", proof: "self" }, { id: "tree_planting", level: "experienced", proof: "self" }];
+  vol.discoverable = true;
+  const orgMissions = db.missions.filter((m) => m.organizationId === orgId);
+  if (orgMissions[0]) orgMissions[0].skillsWanted = [{ skillId: "tree_planting", required: false }, { skillId: "gardening", required: false }];
+  if (orgMissions[1]) orgMissions[1].skillsWanted = [{ skillId: "first_aid", required: false }];
+  const now = new Date();
+  db.challenges.push({
+    id: uid(), title: { uz: "Kuzgi yashil oy", ru: "Осенний зелёный месяц", en: "Green autumn month" }, theme: "environment",
+    startsAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) - 5 * 3_600_000).toISOString(),
+    endsAt: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1) - 5 * 3_600_000).toISOString(),
+    goal: { metric: "missions", target: 5, per: "person" }, status: "live", sponsorOrgId: null, createdBy: admin.id, createdAt: ago(10),
+    tiers: [{ at: 1, rewardXP: 30, rewardPoints: 10, badgeId: "tier1" }, { at: 3, rewardXP: 80, rewardPoints: 30, badgeId: "tier2" }, { at: 5, rewardXP: 150, rewardPoints: 60, badgeId: "tier3" }],
+  });
+  db.orgFollows.push({ id: `${vol.id}_${orgId}`, userId: vol.id, orgId, notify: true, createdAt: ago(20) });
+  db.organizations.find((o) => o.id === orgId)!.followers = 1;
   db.audits.push({ id: uid(), actor: "system", actorRole: "system", action: "seed.demo", resource: "system", resourceId: "demo", timestamp: t, detail: "", ipAddress: null, device: null });
 }

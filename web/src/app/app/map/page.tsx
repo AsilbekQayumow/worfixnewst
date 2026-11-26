@@ -70,6 +70,39 @@ function TerritoryGame({ onList }: { onList: () => void }) {
   const [busy, setBusy] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [sheet, setSheet] = useState(false);
+  // Design rec. 5: the sheet follows the finger on the grip and snaps open or closed by position and flick speed.
+  const dragMoved = useRef(false);
+  const drag = useRef<{ y: number; t: number; panel: HTMLElement; base: number } | null>(null);
+  const sheetDrag = {
+    onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
+      const panel = e.currentTarget.parentElement as HTMLElement;
+      if (window.matchMedia("(min-width: 861px)").matches) return;
+      const closed = panel.getBoundingClientRect().height - Number.parseFloat(getComputedStyle(panel).getPropertyValue("--peek") || "252");
+      drag.current = { y: e.clientY, t: performance.now(), panel, base: sheet ? 0 : Math.max(0, closed) };
+      dragMoved.current = false;
+      e.currentTarget.setPointerCapture(e.pointerId);
+      panel.style.transition = "none";
+    },
+    onPointerMove: (e: React.PointerEvent<HTMLButtonElement>) => {
+      const d = drag.current;
+      if (!d) return;
+      const dy = e.clientY - d.y;
+      if (Math.abs(dy) > 4) dragMoved.current = true;
+      d.panel.style.transform = `translateY(${Math.max(0, d.base + dy)}px)`;
+    },
+    onPointerUp: (e: React.PointerEvent<HTMLButtonElement>) => {
+      const d = drag.current;
+      drag.current = null;
+      if (!d) return;
+      const dy = e.clientY - d.y;
+      const v = dy / Math.max(1, performance.now() - d.t);
+      d.panel.style.transition = "";
+      d.panel.style.transform = "";
+      if (!dragMoved.current) return;
+      const open = Math.abs(v) > 0.5 ? v < 0 : d.base + dy < d.base / 2 + (sheet ? 120 : 0);
+      setSheet(open);
+    },
+  };
   const closing = useRef(false);
   const capturing = gps.status !== "idle";
 
@@ -126,7 +159,7 @@ function TerritoryGame({ onList }: { onList: () => void }) {
     setBusy(true);
     try {
       const before = areas.filter((a) => a.relation === "other");
-      const r = await api.captureTerritory(gps.points, { forceClose: force });
+      const r = await api.captureTerritory(gps.points, { forceClose: force, ...gps.fairplay() });
       setResult(r);
       if (r.ok) {
         gps.reset();
@@ -172,7 +205,7 @@ function TerritoryGame({ onList }: { onList: () => void }) {
       {/* the panel: my standing, the big button, missions and the season */}
       {!capturing && (
         <aside className="mapx-panel" data-open={sheet || undefined} aria-label={t("tm.myArea")}>
-          <button type="button" className="mapx-grip" onClick={() => setSheet((x) => !x)} aria-label={t("tm.myArea")} aria-expanded={sheet}><span /></button>
+          <button type="button" className="mapx-grip" {...sheetDrag} onClick={() => { if (!dragMoved.current) setSheet((x) => !x); }} aria-label={t("tm.myArea")} aria-expanded={sheet}><span /></button>
           {!d ? <div style={{ padding: 16 }}><Skeleton rows={3} /></div> : (
             <>
               <div className="mapx-stat">

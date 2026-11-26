@@ -12,7 +12,8 @@ import {
   sendEmailVerification, sendPasswordResetEmail, signInWithEmailAndPassword, signOut,
   updatePassword, type Auth, type User,
 } from "firebase/auth";
-import { collection, connectFirestoreEmulator, doc, getDocFromServer, getFirestore, onSnapshot, query, where, writeBatch, type Firestore, type Query, type Unsubscribe } from "firebase/firestore";
+import { collection, connectFirestoreEmulator, doc, getDocFromServer, getFirestore, initializeFirestore, onSnapshot, persistentLocalCache, persistentMultipleTabManager, query, waitForPendingWrites, where, writeBatch, type Firestore, type Query, type Unsubscribe } from "firebase/firestore";
+import { clearWaiting } from "./outbox";
 
 const config = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -26,10 +27,12 @@ const config = {
 export const FIREBASE_ENABLED = Boolean(config.apiKey && config.projectId && config.appId);
 
 /** Readable while signed out: what the public website shows. */
-const PUBLIC = ["missions", "organizations", "certificates", "shopItems"] as const;
+const PUBLIC = ["missions", "organizations", "certificates", "shopItems", "challenges"] as const;
 const PRIVATE = [
   "users", "participants", "submissions", "records", "notifications", "audits", "friendships", "cheers", "orders", "messages", "announcements",
   "news", "groups", "groupJoins", "helpSignals", "promoCodes", "territories", "territoryCaptures", "groupRequests",
+  // v6
+  "reports", "challengeProgress", "ratings", "orgFollows", "diaryNotes", "reminderLog",
 ] as const;
 /** v3: read per group the signed-in user belongs to (see followGroups). */
 const PER_GROUP = ["groupMessages", "groupCodes"] as const;
@@ -44,7 +47,14 @@ function init() {
   if (!auth) {
     const app = getApps()[0] ?? initializeApp(config);
     auth = getAuth(app);
-    fs = getFirestore(app);
+    // v6 (offline): seen data and queued writes survive a reload, in IndexedDB, shared across tabs
+    try { fs = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); }
+    catch { fs = getFirestore(app); }
+    if (typeof window !== "undefined") {
+      const settle = () => { if (navigator.onLine) void waitForPendingWrites(fs).then(clearWaiting).catch(() => undefined); };
+      window.addEventListener("online", settle);
+      settle();
+    }
     // Local testing only: NEXT_PUBLIC_FIREBASE_EMULATOR=127.0.0.1 points the app at the Firebase emulators.
     const emu = process.env.NEXT_PUBLIC_FIREBASE_EMULATOR;
     if (emu && (process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_ALLOW_EMULATOR === "1")) {
@@ -67,7 +77,10 @@ let handlers: { onData: (name: SyncedName, docs: Doc[]) => void; onError: (messa
 function refsFor(name: SyncedName, uid?: string): Query[] {
   const c = collection(fs, name);
   if (!uid) return [c];
-  if (name === "notifications" || name === "groupJoins") return [query(c, where("userId", "==", uid))];
+  if (name === "notifications" || name === "groupJoins" || name === "diaryNotes" || name === "reminderLog") return [query(c, where("userId", "==", uid))];
+  // v6: admins read every report and follow; everyone else only their own
+  if (name === "reports") return [c, query(c, where("reporterId", "==", uid))];
+  if (name === "orgFollows") return [c, query(c, where("userId", "==", uid))];
   if (name === "orders" || name === "promoCodes" || name === "territoryCaptures") return [c, query(c, where("userId", "==", uid))];
   // v3.2: only this month's areas
   if (name === "territories") return [query(c, where("season", "==", new Date().toISOString().slice(0, 7)))];

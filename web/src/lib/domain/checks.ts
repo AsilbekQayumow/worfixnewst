@@ -40,7 +40,7 @@ export interface CheckResult {
 }
 
 const WEIGHT: Record<VerificationCheck["id"], number> = {
-  photos: 1, duplicate: 3, captureTime: 1.5, photoLocation: 1.5, deviceLocation: 2, checkIn: 1, timeOnSite: 1, checklist: 0.5, ai: 2,
+  photos: 1, duplicate: 3, captureTime: 1.5, photoLocation: 1.5, deviceLocation: 2, checkIn: 1, timeOnSite: 1, checklist: 0.5, ai: 2, mockLocation: 3, deviceClock: 1,
 };
 
 /**

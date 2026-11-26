@@ -1,4 +1,6 @@
 "use client";
+import { OrgV6Panel } from "@/components/org-v6";
+import { EmergencyBanner } from "@/components/v6-bits";
 import { AnnouncementBanner } from "@/components/admin-comms";
 import Link from "next/link";
 import { Icon } from "@/components/icons";
@@ -37,6 +39,8 @@ export default function OrgHome() {
       {o.verificationStatus === "rejected" && <Notice tone="bad"><strong>{t("org.rejected")}</strong> {o.verificationNote}</Notice>}
       {o.verificationStatus === "approved" && <Notice tone="ok">{t("org.approvedNote")}</Notice>}
       <NewsStrip limit={3} />
+      <EmergencyBanner base="/org" />
+      {o.verificationStatus === "approved" && <OrgV6Panel partner={Boolean(o.emergencyPartner)} />}
 
       {!s ? <Skeleton rows={1} height={100} /> : (
         <>

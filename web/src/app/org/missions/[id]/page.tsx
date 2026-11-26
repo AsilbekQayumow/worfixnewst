@@ -8,6 +8,9 @@ import { Avatar, Button, ButtonLink, CategoryTag, DifficultyTag, Empty, MISSION_
 import { useErrorText, useFmt, useI18n } from "@/lib/i18n";
 import { api } from "@/lib/store/api";
 import { useApi } from "@/lib/store/hooks";
+import { api6 } from "@/lib/store/api6";
+import { RateDialog } from "@/components/v6-bits";
+import { MissionSkillsEditor } from "@/components/org-v6";
 
 export default function OrgMission() {
   const { id } = useParams<{ id: string }>();
@@ -18,6 +21,8 @@ export default function OrgMission() {
   const q = useApi(() => api.getMission(id), [id]);
   const parts = useApi(() => api.missionParticipants(id).catch(() => []), [id]);
   const [busy, setBusy] = useState<string | null>(null);
+  const toRate = useApi(() => api6.missionRatings(id).catch(() => []), [id]);
+  const [rate, setRate] = useState<{ id: string; name: string } | null>(null);
   const run = async (k: string, fn: () => Promise<unknown>, ok?: string) => { setBusy(k); try { await fn(); if (ok) toast(ok); } catch (e) { toast(errText(e), "error"); } finally { setBusy(null); } };
 
   if (q.loading && !q.data) return <Skeleton rows={4} />;
@@ -58,6 +63,21 @@ export default function OrgMission() {
           </div>
         )}
       </section>
+
+      {(toRate.data ?? []).some((x) => x.open && !x.rated) && (
+        <section className="card pad stack g12">
+          <h2 className="t-h3">{t("rat.rateVolunteers")}</h2>
+          <p className="t-small secondary">{t("rat.blind")}</p>
+          <div className="row g8 wrap">
+            {toRate.data!.filter((x) => x.open && !x.rated).map((x) => (
+              <Button key={x.volunteer.id} size="sm" icon="award" onClick={() => setRate({ id: x.volunteer.id, name: x.volunteer.fullName })}>{x.volunteer.fullName}</Button>
+            ))}
+          </div>
+        </section>
+      )}
+      {rate && <RateDialog open onClose={() => { setRate(null); toRate.reload(); }} kind="org_to_vol" missionId={m.id} toId={rate.id} name={rate.name} />}
+
+      {(m.status === "draft" || m.status === "published") && <MissionSkillsEditor missionId={m.id} initial={m.skillsWanted ?? []} />}
 
       <section className="grid cols-2">
         <div className="card pad stack g8"><h3 className="t-h3">{t("md.about")}</h3><p className="prose t-small">{m.description}</p></div>

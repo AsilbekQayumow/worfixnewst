@@ -34,6 +34,12 @@ public final class WalkStore {
     private static final List<Point> points = new ArrayList<>();
     private static boolean loaded = false;
     public static volatile boolean running = false;
+    /** v6: any fix of this walk came from a mock-location app */
+    public static volatile boolean mock = false;
+    /** v6: step counter readings (the sensor counts since boot): first and latest of this walk, -1 = none */
+    public static volatile long stepsFirst = -1;
+    public static volatile long stepsLast = -1;
+    public static long steps() { return stepsFirst >= 0 && stepsLast >= stepsFirst ? stepsLast - stepsFirst : -1; }
 
     private static File file(Context c) { return new File(c.getFilesDir(), "walk.csv"); }
 
@@ -65,6 +71,9 @@ public final class WalkStore {
 
     public static synchronized void clear(Context c) {
         points.clear();
+        mock = false;
+        stepsFirst = -1;
+        stepsLast = -1;
         loaded = true;
         //noinspection ResultOfMethodCallIgnored
         file(c).delete();

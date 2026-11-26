@@ -1,4 +1,5 @@
 "use client";
+import { ReportButton } from "@/components/v6-bits";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -42,6 +43,7 @@ export default function SignalPage() {
             </span>
           </div>
           {s.open ? <Status tone="warn">{t("sg.openUntil", { time: f.time(s.expiresAt) })}</Status> : <Status tone="neutral">{t("sg.closed")}</Status>}
+          {!s.isMine && <ReportButton type="signal" id={s.id} small />}
         </div>
         {s.note && <p className="prose">{s.note}</p>}
         <TileMap height={280} animateRoute={false} markers={[{ ...s.location, kind: "target" }, ...(me ? [{ ...me, kind: "me" as const }] : [])]} label={s.place || t("sg.where")} />

@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { DEFAULT_RADIUS_M } from "@/lib/domain/checks";
 import { levelTitleKey } from "@/lib/domain/rewards";
 import type { GpsFix } from "@/lib/domain/types";
@@ -15,6 +16,10 @@ import { Icon } from "./icons";
 import { useMe } from "./providers";
 import { RoutePanel } from "./route-panel";
 import { TileMap } from "./tile-map";
+import { RateDialog, ReportButton, SkillChips } from "./v6-bits";
+import { api6 } from "@/lib/store/api6";
+import { saveForOffline, isSavedOffline } from "@/lib/store/outbox";
+import { REMINDER_KINDS, type ReminderKind } from "@/lib/domain/reminders";
 import {
   Avatar, Button, ButtonLink, CategoryTag, Coins, DifficultyTag, Dialog, Empty, Notice, Skeleton, Status, VerificationStatusTag, useToast,
 } from "./ui";
@@ -31,6 +36,20 @@ export function MissionDetail({ id, inApp }: { id: string; inApp: boolean }) {
   const [invite, setInvite] = useState(false);
   const [signal, setSignal] = useState(false);
   const [fix, setFix] = useState<GpsFix | null>(null);
+  const params = useSearchParams();
+  const teamParam = inApp ? params.get("team") : null;
+  const rateParam = params.get("rate") === "1";
+  const toRate = useApi(() => (inApp ? api6.ratingsToGive() : Promise.resolve([])), [id]);
+  const fit = useApi(() => api6.skillFits([id]), [id]);
+  const [rating, setRating] = useState(false);
+  const [offline, setOffline] = useState(false);
+  useEffect(() => { setOffline(isSavedOffline(id)); }, [id]);
+  useEffect(() => {
+    const r = params.get("r");
+    if (r && (REMINDER_KINDS as readonly string[]).includes(r)) void api6.reminderOpened(id, r as ReminderKind);
+  }, [id, params]);
+  const rateItem = toRate.data?.find((x) => x.missionId === id) ?? null;
+  useEffect(() => { if (rateParam && rateItem) setRating(true); }, [rateParam, rateItem]);
 
   if (q.loading && !q.data) return <Skeleton rows={4} height={120} />;
   if (!q.data) return <div className="card"><Empty icon="flag" title={t("md.notFound")} action={<ButtonLink href={inApp ? "/app/map?view=list&tab=explore" : "/missions"}>{t("md.back")}</ButtonLink>} /></div>;
@@ -68,6 +87,7 @@ export function MissionDetail({ id, inApp }: { id: string; inApp: boolean }) {
           <DifficultyTag difficulty={m.difficulty} />
           {m.source === "agent" && <Status tone="info">{t("md.agentMission")}</Status>}
           {m.isDemo && <Status tone="neutral">{t("md.demo")}</Status>}
+          {(fit.data?.[m.id] ?? 0) > 0 && <Status tone="ok">{t("sk.fitsYou")}</Status>}
           {m.status !== "published" && <Status tone="neutral">{t(`ms.${m.status}`)}</Status>}
         </div>
         <h1 className="t-h1" style={{ maxWidth: 820 }}>{m.title}</h1>
@@ -75,7 +95,9 @@ export function MissionDetail({ id, inApp }: { id: string; inApp: boolean }) {
           <span className="row g8"><Icon name="pin" size={16} />{m.location}</span>
           <span className="row g8"><Icon name="calendar" size={16} />{f.dayTime(m.date)}</span>
           <span className="row g8"><Icon name="clock" size={16} />{f.duration(m.duration)}</span>
-          {m.organizationName && <span className="row g8"><Icon name="building" size={16} />{m.organizationName}</span>}
+          {m.organizationName && (inApp && m.source !== "agent"
+            ? <Link href={`/app/orgs/${m.organizationId}`} className="row g8 link"><Icon name="building" size={16} />{m.organizationName}</Link>
+            : <span className="row g8"><Icon name="building" size={16} />{m.organizationName}</span>)}
         </div>
       </div>
 
@@ -106,6 +128,14 @@ export function MissionDetail({ id, inApp }: { id: string; inApp: boolean }) {
             <p className="prose">{m.description}</p>
             {m.whyHere && <p className="t-small secondary row g8" style={{ alignItems: "flex-start" }}><Icon name="radar" size={16} style={{ marginTop: 2 }} />{m.whyHere}</p>}
           </section>
+
+          {(m.skillsWanted?.length ?? 0) > 0 && (
+            <section className="stack g8">
+              <h2 className="t-h2">{t("sk.wanted")}</h2>
+              <SkillChips ids={m.skillsWanted!.map((w) => w.skillId)} />
+              {m.skillsWanted!.some((w) => w.required) && <span className="t-small muted">{t("sk.requiredNote")}</span>}
+            </section>
+          )}
 
           {(m.checklist?.length ?? 0) > 0 && (
             <section className="stack g12">
@@ -163,6 +193,9 @@ export function MissionDetail({ id, inApp }: { id: string; inApp: boolean }) {
             ) : !joined ? (
               <div className="stack g8">
                 {!s?.emailVerified && <Notice tone="warn">{t("md.verifyFirst")} <Link className="link" href="/verify-email">{t("md.verifyLink")}</Link></Notice>}
+                {teamParam && spots > 0 && m.status === "published" && (
+                  <Button variant="primary" size="lg" block icon="users" loading={busy === "team"} onClick={() => act("team", () => api6.joinTeam(m.id, teamParam), t("tm2.joined"))}>{t("tm2.joinTeam")}</Button>
+                )}
                 <Button variant="primary" size="lg" block disabled={spots === 0 || m.status !== "published"} loading={busy === "join"}
                   onClick={() => act("join", () => api.joinMission(m.id), t("md.joinedToast"))}>
                   {spots === 0 ? t("m.full") : t("md.join")}
@@ -180,6 +213,8 @@ export function MissionDetail({ id, inApp }: { id: string; inApp: boolean }) {
                 {sub.verificationStatus === "pending" && (m.source !== "agent" || sub.aiReview?.decision === "escalated" || sub.aiReview?.audit === "overturned") && <p className="t-small secondary">{m.source === "agent" ? t("md.pendingAgent") : t("md.pendingOrg")}</p>}
                 {sub.aiReview && sub.aiReview.decision !== "escalated" && <AiReviewBox r={sub.aiReview} />}
                 {sub.verificationStatus === "approved" && <Notice tone="ok">{t("md.approvedNote")}</Notice>}
+                {sub.verificationStatus === "approved" && (sub.teamBonusXp ?? 0) > 0 && <Notice tone="ok">{t("tm2.bonusGot", { xp: sub.teamBonusXp ?? 0 })}</Notice>}
+                {rateItem && <Button icon="award" block onClick={() => setRating(true)}>{t("rat.rateMission")}</Button>}
                 {sub.verificationStatus === "rejected" && <Notice tone="bad">{sub.reviewNote}</Notice>}
               </div>
             ) : !started ? (
@@ -197,12 +232,20 @@ export function MissionDetail({ id, inApp }: { id: string; inApp: boolean }) {
             {inApp && joined && !sub && (
               <div className="row g8">
                 <Button size="sm" icon="userPlus" onClick={() => setInvite(true)} className="grow">{t("md.invite")}</Button>
+                {m.source !== "agent" && <Button size="sm" icon="users" loading={busy === "group"} onClick={() => act("group", async () => { const n = await api6.inviteGroupToMission(m.id); toast(t("tm2.groupSent", { n })); })}>{t("tm2.inviteGroup")}</Button>}
                 {m.source === "agent"
                   ? <Button size="sm" variant="ghost" loading={busy === "drop"} onClick={() => act("drop", () => api.dropAgentMission(m.id))}>{t("md.drop")}</Button>
                   : <Button size="sm" variant="ghost" loading={busy === "leave"} onClick={() => act("leave", () => api.leaveMission(m.id), t("md.leftToast"))}>{t("md.leave")}</Button>}
               </div>
             )}
           </div>
+
+          {inApp && (
+            <div className="row g8 wrap">
+              <Button size="sm" variant="ghost" icon={offline ? "check" : "download"} onClick={() => { saveForOffline(m); setOffline(true); toast(t("ofl.saved")); }}>{offline ? t("ofl.savedShort") : t("ofl.save")}</Button>
+              {me && !q.data.canManage && <ReportButton type="mission" id={m.id} small label />}
+            </div>
+          )}
 
           {inApp && joined && (s?.team.length ?? 0) > 0 && (
             <div className="card pad stack g12">
@@ -219,6 +262,7 @@ export function MissionDetail({ id, inApp }: { id: string; inApp: boolean }) {
         </aside>
       </div>
 
+      {rating && rateItem && <RateDialog open onClose={() => { setRating(false); toRate.reload(); }} kind="vol_to_org" missionId={m.id} toId={rateItem.orgId} name={rateItem.orgName} />}
       <InviteDialog open={invite} onClose={() => setInvite(false)} missionId={m.id} friends={s?.friends ?? []} />
       {inApp && <SignalDialog open={signal} onClose={() => setSignal(false)} missionId={m.id} presetPlace={m.location} />}
     </div>

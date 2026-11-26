@@ -8,6 +8,7 @@ import { handleGeocode, handleRoute } from "../map/server";
 import { handleAiReview, handleShopFulfil } from "./handlers";
 import { handlePushRegister, handlePushSend, handlePushUnregister } from "./push";
 import { handleWidget, handleWidgetToken } from "./widget";
+import { handleEmergencyBroadcast } from "./v6";
 
 export const FUNCTIONS: Record<string, { method: "GET" | "POST"; run: (req: Request) => Promise<Response> }> = {
   "ai-missions": { method: "POST", run: handleMissions },
@@ -22,4 +23,6 @@ export const FUNCTIONS: Record<string, { method: "GET" | "POST"; run: (req: Requ
   "push-send": { method: "POST", run: handlePushSend },
   "widget-token": { method: "POST", run: handleWidgetToken },
   "widget": { method: "GET", run: handleWidget },
+  // v6: the emergency notice to everyone in the area (feature 19)
+  "emergency-broadcast": { method: "POST", run: handleEmergencyBroadcast },
 };

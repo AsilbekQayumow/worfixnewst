@@ -16,8 +16,9 @@
     { "pattern": "worfix.site", "custom_domain": true },
     { "pattern": "www.worfix.site", "custom_domain": true }
   ],
-  // v3.2: the daily territory decay, 00:15 UTC; v5: the streak reminder push, 13:00 UTC (18:00 Tashkent)
-  "triggers": { "crons": ["15 0 * * *", "0 13 * * *"] },
+  // v3.2: the daily territory decay, 00:15 UTC; v5: the streak reminder push, 13:00 UTC (18:00 Tashkent);
+  // v6: mission reminders every 30 minutes
+  "triggers": { "crons": ["15 0 * * *", "0 13 * * *", "*/30 * * * *"] },
   "vars": {
     "CONTEXT": "production",
     "NEXT_PUBLIC_FIREBASE_PROJECT_ID": "worfix3",

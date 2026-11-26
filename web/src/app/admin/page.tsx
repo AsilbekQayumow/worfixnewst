@@ -4,6 +4,8 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { AdminComms, ContactDialog } from "@/components/admin-comms";
 import { AdminCommsTabs, AdminNews } from "@/components/admin-news";
+import { AdminChallenges, AdminEmergency, AdminFairplay, AdminReports } from "@/components/admin-v6";
+import { api6 } from "@/lib/store/api6";
 import { AiAudit } from "@/components/ai-audit";
 import { monthShort } from "@/components/report";
 import { AdminShop } from "@/components/admin-shop";
@@ -121,13 +123,23 @@ function ReviewSection() {
 function Moderation() {
   const { t } = useI18n();
   const router = useRouter();
-  const sub = useSearchParams().get("sub") === "missions" ? "missions" : "organizations";
+  const SUBS = ["organizations", "missions", "reports", "fairplay", "challenges", "emergency"] as const;
+  const raw = useSearchParams().get("sub");
+  const sub = (SUBS as readonly string[]).includes(raw ?? "") ? (raw as (typeof SUBS)[number]) : "organizations";
+  const reports = useApi(() => api6.adminReports(), []);
   return (
     <div className="stack g16">
       <Tabs value={sub} onChange={(v) => router.replace(`/admin?tab=moderation&sub=${v}`, { scroll: false })} items={[
         { value: "organizations", label: t("nav.organizations") }, { value: "missions", label: t("nav.missions") },
+        { value: "reports", label: t("rpt.ad.tab"), count: reports.data?.length || undefined }, { value: "fairplay", label: t("fp.tab") },
+        { value: "challenges", label: t("ch.ad.tab") }, { value: "emergency", label: t("em.ad.tab") },
       ]} />
-      {sub === "organizations" ? <Organizations /> : <Missions />}
+      {sub === "organizations" && <Organizations />}
+      {sub === "missions" && <Missions />}
+      {sub === "reports" && <AdminReports />}
+      {sub === "fairplay" && <AdminFairplay />}
+      {sub === "challenges" && <AdminChallenges />}
+      {sub === "emergency" && <AdminEmergency />}
     </div>
   );
 }

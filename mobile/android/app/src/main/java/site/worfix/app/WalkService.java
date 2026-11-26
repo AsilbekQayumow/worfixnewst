@@ -13,6 +13,10 @@ import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.graphics.Color;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.location.Location;
 import android.location.LocationListener;
 import android.location.LocationManager;
@@ -49,6 +53,16 @@ public class WalkService extends Service implements LocationListener {
     static final String PREFS = "worfix_walk";
 
     private LocationManager lm;
+    private SensorManager sensors;
+    /** v6: the step counter (TYPE_STEP_COUNTER counts since boot; the walk keeps the first and latest reading) */
+    private final SensorEventListener stepListener = new SensorEventListener() {
+        @Override public void onSensorChanged(SensorEvent e) {
+            long v = (long) e.values[0];
+            if (WalkStore.stepsFirst < 0) WalkStore.stepsFirst = v;
+            WalkStore.stepsLast = v;
+        }
+        @Override public void onAccuracyChanged(Sensor sensor, int accuracy) { }
+    };
     private long lastPanel = 0;
     private boolean closedAlerted = false;
     private long startedAt = 0;
@@ -106,10 +120,26 @@ public class WalkService extends Service implements LocationListener {
         try { lm.removeUpdates(this); } catch (Exception ignored) { }
         if (lm.isProviderEnabled(LocationManager.GPS_PROVIDER)) lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000, 0, this, Looper.getMainLooper());
         if (lm.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) lm.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 4000, 0, this, Looper.getMainLooper());
+        listenSteps();
+    }
+
+    private void listenSteps() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+            && ContextCompat.checkSelfPermission(this, Manifest.permission.ACTIVITY_RECOGNITION) != PackageManager.PERMISSION_GRANTED) return;
+        try {
+            sensors = (SensorManager) getSystemService(SENSOR_SERVICE);
+            Sensor s = sensors != null ? sensors.getDefaultSensor(Sensor.TYPE_STEP_COUNTER) : null;
+            if (s != null) sensors.registerListener(stepListener, s, SensorManager.SENSOR_DELAY_NORMAL);
+        } catch (Exception ignored) { }
+    }
+
+    private void stopSteps() {
+        if (sensors != null) try { sensors.unregisterListener(stepListener); } catch (Exception ignored) { }
     }
 
     private void stopRecording() {
         WalkStore.running = false;
+        stopSteps();
         if (lm != null) try { lm.removeUpdates(this); } catch (Exception ignored) { }
         ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE);
         stopSelf();
@@ -118,6 +148,7 @@ public class WalkService extends Service implements LocationListener {
     @Override
     public void onDestroy() {
         WalkStore.running = false;
+        stopSteps();
         if (lm != null) try { lm.removeUpdates(this); } catch (Exception ignored) { }
         super.onDestroy();
     }
@@ -125,6 +156,8 @@ public class WalkService extends Service implements LocationListener {
     @Override
     public void onLocationChanged(@NonNull Location loc) {
         float acc = loc.hasAccuracy() ? loc.getAccuracy() : 99;
+        // v6: a location from a mock-location app marks the whole walk
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ? loc.isMock() : loc.isFromMockProvider()) WalkStore.mock = true;
         // Network fixes are only kept while there is no GPS at all (they are usually too rough to count).
         if (LocationManager.NETWORK_PROVIDER.equals(loc.getProvider()) && acc > WalkStore.MAX_ACCURACY_M) return;
         WalkStore.add(this, loc.getLatitude(), loc.getLongitude(), loc.getTime() > 0 ? loc.getTime() : System.currentTimeMillis(), acc);

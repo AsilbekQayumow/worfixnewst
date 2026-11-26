@@ -7,6 +7,7 @@ import { api, ValidationError } from "@/lib/store/api";
 import { FIREBASE } from "@/lib/store/db";
 import { isNative } from "@/lib/native";
 import { AppSettings } from "./app-settings";
+import { NotifySettings, SkillsSettings } from "./settings-v6";
 import { Icon, type IconName } from "./icons";
 import { LANG_LABEL } from "./lang-switch";
 import { ProfileForm } from "./profile-form";
@@ -160,6 +161,16 @@ export function SettingsView() {
           </div>
         </Section>
       )}
+
+      {volunteer && (
+        <Section id="skills" title={t("sk.title")} sub={t("sk.sub")}>
+          <SkillsSettings />
+        </Section>
+      )}
+
+      <Section id="notifications" title={t("rem.title")} sub={t("rem.sub")}>
+        <NotifySettings />
+      </Section>
 
       {me.email && (
       <Section id="password" title={t("set.password")} sub={t("set.passwordSub")}>

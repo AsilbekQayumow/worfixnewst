@@ -39,11 +39,14 @@ export function useTracker(native?: { color: string; labels: Record<string, stri
   const nativeOn = useRef(false);
   const nativeFrom = useRef(0);
   const poll = useRef<number | null>(null);
+  const nativeSignals = useRef<{ steps: number | null; mock: boolean }>({ steps: null, mock: false });
 
   const toTrace = (p: WalkPoint): TracePoint => ({ lat: p.lat, lng: p.lng, t: p.t, acc: p.acc });
   const pullNative = useCallback(async () => {
     const r = await (await worfix()).walkPoints({ from: nativeFrom.current });
     nativeFrom.current = r.total;
+    // v6: fair play signals from the phone (step counter, mock location)
+    nativeSignals.current = { steps: typeof r.steps === "number" ? r.steps : null, mock: Boolean(r.mock) || nativeSignals.current.mock };
     if (r.points.length) {
       const last = r.points[r.points.length - 1];
       setMe({ lat: last.lat, lng: last.lng, accuracy: last.acc });
@@ -148,6 +151,7 @@ export function useTracker(native?: { color: string; labels: Record<string, stri
   const start = useCallback(() => {
     stopSim();
     setPoints([]);
+    nativeSignals.current = { steps: null, mock: false };
     setStartedAt(Date.now());
     setPausedMs(0);
     setPausedAt(0);
@@ -167,6 +171,7 @@ export function useTracker(native?: { color: string; labels: Record<string, stri
     stopSim();
     const walk = loopAround(center, radiusM, 40, Date.now(), 6.5);
     setPoints([]);
+    nativeSignals.current = { steps: null, mock: false };
     setStartedAt(Date.now());
     setPausedMs(0);
     setPausedAt(0);
@@ -198,5 +203,7 @@ export function useTracker(native?: { color: string; labels: Record<string, stri
   const loop = loopState(points);
   /** active walking time in seconds (pauses excluded) */
   const elapsedSec = (now = Date.now()) => (startedAt ? Math.max(0, (now - startedAt - pausedMs - (status === "paused" && pausedAt ? now - pausedAt : 0)) / 1000) : 0);
-  return { points, status, startedAt, elapsedSec, me, problem, awake, stats, loop, locate, start, pause, resume, reset, simulate, simulating: () => sim.current != null, background: () => nativeOn.current };
+  /** v6: what the fair-play check gets with the finished walk */
+  const fairplay = () => (nativeOn.current || nativeSignals.current.steps != null ? { source: "app" as const, ...nativeSignals.current } : { source: "web" as const, steps: null, mock: false });
+  return { points, status, startedAt, elapsedSec, fairplay, me, problem, awake, stats, loop, locate, start, pause, resume, reset, simulate, simulating: () => sim.current != null, background: () => nativeOn.current };
 }

@@ -1,4 +1,8 @@
 "use client";
+import { useEffect } from "react";
+import { api6 } from "@/lib/store/api6";
+import { ChallengeCard, EmergencyBanner, RatingsToGive } from "@/components/v6-bits";
+import { FollowedMissions } from "@/components/follow-row";
 import { PulseCounter } from "@/components/results";
 import { AnnouncementBanner } from "@/components/admin-comms";
 import Link from "next/link";
@@ -55,7 +59,10 @@ export default function Home() {
         </div>
       </section>
 
+      <EmergencyBanner />
       <AnnouncementBanner />
+      {me.role === "volunteer" && <LocalReminders />}
+      {me.role === "volunteer" && <RatingsToGive />}
       {!isVerifiedAccount(me) && <Notice tone="warn">{t("home.app.verify")} <Link className="link" href="/verify-email?next=/app">{t("md.verifyLink")}</Link></Notice>}
       {signals.data && signals.data.length > 0 && (
         <section className="card signals-home">
@@ -66,6 +73,7 @@ export default function Home() {
       {d && d.needsInfo > 0 && <Notice tone="info">{t("home.app.needsInfo", { n: d.needsInfo })} <Link className="link" href="/app/map?view=list&tab=active">{t("nav.missions")}</Link></Notice>}
 
       {me.role === "volunteer" && <div className="spots5"><MapSpot /><GroupSpot /></div>}
+      {me.role === "volunteer" && <ChallengeCard />}
 
       <div className="split-wide">
         <div className="stack g24" style={{ minWidth: 0 }}>
@@ -90,6 +98,7 @@ export default function Home() {
             )}
           </section>
 
+          <FollowedMissions />
           <section>
             <div className="section-title"><h2 className="t-h2">{t("home.app.forYou")}</h2><Link href="/app/map?view=list&tab=explore" className="t-small link">{t("a.all")}</Link></div>
             {!d ? <Skeleton rows={2} height={160} /> : d.forYou.length === 0 ? (
@@ -155,4 +164,10 @@ function MapSpot() {
       <Icon name="chevronRight" size={16} className="muted" />
     </Link>
   );
+}
+
+/** v6 · feature 4: in local demo mode the reminders run here (in Firebase mode the Worker cron sends them). */
+function LocalReminders() {
+  useEffect(() => { void api6.runLocalReminders().catch(() => undefined); }, []);
+  return null;
 }

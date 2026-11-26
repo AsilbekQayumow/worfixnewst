@@ -69,8 +69,11 @@ service cloud.firestore {
       allow create: if active() && me().role == 'organization'
         && request.resource.data.ownerId == uid() && request.resource.data.verificationStatus == 'pending';
       allow update: if isAdmin()
-        || (active() && resource.data.ownerId == uid() && !touches(['verificationStatus', 'verificationNote', 'ownerId', 'id']))
-        || (active() && onlyTouches(['totalVolunteers', 'totalMissions']));
+        || (active() && resource.data.ownerId == uid() && !touches(['verificationStatus', 'verificationNote', 'ownerId', 'id', 'rating', 'ratingCount', 'followers', 'emergencyPartner']))
+        || (active() && onlyTouches(['totalVolunteers', 'totalMissions']))
+        // v6: following moves the public counter by one
+        || (active() && onlyTouches(['followers'])
+            && (request.resource.data.followers == resource.data.get('followers', 0) + 1 || request.resource.data.followers == resource.data.get('followers', 0) - 1));
       allow delete: if false;
     }
 
@@ -78,7 +81,11 @@ service cloud.firestore {
     match /missions/{missionId} {
       allow read: if true;
       allow create: if
-        (isOrgUser(request.resource.data.organizationId) && request.resource.data.status == 'draft'
+        // v6: the closed "emergency mission" record, written by whoever coordinated the emergency
+        (active() && request.resource.data.get('emergencyId', null) != null && request.resource.data.status == 'closed'
+          && request.resource.data.rewardXP == 0 && request.resource.data.rewardPoints == 0
+          && (isAdmin() || get(/databases/$(db)/documents/helpSignals/$(request.resource.data.emergencyId)).data.userId == uid()))
+        || (isOrgUser(request.resource.data.organizationId) && request.resource.data.status == 'draft'
           && request.resource.data.rewardXP == xpFor(request.resource.data.difficulty))
         // GPS agent mission: owned by one volunteer, published for them, reward fixed by difficulty.
         || (active() && request.resource.data.source == 'agent'
@@ -114,10 +121,11 @@ service cloud.firestore {
         && request.resource.data.verificationStatus == 'pending'
         && request.resource.data.rewardGrantedAt == null && request.resource.data.certificateId == null
         && request.resource.data.get('aiReview', null) == null && request.resource.data.get('grant', null) == null
+        && request.resource.data.get('teamBonusXp', 0) == 0 && request.resource.data.get('challengeCredit', null) == null && request.resource.data.get('hiddenAt', null) == null
         && (request.resource.data.get('groupId', null) == null || uid() in get(/databases/$(db)/documents/groups/$(request.resource.data.groupId)).data.members);
       allow update: if
         (signedIn() && resource.data.userId == uid()
-          && !touches(['userId', 'missionId', 'organizationId', 'rewardGrantedAt', 'certificateId', 'reviewedBy', 'grant', 'groupId'])
+          && !touches(['userId', 'missionId', 'organizationId', 'rewardGrantedAt', 'certificateId', 'reviewedBy', 'grant', 'groupId', 'teamBonusXp', 'teamBonusAt', 'challengeCredit', 'hiddenAt'])
           && (!touches(['verificationStatus']) || request.resource.data.verificationStatus == 'pending')
           // the AI's decision can only be cleared when the volunteer answers a request for more evidence
           && (!touches(['aiReview']) || (request.resource.data.aiReview == null && resource.data.verificationStatus == 'needs_more_info')))
@@ -238,6 +246,11 @@ service cloud.firestore {
     }
 
     // ── v3: groups ──
+    function emergencyPartner() {
+      return active() && me().role == 'organization' && me().organizationId != null
+        && get(/databases/$(db)/documents/organizations/$(me().organizationId)).data.verificationStatus == 'approved'
+        && get(/databases/$(db)/documents/organizations/$(me().organizationId)).data.get('emergencyPartner', false) == true;
+    }
     function memberOf(gid) { return uid() in get(/databases/$(db)/documents/groups/$(gid)).data.members; }
     function memberAfter(gid) { return uid() in getAfter(/databases/$(db)/documents/groups/$(gid)).data.members; }
     function groupOwner(gid) { return getAfter(/databases/$(db)/documents/groups/$(gid)).data.ownerId == uid(); }
@@ -346,17 +359,79 @@ service cloud.firestore {
     // ── v3: help signals ──
     match /helpSignals/{id} {
       allow read: if signedIn();
-      allow create: if active() && me().role == 'volunteer' && request.resource.data.userId == uid()
+      allow create: if (active() && me().role == 'volunteer' && request.resource.data.userId == uid()
         && request.resource.data.status == 'open' && request.resource.data.responders.size() == 0
-        && (request.resource.data.groupId == null || memberOf(request.resource.data.groupId));
+        && request.resource.data.get('kind', 'signal') != 'emergency'
+        && (request.resource.data.groupId == null || memberOf(request.resource.data.groupId)))
+        // v6 · level 2: anyone may flag an emergency (unverified, yellow)
+        || (active() && request.resource.data.userId == uid() && request.resource.data.get('kind', 'signal') == 'emergency'
+            && request.resource.data.emergency.state == 'unverified' && request.resource.data.responders.size() == 0)
+        // v6 · level 3: a verified emergency, only by an admin or an approved emergency partner
+        || (active() && request.resource.data.userId == uid() && request.resource.data.get('kind', 'signal') == 'emergency'
+            && request.resource.data.emergency.state == 'verified' && (isAdmin() || emergencyPartner()));
       allow update: if active() && (
-        (resource.data.userId == uid() && onlyTouches(['status']) && request.resource.data.status == 'closed')
+        // v6: emergencies — the coordinator (or an admin) runs it; anyone else only adds, changes or removes their own "going"
+        (resource.data.get('kind', 'signal') == 'emergency' && (resource.data.userId == uid() || isAdmin()) && onlyTouches(['emergency', 'responders', 'status']))
+        || (resource.data.get('kind', 'signal') == 'emergency' && onlyTouches(['emergency', 'responders'])
+            && request.resource.data.emergency.diff(resource.data.emergency).affectedKeys().hasOnly(['going'])
+            && request.resource.data.emergency.going.diff(resource.data.emergency.going).affectedKeys().hasOnly([uid()]))
+        || (resource.data.userId == uid() && onlyTouches(['status']) && request.resource.data.status == 'closed')
         || (isAdmin() && onlyTouches(['status']))
         // anyone else: add or remove themselves as "going"
         || (resource.data.userId != uid() && onlyTouches(['responders'])
             && (request.resource.data.responders.toSet() == resource.data.responders.toSet().union([uid()].toSet())
                 || request.resource.data.responders.toSet() == resource.data.responders.toSet().difference([uid()].toSet()))));
       allow delete: if false;
+    }
+  }
+
+    // ── v6 (2026-11 plan) ──
+    // 8 · reports: the reporter writes and reads only their own; admins read and decide; the reported side never sees them.
+    match /reports/{id} {
+      allow read: if isAdmin() || (signedIn() && resource.data.reporterId == uid());
+      allow create: if active() && request.resource.data.reporterId == uid() && request.resource.data.status == 'open'
+        && request.resource.data.decision == null && request.resource.data.note.size() <= 500;
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+    // 1 · challenges: admins create; progress is written with an approval (reviewers), never by the volunteer.
+    match /challenges/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /challengeProgress/{id} {
+      allow read: if signedIn();
+      allow create, update: if isReviewer();
+      allow delete: if false;
+    }
+    // 7 · ratings: one per (mission, from, to); only admins may hide one. The score is computed from these, never stored by clients.
+    match /ratings/{id} {
+      allow read: if signedIn();
+      allow create: if active() && request.resource.data.fromId == uid()
+        && id == request.resource.data.missionId + '_' + uid() + '_' + request.resource.data.toId
+        && request.resource.data.stars is int && request.resource.data.stars >= 1 && request.resource.data.stars <= 5
+        && request.resource.data.tags.size() <= 3 && request.resource.data.comment.size() <= 300 && request.resource.data.hidden == false;
+      allow update: if isAdmin() && onlyTouches(['hidden']);
+      allow delete: if false;
+    }
+    // 12 · follows: your own only; the organization sees the count, never the list.
+    match /orgFollows/{id} {
+      allow read: if isAdmin() || (signedIn() && resource.data.userId == uid());
+      allow create: if active() && request.resource.data.userId == uid() && id == uid() + '_' + request.resource.data.orgId;
+      allow update: if signedIn() && resource.data.userId == uid() && onlyTouches(['notify']);
+      allow delete: if signedIn() && resource.data.userId == uid();
+    }
+    // 5 · diary notes: private to their owner, on their own submissions.
+    match /diaryNotes/{id} {
+      allow read, delete: if signedIn() && resource.data.userId == uid();
+      allow create, update: if active() && request.resource.data.userId == uid() && request.resource.data.text.size() <= 280
+        && get(/databases/$(db)/documents/submissions/$(id)).data.userId == uid();
+    }
+    // 4 · reminder log: written by the Worker cron (Admin SDK); the person only marks one opened.
+    match /reminderLog/{id} {
+      allow read: if signedIn() && resource.data.userId == uid();
+      allow update: if signedIn() && resource.data.userId == uid() && onlyTouches(['openedAt']);
+      allow create, delete: if false;
     }
   }
 }

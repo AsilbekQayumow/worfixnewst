@@ -313,6 +313,41 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
     });
   }, [missions, selected, ready]);
 
+  // Design rec. 5: pins closer than 40 px fold into one numbered bubble; tapping it zooms in. Recomputed after every move.
+  const clusters = useRef<MlMarker[]>([]);
+  useEffect(() => {
+    const m = map.current, ml = lib.current;
+    if (!m || !ml) return;
+    const run = () => {
+      clusters.current.forEach((c) => c.remove());
+      clusters.current = [];
+      const items = missions.filter((x) => pins.current.has(x.id)).map((x) => ({ x, p: m.project([x.coordinates.lng, x.coordinates.lat]) }));
+      const used = new Set<string>();
+      for (const a of items) {
+        if (used.has(a.x.id)) continue;
+        const group = items.filter((b) => !used.has(b.x.id) && Math.hypot(a.p.x - b.p.x, a.p.y - b.p.y) < 40);
+        const keepAlone = group.length < 3 || m.getZoom() >= 16 || group.some((g) => g.x.id === selected);
+        for (const g of group) {
+          (pins.current.get(g.x.id)!.getElement() as HTMLElement).style.visibility = keepAlone ? "" : "hidden";
+          if (!keepAlone) used.add(g.x.id);
+        }
+        if (keepAlone) continue;
+        const lng = group.reduce((s2, g) => s2 + g.x.coordinates.lng, 0) / group.length;
+        const lat = group.reduce((s2, g) => s2 + g.x.coordinates.lat, 0) / group.length;
+        const el = document.createElement("button");
+        el.type = "button";
+        el.className = "tm-cluster";
+        el.textContent = String(group.length);
+        el.setAttribute("aria-label", String(group.length));
+        el.addEventListener("click", (e) => { e.stopPropagation(); m.easeTo({ center: [lng, lat], zoom: Math.min(17, m.getZoom() + 2) }); });
+        clusters.current.push(new ml.Marker({ element: el, anchor: "center" }).setLngLat([lng, lat]).addTo(m));
+      }
+    };
+    run();
+    m.on("moveend", run);
+    return () => { m.off("moveend", run); clusters.current.forEach((c) => c.remove()); clusters.current = []; };
+  }, [missions, selected, ready]);
+
   // Me.
   useEffect(() => {
     const m = map.current, ml = lib.current;

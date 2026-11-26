@@ -29,6 +29,9 @@ import type {
 import { postAi } from "../ai/client";
 import type { AiMission } from "../ai/missions";
 import * as cloud from "./cloud";
+import { afterReview, followFanout, othersForChecks } from "./v6-hooks";
+import { fairplayOutcome, fairplayScore, FAIRPLAY, trackStats } from "../domain/fairplay";
+import { captureTimeOk, submissionIdOf } from "../domain/offline";
 
 /** v5: work that must run while still signed in (the app unregisters push and widget tokens). */
 const beforeLogout = new Set<() => Promise<unknown>>();
@@ -522,6 +525,10 @@ export const api = {
       db.tokens = db.tokens.filter((t) => t.userId !== u.id);
       db.friendships = db.friendships.filter((f) => f.from !== u.id && f.to !== u.id);
       db.cheers = db.cheers.filter((c) => c.userId !== u.id);
+      // v6: private notes and follows go with the account
+      db.diaryNotes = db.diaryNotes.filter((n) => n.userId !== u.id);
+      for (const f of db.orgFollows.filter((x) => x.userId === u.id)) { const o = orgOf(db, f.orgId); if (o) o.followers = Math.max(0, (o.followers ?? 1) - 1); }
+      db.orgFollows = db.orgFollows.filter((f) => f.userId !== u.id);
       db.messages = db.messages.filter((m) => !m.participants.includes(u.id));
       for (const g of db.groups.filter((x) => x.members.includes(u.id))) removeFromGroup(db, g, u.id);
       Object.assign(u, {
@@ -546,6 +553,10 @@ export const api = {
       orders: db.orders.filter((o) => o.userId === u.id),
       friendships: db.friendships.filter((f) => f.from === u.id || f.to === u.id),
       messages: db.messages.filter((m) => m.participants.includes(u.id)),
+      diaryNotes: db.diaryNotes.filter((n) => n.userId === u.id),
+      follows: db.orgFollows.filter((f) => f.userId === u.id),
+      reports: db.reports.filter((r) => r.reporterId === u.id),
+      ratingsGiven: db.ratings.filter((r) => r.fromId === u.id),
     };
   },
 
@@ -674,6 +685,7 @@ export const api = {
           notify(db, who, "mission", "n.missionInArea", { title: m.title, hours: TERRITORY.firstLookHours }, `/app/missions/${m.id}`);
         }
       }
+      followFanout(db, m, told);
       log(db, u, "mission.publish", "missions", id, m.title);
     });
   },
@@ -912,6 +924,8 @@ export const api = {
   /* ---- evidence ---- */
   async submitEvidence(missionId: string, input: {
     notes: string; gpsConsent: boolean; gps: GpsFix | null; images: Evidence[]; checklistDone: string[]; aiConfidence: number | null; aiNotes: string;
+    /** v6: written offline — when the device made it */
+    capturedAt?: string | null;
   }) {
     await ready();
     if (input.notes.trim().length > 1000) throw new ValidationError({ notes: "v.notes" });
@@ -928,24 +942,29 @@ export const api = {
       const existing = db.submissions.find((s) => s.missionId === missionId && s.userId === u.id);
       const t = nowIso();
       const gps = input.gpsConsent ? input.gps : null;
-      const extra = { checklistDone: input.checklistDone, aiConfidence: input.aiConfidence, aiNotes: input.aiNotes.slice(0, 600), teamId: p.teamId ?? null };
+      const extra = { checklistDone: input.checklistDone, aiConfidence: input.aiConfidence, aiNotes: input.aiNotes.slice(0, 600), teamId: p.teamId ?? null, capturedAt: input.capturedAt ?? null };
+      // v6: a clock that does not add up (offline sends) and a mock location are flagged for the reviewer
+      const v6flags = [
+        ...(input.capturedAt && !captureTimeOk(input.capturedAt, { startedAt: p.startedAt, syncedAt: t }) ? ["clock"] : []),
+        ...(gps?.mock || p.startGps?.mock ? ["mock_location"] : []),
+      ];
       agent = m.source === "agent";
       if (existing) {
         const next = { ...resubmit(existing, { images: input.images, notes: input.notes.trim() }, t), ...extra, gps: gps ?? existing.gps };
-        const r = runChecks({ submission: next, mission: m, participant: p, others: db.submissions.filter((s) => s.id !== existing.id) });
-        Object.assign(existing, next, { checks: r.checks, fraudScore: r.score, fraudFlags: r.flags, aiReview: null });
+        const r = runChecks({ submission: next, mission: m, participant: p, others: othersForChecks(db, { id: existing.id, teamId: p.teamId ?? null }) });
+        Object.assign(existing, next, { checks: withMock(r.checks, v6flags), fraudScore: v6flags.includes("mock_location") ? 1 : r.score, fraudFlags: [...new Set([...r.flags, ...v6flags])], aiReview: null });
         submissionId = existing.id;
         log(db, u, "submission.resubmit", "missionSubmissions", existing.id);
       } else {
         const sub: Submission = {
-          id: uid(), missionId, userId: u.id, organizationId: m.organizationId, images: input.images, videos: [], notes: input.notes.trim(),
+          id: submissionIdOf(missionId, u.id), missionId, userId: u.id, organizationId: m.organizationId, images: input.images, videos: [], notes: input.notes.trim(),
           gps, gpsConsent: input.gpsConsent, timestamp: t, metadata: { userAgent: navigator.userAgent.slice(0, 160), submissionCount: 1 },
           fraudScore: 0, fraudFlags: [], verificationStatus: "pending", reviewedBy: null, reviewedAt: null, reviewNote: "", rewardGrantedAt: null,
           certificateId: null, checks: [], ...extra, groupId: groupOf(db, u.id)?.id ?? null, aiReview: null, grant: null,
         };
         submissionId = sub.id;
-        const r = runChecks({ submission: sub, mission: m, participant: p, others: db.submissions });
-        Object.assign(sub, { checks: r.checks, fraudScore: r.score, fraudFlags: r.flags });
+        const r = runChecks({ submission: sub, mission: m, participant: p, others: othersForChecks(db, sub) });
+        Object.assign(sub, { checks: withMock(r.checks, v6flags), fraudScore: v6flags.includes("mock_location") ? 1 : r.score, fraudFlags: [...new Set([...r.flags, ...v6flags])] });
         db.submissions.push(sub);
         log(db, u, "submission.create", "missionSubmissions", sub.id);
       }
@@ -984,6 +1003,7 @@ export const api = {
       const reviewer = actor(db);
       const s = db.submissions.find((x) => x.id === submissionId);
       if (!s) throw new DomainError("not_found", "e.notFound");
+      const wasApproved = s.verificationStatus === "approved";
       const mission = db.missions.find((m) => m.id === s.missionId)!;
       const volunteer = db.users.find((x) => x.id === s.userId)!;
       const teamSize = s.teamId ? db.participants.filter((p) => p.missionId === s.missionId && p.teamId === s.teamId && p.status === "accepted").length : 1;
@@ -1002,6 +1022,7 @@ export const api = {
         if (decision === "approved") Object.assign(p, { completionStatus: "completed", attendance: true });
         else p.completionStatus = "joined";
       }
+      afterReview(db, s, wasApproved);
     });
   },
 
@@ -1029,7 +1050,8 @@ export const api = {
     const anns: Notification[] = announcementsFor(db, u).map((a) => ({
       id: `ann_${a.id}`, userId: u.id, type: "system", title: a.title, message: a.body, link: a.link, read: Date.parse(a.createdAt) <= seen, createdAt: a.createdAt,
     }));
-    return [...anns, ...db.notifications.filter((n) => n.userId === u.id)].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 100);
+    const now = Date.now();
+    return [...anns, ...db.notifications.filter((n) => n.userId === u.id && Date.parse(n.createdAt) <= now)].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 100);
   },
   async markNotificationsRead(ids?: string[]) {
     await ready();
@@ -1057,7 +1079,7 @@ export const api = {
     const u = actor(db);
     const friends = friendIdsOf(db, u.id);
     return db.submissions
-      .filter((s) => s.verificationStatus === "approved")
+      .filter((s) => s.verificationStatus === "approved" && !s.hiddenAt)
       .flatMap((s) => {
         const author = db.users.find((x) => x.id === s.userId);
         const mission = db.missions.find((m) => m.id === s.missionId);
@@ -1235,7 +1257,7 @@ export const api = {
       const messages = db.groupMessages.filter((m) => m.groupId === g.id).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)).map((m) => {
         const sig = m.signalId ? db.helpSignals.find((x) => x.id === m.signalId) ?? null : null;
         return {
-          ...m, kind: m.kind, mission: null, joined: false, invite: null,
+          ...m, ...(m.hiddenAt ? { text: "", deletedAt: m.hiddenAt } : {}), kind: m.kind, mission: null, joined: false, invite: null,
           signal: sig ? { id: sig.id, title: sig.title, place: sig.place, status: sig.status, expiresAt: sig.expiresAt, responders: sig.responders.length, going: sig.responders.includes(u.id) } : null,
         };
       });
@@ -1248,7 +1270,7 @@ export const api = {
     if (!other) return null;
     const chatId = chatIdOf(u.id, id);
     const messages = db.messages.filter((m) => m.chatId === chatId).sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)).map((m) => ({
-      ...m, mission: missionOf(m.missionId), signal: null,
+      ...m, ...(m.hiddenAt ? { text: "", deletedAt: m.hiddenAt } : {}), mission: missionOf(m.missionId), signal: null,
       joined: m.missionId ? db.participants.some((p) => p.id === `${m.missionId}_${u.id}` && p.status === "accepted") : false,
       invite: m.kind === "group_invite" && m.group ? inviteInfo(db, u.id, m.group.id) : null,
     }));
@@ -1455,7 +1477,7 @@ export const api = {
     if (!u) return { notifications: 0, messages: 0, friends: 0, reviews: 0, adminQueue: 0, aiAudit: 0, signals: 0 };
     const admin = isAdmin(u.role);
     return {
-      notifications: db.notifications.filter((n) => n.userId === u.id && !n.read).length
+      notifications: db.notifications.filter((n) => n.userId === u.id && !n.read && Date.parse(n.createdAt) <= Date.now()).length
         + announcementsFor(db, u).filter((a) => !u.announcementsSeenAt || Date.parse(a.createdAt) > Date.parse(u.announcementsSeenAt)).length,
       messages: unreadFor(db, u.id),
       friends: db.friendships.filter((f) => f.to === u.id && f.status === "pending").length,
@@ -1959,14 +1981,34 @@ export const api = {
    * Turns a finished walk into area. Returns what was gained and from whom it was taken,
    * or why the walk does not count (without throwing, so the walker can carry on).
    */
-  async captureTerritory(trace: TracePoint[], opts: { forceClose?: boolean } = {}): Promise<
-    | { ok: true; gainedM2: number; areaM2: number; takenFrom: { name: string; areaM2: number }[]; missionsInside: number; shape: Shape }
-    | { ok: false; error: CaptureError | "limit"; toStartM?: number }
+  async captureTerritory(trace: TracePoint[], opts: { forceClose?: boolean; steps?: number | null; mock?: boolean; source?: "app" | "web" } = {}): Promise<
+    | { ok: true; gainedM2: number; areaM2: number; takenFrom: { name: string; areaM2: number }[]; missionsInside: number; shape: Shape; fairplay: "accept" | "delay" | "reject" }
+    | { ok: false; error: CaptureError | "limit" | "fairplay" | "mock"; toStartM?: number }
   > {
     await ready();
     const res = traceToShape(trace, opts);
     if ("error" in res) return { ok: false, error: res.error, toStartM: res.toStartM };
     const stats = cleanTrace(trace);
+    // v6: fair play (feature 10) — numbers only, the trace itself is not stored
+    const fp = trackStats(trace, { steps: opts.steps, mock: opts.mock, source: opts.source ?? "web" });
+    const sessionUser = readSession(getDB());
+    const fpScore = fairplayScore(fp, { mode: sessionUser?.moveMode ?? "walk", droppedFast: stats.droppedFast, points: trace.length });
+    const fpOut = fairplayOutcome(fp, fpScore.score);
+    const fairplay = {
+      score: fpScore.score, flags: fpScore.flags, verdict: fpOut.verdict, p95Speed: fp.p95Speed, stepsPerKm: fp.stepsPerKm, accuracyMedian: fp.accuracyMedian,
+      source: fp.source, mock: fp.mock, shadow: FAIRPLAY.shadow, countsAfter: fpOut.delayed ? new Date(Date.now() + 86_400_000).toISOString() : null,
+    };
+    if (fpOut.blocked) {
+      await commit((db) => {
+        const u = actor(db);
+        db.territoryCaptures.push({
+          id: uid(), userId: u.id, groupId: groupOf(db, u.id)?.id ?? null, season: seasonOf(), areaM2: 0, gainedM2: 0, distanceM: stats.distanceM, durationS: stats.durationS,
+          maxSpeedKmh: stats.maxSpeedKmh, droppedFast: stats.droppedFast, takenFrom: [], createdAt: nowIso(), fairplay,
+        });
+        log(db, u, "territory.fairplay_block", "territoryCaptures", u.id, fpScore.flags.join(","));
+      });
+      return { ok: false, error: fp.mock ? "mock" : "fairplay" };
+    }
     let out: { gainedM2: number; areaM2: number; takenFrom: { name: string; areaM2: number }[]; missionsInside: number } | null = null;
     try {
       await commit((db) => {
@@ -1980,6 +2022,7 @@ export const api = {
         const box = bboxOf(res.shape);
         const takenFrom: { userId: string; areaM2: number }[] = [];
         for (const t of liveTerritories(db)) {
+          if (!fpOut.mayTake) break;
           if (side.has(t.userId) || !boxesMeet(t.bbox, box)) continue;
           const s = decodeShape(t.shape);
           if (!s || overlapM2(s, res.shape) < 50) continue;
@@ -2010,7 +2053,7 @@ export const api = {
         const gained = Math.max(0, mine.areaM2 - before);
         db.territoryCaptures.push({
           id: uid(), userId: u.id, groupId: g?.id ?? null, season, areaM2: res.areaM2, gainedM2: gained, distanceM: stats.distanceM, durationS: stats.durationS,
-          maxSpeedKmh: stats.maxSpeedKmh, droppedFast: stats.droppedFast, takenFrom, createdAt: nowIso(), loop: encodeShape(res.shape),
+          maxSpeedKmh: stats.maxSpeedKmh, droppedFast: stats.droppedFast, takenFrom, createdAt: nowIso(), loop: encodeShape(res.shape), fairplay,
         });
         const now = Date.now();
         const inside = db.missions.filter((m) => m.status === "published" && m.source !== "agent" && Date.parse(m.date) > now && contains(res.shape, m.coordinates)).length;
@@ -2025,7 +2068,7 @@ export const api = {
       if (e instanceof DomainError && e.message === "limit") return { ok: false, error: "limit" };
       throw e;
     }
-    return { ok: true, ...out!, shape: res.shape };
+    return { ok: true, ...out!, shape: res.shape, fairplay: fpOut.verdict };
   },
 
   /* ───────────── v3.2: asking to join a group ───────────── */
@@ -2262,7 +2305,7 @@ export const api = {
       const u = actor(db);
       if (u.role !== "volunteer") throw new DomainError("forbidden", "e.volunteersOnly");
       const since = Date.now() - 86_400_000;
-      if (db.helpSignals.filter((x) => x.userId === u.id && Date.parse(x.createdAt) > since).length >= SIGNALS_PER_DAY) throw new DomainError("conflict", "e.signalLimit");
+      if (db.helpSignals.filter((x) => x.userId === u.id && x.kind !== "emergency" && Date.parse(x.createdAt) > since).length >= SIGNALS_PER_DAY) throw new DomainError("conflict", "e.signalLimit");
       const g = groupOf(db, u.id);
       id = uid();
       const t = nowIso();
@@ -2291,7 +2334,7 @@ export const api = {
     await ready();
     const db = getDB();
     const u = actor(db);
-    const x = db.helpSignals.find((s) => s.id === id);
+    const x = db.helpSignals.find((s) => s.id === id && s.kind !== "emergency");
     return x ? signalView(db, x, u, null) : null;
   },
 
@@ -2840,7 +2883,7 @@ function groupView(db: DB, g: Group, viewer: UserProfile) {
   return {
     group: g, isMember, isOwner: g.ownerId === viewer.id, members, xp: all, monthXp: month, level, levelStart: xpForLevel(level) * 3, levelNext: xpForLevel(level + 1) * 3,
     ranks, recent, code: isMember ? db.groupCodes.find((c) => c.groupId === g.id)?.id ?? null : null,
-    signals: db.helpSignals.filter((x) => x.groupId === g.id && x.status === "open" && Date.parse(x.expiresAt) > Date.now()).map((x) => signalView(db, x, viewer, null)),
+    signals: db.helpSignals.filter((x) => x.groupId === g.id && x.kind !== "emergency" && x.status === "open" && Date.parse(x.expiresAt) > Date.now()).map((x) => signalView(db, x, viewer, null)),
   };
 }
 export type GroupView = ReturnType<typeof groupView>;
@@ -2861,6 +2904,7 @@ function openSignalsFor(db: DB, u: UserProfile, near: { lat: number; lng: number
   const g = groupOf(db, u.id);
   const d = scopeKey(u, "district");
   return db.helpSignals.filter((x) => {
+    if (x.kind === "emergency") return false;
     if (x.status !== "open" || Date.parse(x.expiresAt) < now) return false;
     if (x.userId === u.id || (g && x.groupId === g.id)) return true;
     if (near && km(near, x.location) <= x.radiusKm) return true;
@@ -2956,3 +3000,13 @@ export interface NewsInput {
 
 export { levelForXp };
 export type { Mission };
+
+/* v6: helpers shared with api6.ts (features 1–19 of the 2026-11 plan) */
+export { actor, readSession, requireAdmin, log, notify, orgOf, person, canSee, relationOf, friendIdsOf, groupOf, withOrg, missionVisibleTo, privacyOf, chatIdOf, statsFor };
+
+function withMock(checks: NonNullable<Submission["checks"]>, flags: string[]): NonNullable<Submission["checks"]> {
+  const out = [...checks];
+  if (flags.includes("mock_location")) out.push({ id: "mockLocation", result: "fail", detail: "chk.mock" });
+  if (flags.includes("clock")) out.push({ id: "deviceClock", result: "warn", detail: "chk.clock" });
+  return out;
+}

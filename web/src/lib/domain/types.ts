@@ -42,6 +42,8 @@ export interface GeoPoint {
 }
 export interface GpsFix extends GeoPoint {
   accuracy: number;
+  /** v6: the phone said this location came from a mock-location app */
+  mock?: boolean;
 }
 
 export interface ImpactMetric {
@@ -103,6 +105,14 @@ export interface UserProfile {
   phoneVerified?: boolean;
   /** v3: Telegram account id when signed in with Telegram */
   telegramId?: string | null;
+  /** v6: reminder kinds the person wants (all on when unset) */
+  notifyPrefs?: { nearby?: boolean; deadline?: boolean; mine?: boolean; proof?: boolean; emergency?: boolean } | null;
+  /** v6: skills from the taxonomy (domain/skills.ts); `skills` keeps the old free text */
+  skillSet?: { id: string; level: "beginner" | "experienced" | "expert"; proof: "self" | "missions" | "document" }[];
+  /** v6: organizations may find this volunteer by skill (off by default) */
+  discoverable?: boolean;
+  /** v6: "assisted" (wheelchair, bike, not on foot) turns the step check off */
+  moveMode?: "walk" | "assisted";
 }
 
 export interface Organization {
@@ -125,6 +135,12 @@ export interface Organization {
   totalVolunteers: number;
   totalMissions: number;
   createdAt: string;
+  /** v6: number of followers (the list itself is never shown to the organization) */
+  followers?: number;
+  /** v6: how many ratings the score is made of */
+  ratingCount?: number;
+  /** v6: may declare verified emergencies */
+  emergencyPartner?: boolean;
 }
 
 export interface Mission {
@@ -168,6 +184,10 @@ export interface Mission {
   whyHere?: string;
   /** v3.2: when it went live (territory owners get the first look for a few hours) */
   publishedAt?: string | null;
+  /** v6: skills the mission needs (domain/skills.ts) */
+  skillsWanted?: { skillId: string; count?: number; required: boolean }[];
+  /** v6: made automatically when an emergency closed */
+  emergencyId?: string | null;
 }
 
 export interface MissionParticipant {
@@ -206,7 +226,7 @@ export interface Evidence {
 
 /** EXTRA (v2): one automatic verification signal shown to the reviewer. */
 export interface VerificationCheck {
-  id: "photos" | "duplicate" | "captureTime" | "photoLocation" | "deviceLocation" | "checkIn" | "timeOnSite" | "checklist" | "ai";
+  id: "photos" | "duplicate" | "captureTime" | "photoLocation" | "deviceLocation" | "checkIn" | "timeOnSite" | "checklist" | "ai" | "mockLocation" | "deviceClock";
   result: "pass" | "warn" | "fail" | "skip";
   /** i18n key */
   detail: string;
@@ -249,6 +269,15 @@ export interface Submission {
   aiReview?: AiReview | null;
   /** v3: the volunteer's group when the mission was done, for group XP */
   groupId?: string | null;
+  /** v6: the team bonus XP given for this submission */
+  teamBonusXp?: number;
+  teamBonusAt?: string | null;
+  /** v6: what this submission added to a challenge, so a revoked approval can take it back */
+  challengeCredit?: { challengeId: string; value: number } | null;
+  /** v6: written offline: when the device made it */
+  capturedAt?: string | null;
+  /** v6: hidden from the feed by a moderator */
+  hiddenAt?: string | null;
 }
 
 /** v3: the AI reviewer's decision on an agent-mission submission. */
@@ -412,6 +441,8 @@ export interface Message {
   group?: { id: string; name: string; color: string; code: string } | null;
   /** v3.1: the invited friend's answer to a group invite */
   inviteStatus?: "accepted" | "declined" | null;
+  /** v6: hidden by a moderator (or by reports) until reviewed */
+  hiddenAt?: string | null;
 }
 
 /** v2.1: an announcement from the admins, shown to everyone (or one audience) in notifications and on the home page. */
@@ -473,6 +504,8 @@ export interface GroupMessage {
   replyTo?: { id: string; from: string; text: string } | null;
   editedAt?: string | null;
   deletedAt?: string | null;
+  /** v6: hidden by a moderator until reviewed */
+  hiddenAt?: string | null;
 }
 
 /** v3: a call for help: nearby volunteers and the group are asked to come. */
@@ -493,6 +526,13 @@ export interface HelpSignal {
   status: "open" | "closed";
   createdAt: string;
   expiresAt: string;
+  /** v6: "emergency" = a wide-scale event (domain/emergency.ts) */
+  kind?: "signal" | "emergency";
+  emergency?: {
+    type: string; state: "unverified" | "verified" | "resolved"; severity: 1 | 2 | 3; provinces: string[]; cities: string[];
+    verifiedBy: string | null; needs: string[]; meetingPoints: string[]; contacts: string; validUntil: string;
+    going: Record<string, { role: string; at: string; point: string; confirmed?: boolean }>; closedAt?: string | null; closingNote?: string;
+  } | null;
 }
 
 /** v3.2: the area a volunteer holds this month (one document per person per season). */
@@ -535,6 +575,8 @@ export interface TerritoryCapture {
   createdAt: string;
   /** v4: the loop itself (encoded MultiPolygon), for the season replay */
   loop?: string;
+  /** v6: fair play numbers (no raw trace) */
+  fairplay?: { score: number; flags: string[]; verdict: "accept" | "delay" | "reject"; p95Speed: number; stepsPerKm: number | null; accuracyMedian: number | null; source: "app" | "web"; mock: boolean; shadow: boolean; countsAfter?: string | null } | null;
 }
 
 /** v3.2: someone asks to join a group; any member can let them in. `${groupId}_${userId}` */

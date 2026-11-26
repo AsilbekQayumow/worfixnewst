@@ -56,7 +56,7 @@ export interface WorfixNativePlugin extends Plugin {
   /** Starts the foreground walk (GPS keeps recording with the screen off; live panel on the lock screen). resume keeps the points so far. */
   startWalk(o: { color: string; labels: Record<string, string>; resume?: boolean }): Promise<void>;
   /** Points recorded since index `from`; `total` is the whole walk so far. */
-  walkPoints(o: { from: number }): Promise<{ points: WalkPoint[]; total: number; running: boolean }>;
+  walkPoints(o: { from: number }): Promise<{ points: WalkPoint[]; total: number; running: boolean; steps?: number | null; mock?: boolean }>;
   /** Stops recording; clear also forgets the points. */
   stopWalk(o?: { clear?: boolean }): Promise<void>;
   verifyBiometric(o: { title: string; reason: string; cancel: string }): Promise<{ ok: boolean }>;

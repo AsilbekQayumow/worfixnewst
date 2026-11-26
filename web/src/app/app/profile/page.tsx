@@ -1,4 +1,5 @@
 "use client";
+import { MyFollows } from "@/components/follow-row";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { AchievementGrid, Medal } from "@/components/achievements";
@@ -48,7 +49,8 @@ function Profile() {
 
   return (
     <div className="stack g24 enter">
-      <PageHead title={t("nav.profile")} actions={<>{me.role === "volunteer" && <ShareCard />}<ButtonLink href="/app/settings" icon="edit">{t("pf.edit")}</ButtonLink></>} />
+      <PageHead title={t("nav.profile")} actions={<>{me.role === "volunteer" && <ShareCard />}<ButtonLink href="/app/diary" icon="book">{t("di.title")}</ButtonLink><ButtonLink href="/app/settings" icon="edit">{t("pf.edit")}</ButtonLink></>} />
+      {me.role === "volunteer" && <MyFollows />}
       <section className="row g20 wrap profile5-head" style={{ ["--tint" as string]: personColor(me.id, me.mapColor) }}>
         <span className="profile5-avatar"><Avatar name={me.fullName} src={me.avatar} size={96} /></span>
         <div className="stack g8 grow" style={{ minWidth: 220 }}>

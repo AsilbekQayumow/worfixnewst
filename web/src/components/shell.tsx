@@ -1,4 +1,5 @@
 "use client";
+import { OfflineBar, QueryErrorBar } from "./offline-bar";
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useRef, type ReactNode } from "react";
@@ -37,6 +38,7 @@ function navItems(area: Area, t: (k: string) => string, b: Badges | undefined): 
     extra: [
       { href: "/app/notifications", label: t("nav.notifications"), icon: "bell", badge: b?.notifications },
       { href: "/app/settings", label: t("nav.settings"), icon: "settings" },
+      { href: "/app/diary", label: t("di.title"), icon: "book" },
     ],
   };
   if (area === "organization") return {
@@ -46,6 +48,7 @@ function navItems(area: Area, t: (k: string) => string, b: Badges | undefined): 
       { href: "/org/review", label: t("nav.review"), icon: "shield", mobile: true, badge: b?.reviews },
       { href: "/org/chat", label: t("nav.chat"), icon: "message", badge: b?.messages, mobile: true },
       { href: "/org/profile", label: t("nav.orgProfile"), icon: "building", mobile: true },
+      { href: "/org/volunteers", label: t("sk.find"), icon: "search" },
     ],
     extra: [
       { href: "/org/notifications", label: t("nav.notifications"), icon: "bell", badge: b?.notifications },
@@ -205,6 +208,8 @@ function ShellInner({ area, children }: { area: Area; children: ReactNode }) {
           </div>
         </header>
         <DemoBanner />
+        <OfflineBar />
+        <QueryErrorBar />
         {area === "volunteer" && <LevelUp />}
         <main className={bleed ? "main main-bleed" : "main"} id="main">
           <div className="main-inner">{children}</div>

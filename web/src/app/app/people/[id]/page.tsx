@@ -1,4 +1,5 @@
 "use client";
+import { ReportButton } from "@/components/v6-bits";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { Medal } from "@/components/achievements";
@@ -42,6 +43,7 @@ export default function PersonPage() {
             {d.relation === "incoming" && <Button variant="primary" icon="userPlus" onClick={() => run(() => api.sendFriendRequest(p.id), t("fr.accepted"))}>{t("fr.accept")}</Button>}
             {d.relation === "outgoing" && <span className="t-small muted">{t("fr.pending")}</span>}
             {d.relation === "friend" && <Button variant="ghost" onClick={() => run(() => api.removeFriend(p.id))}>{t("fr.remove")}</Button>}
+            <ReportButton type="user" id={p.id} />
           </div>
         )}
       </section>

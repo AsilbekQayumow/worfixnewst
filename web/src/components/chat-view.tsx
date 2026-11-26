@@ -1,4 +1,5 @@
 "use client";
+import { ReportDialog } from "./v6-bits";
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { useErrorText, useFmt, useI18n } from "@/lib/i18n";
@@ -125,6 +126,7 @@ function Thread({ id, base }: { id: string; base: string }) {
   const [sending, setSending] = useState(false);
   const [pick, setPick] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
+  const [reporting, setReporting] = useState<string | null>(null);
   const [mode, setMode] = useState<Mode>(null);
   const [confirmDel, setConfirmDel] = useState<string | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
@@ -296,6 +298,7 @@ function Thread({ id, base }: { id: string; base: string }) {
                         <button type="button" role="menuitem" onClick={() => { void navigator.clipboard?.writeText(m.text); setSelected(null); toast(t("chat.copied")); }}><Icon name="copy" size={16} />{t("chat.copy")}</button>
                         {mine && m.kind === "text" && <button type="button" role="menuitem" onClick={() => startMode({ kind: "edit", id: m.id, text: m.text, from: m.from })}><Icon name="edit" size={16} />{t("chat.edit")}</button>}
                         {mine && <button type="button" role="menuitem" className="danger" onClick={() => { setSelected(null); setConfirmDel(m.id); }}><Icon name="trash" size={16} />{t("chat.delete")}</button>}
+                        {!mine && m.from !== "system" && <button type="button" role="menuitem" onClick={() => { setSelected(null); setReporting(m.id); }}><Icon name="flag" size={16} />{t("rpt.title")}</button>}
                       </div>
                     </div>
                   )}
@@ -326,6 +329,7 @@ function Thread({ id, base }: { id: string; base: string }) {
         </div>
       ) : <p className="t-small muted" style={{ padding: 16, borderTop: "1px solid var(--line)" }}>{t("chat.notFriend")}</p>}
 
+      {reporting && <ReportDialog open onClose={() => setReporting(null)} type="message" id={reporting} />}
       <Dialog open={Boolean(confirmDel)} onClose={() => setConfirmDel(null)} title={t("chat.deleteTitle")} footer={<>
         <Button variant="ghost" onClick={() => setConfirmDel(null)}>{t("a.cancel")}</Button>
         <Button variant="danger" onClick={() => { const mid = confirmDel!; setConfirmDel(null); if (mode?.id === mid) { setMode(null); setText(""); } void act(() => api.deleteMessage(mid)); }}>{t("chat.delete")}</Button>

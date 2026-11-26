@@ -620,3 +620,93 @@ html.is-native .mapx { height: 100%; }
 }
 /* News lead without a cover: a slim colour strip on phones so the text keeps the width. */
 @media (max-width: 600px) { .news-lead:not([data-cover]) .news-cover-empty { width: 56px; } }
+
+/* ───────────── v6 (2026-11 plan): reports, ratings, challenges, emergencies, diary, offline ───────────── */
+/* a choice row (report reasons) */
+.choice { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border: 2px solid var(--line); border-radius: var(--r-md); cursor: pointer; background: var(--surface);
+  transition: border-color 140ms var(--ease-out), background-color 140ms var(--ease-out); }
+.choice input { margin-top: 3px; accent-color: var(--accent); }
+.choice.is-on { border-color: var(--accent); background: var(--accent-soft); }
+@media (hover: hover) and (pointer: fine) { .choice:hover { border-color: var(--line-strong); } }
+.chip.is-on { background: var(--accent-soft); border-color: var(--accent); color: var(--text); }
+.chip svg { flex: none; }
+
+/* stars */
+.stars { display: inline-flex; gap: 2px; line-height: 1; }
+.star { border: 0; background: none; padding: 2px; color: var(--line-strong); cursor: default; font-family: inherit; }
+button.star { cursor: pointer; transition: transform 120ms var(--ease-out), color 120ms ease; }
+button.star:active { transform: scale(0.9); }
+.star.is-on { color: var(--sun, #f5b400); }
+
+/* small coloured icon tile used by v6 cards */
+.v6-ico { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 12px; background: var(--accent-soft); color: var(--accent); flex: none; }
+.v6-prompt { align-items: center; border-color: color-mix(in oklab, var(--accent) 40%, var(--line)) !important; }
+
+/* challenge */
+.challenge-card { background: linear-gradient(180deg, color-mix(in oklab, var(--sun, #f5b400) 10%, var(--surface)), var(--surface)); }
+.challenge-card .v6-ico { background: color-mix(in oklab, var(--sun, #f5b400) 22%, transparent); color: color-mix(in oklab, var(--sun, #f5b400) 70%, #000); }
+
+/* emergencies */
+.em-numbers { display: grid; gap: 10px; padding: 14px 16px; border-radius: var(--r-md); border: 2px solid color-mix(in oklab, var(--danger) 45%, var(--line));
+  background: color-mix(in oklab, var(--danger) 8%, var(--surface)); color: var(--text); }
+.em-numbers .chip { text-decoration: none; min-height: 40px; }
+.em-numbers .chip strong { color: var(--danger); }
+.em-banner { display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: var(--r-md); border: 2px solid; text-decoration: none; color: inherit; }
+.em-banner[data-level="3"] { background: color-mix(in oklab, var(--danger) 12%, var(--surface)); border-color: var(--danger); }
+.em-banner[data-level="3"] > svg:first-child { color: var(--danger); }
+.em-banner[data-level="2"] { background: var(--warn-soft); border-color: color-mix(in oklab, var(--warn) 60%, var(--line)); }
+.em-banner[data-level="2"] > svg:first-child { color: var(--warn); }
+.em-head[data-state="verified"] { border-color: var(--danger) !important; }
+
+/* diary */
+.di-bars { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 6px; height: 140px; align-items: end; }
+.di-bars-sm { grid-template-columns: repeat(6, minmax(0, 1fr)); height: 90px; }
+.di-bar { display: grid; grid-template-rows: 1fr auto; gap: 4px; height: 100%; text-align: center; min-width: 0; }
+.di-bar > span:first-child { align-self: end; display: block; width: 100%; border-radius: 8px 8px 3px 3px; background: var(--line); }
+.di-bar[data-on] > span:first-child { background: var(--accent); }
+.di-bar .t-meta { font-size: 11px; overflow: hidden; text-overflow: clip; white-space: nowrap; }
+.di-thumb { width: 72px; height: 72px; border-radius: 14px; object-fit: cover; flex: none; background: var(--raised); }
+.di-thumb-empty { display: grid; place-items: center; color: var(--muted); }
+.di-note { text-align: left; border: 0; border-left: 3px solid var(--accent); background: var(--raised); padding: 8px 12px; border-radius: 0 10px 10px 0; font: inherit; font-size: 14px; color: var(--text-2); cursor: pointer; }
+.print-only { display: none; }
+@media print {
+  .no-print { display: none !important; }
+  .print-only { display: block; }
+  .diary .card { box-shadow: none !important; break-inside: avoid; }
+}
+@media (max-width: 560px) { .di-thumb { width: 56px; height: 56px; } .di-bars { gap: 3px; } }
+
+/* offline + load errors */
+.offline-bar { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 16px; border: 0; border-bottom: 2px solid var(--line);
+  background: var(--warn-soft); color: var(--text); font: inherit; font-size: 14px; font-weight: 700; text-align: left; cursor: pointer; }
+.offline-bar[data-online] { background: var(--info-soft); }
+.offline-bar[data-failed] { background: var(--danger-soft); }
+.offline-bar .btn { flex: none; }
+
+/* simple data table (admin fair play) */
+.table-wrap { overflow-x: auto; }
+.table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.table th { text-align: left; font-weight: 800; font-size: 12px; color: var(--muted); padding: 12px 14px; border-bottom: 2px solid var(--line); white-space: nowrap; }
+.table td { padding: 12px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.table tr:last-child td { border-bottom: 0; }
+
+/* skills editor rows */
+.skill-row { padding: 8px 0; border-bottom: 1px solid var(--line); align-items: center; }
+.skill-row:last-child { border-bottom: 0; }
+.skill-row .field, .skill-row select { min-width: 150px; }
+
+/* map: clustered mission pins (design rec. 5) */
+.tm-cluster { display: grid; place-items: center; min-width: 40px; height: 40px; padding: 0 10px; border-radius: 20px; border: 3px solid #fff; cursor: pointer;
+  background: var(--accent); color: var(--on-accent, #fff); font: 800 15px/1 var(--font-body); box-shadow: 0 3px 0 color-mix(in oklab, var(--accent) 60%, #000), 0 6px 14px rgb(0 0 0 / .25);
+  transition: transform 140ms var(--ease-out); }
+.tm-cluster:active { transform: scale(0.94); }
+@media (max-width: 860px) { .mapx-grip { touch-action: none; height: 32px; } }
+@media (prefers-reduced-motion: reduce) { button.star, .tm-cluster { transition: none; } }
+
+/* v6 QA: long dialogs keep their title and buttons in view; only the middle scrolls */
+.dialog { display: flex; flex-direction: column; overflow: hidden; }
+.dialog > div:nth-child(2) { overflow-y: auto; min-height: 0; overscroll-behavior: contain; }
+.dialog > div:first-child, .dialog > div:nth-child(3) { flex: none; }
+.choice { padding: 9px 12px; }
+.choice .t-small { font-size: 13px; }
+button.link { border: 0; background: none; padding: 0; font: inherit; cursor: pointer; }
