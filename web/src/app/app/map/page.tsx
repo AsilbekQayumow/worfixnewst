@@ -327,7 +327,7 @@ function CaptureHud({ gps, busy, onFinish, onCancel }: { gps: ReturnType<typeof 
   const f = useFmt();
   const [, tick] = useState(0);
   useEffect(() => { const id = window.setInterval(() => tick((n) => n + 1), 1000); return () => window.clearInterval(id); }, []);
-  const secs = gps.startedAt ? (Date.now() - gps.startedAt) / 1000 : 0;
+  const secs = gps.elapsedSec();
   const { loop, stats } = gps;
   const toStart = loop.toStartM;
   const goingBack = loop.pathM >= TERRITORY.minPathM;

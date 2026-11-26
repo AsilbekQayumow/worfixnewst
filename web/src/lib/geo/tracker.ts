@@ -8,7 +8,7 @@ const KEY = "worfix.trace";
 type Status = "idle" | "tracking" | "paused";
 export type GpsProblem = "denied" | "unavailable" | "unsupported" | null;
 
-interface Saved { points: TracePoint[]; status: Status; startedAt: number }
+interface Saved { points: TracePoint[]; status: Status; startedAt: number; pausedMs?: number; pausedAt?: number }
 
 /**
  * Follows the phone's GPS while a loop is being walked. The walk survives a reload (sessionStorage),
@@ -22,6 +22,9 @@ export function useTracker(native?: { color: string; labels: Record<string, stri
   const [points, setPoints] = useState<TracePoint[]>([]);
   const [status, setStatus] = useState<Status>("idle");
   const [startedAt, setStartedAt] = useState(0);
+  /** time spent paused (ms) and when the current pause began: the walk clock counts active time only */
+  const [pausedMs, setPausedMs] = useState(0);
+  const [pausedAt, setPausedAt] = useState(0);
   const [me, setMe] = useState<(GeoPoint & { accuracy: number | null }) | null>(null);
   const [problem, setProblem] = useState<GpsProblem>(null);
   const [awake, setAwake] = useState(false);
@@ -103,16 +106,16 @@ export function useTracker(native?: { color: string; labels: Record<string, stri
       const raw = sessionStorage.getItem(KEY);
       if (raw) {
         const s = JSON.parse(raw) as Saved;
-        if (s.points?.length && Date.now() - s.startedAt < 6 * 3_600_000) { setPoints(s.points); setStatus("paused"); setStartedAt(s.startedAt); }
+        if (s.points?.length && Date.now() - s.startedAt < 6 * 3_600_000) { setPoints(s.points); setStatus("paused"); setStartedAt(s.startedAt); setPausedMs(s.pausedMs ?? 0); setPausedAt(s.pausedAt ?? s.points[s.points.length - 1].t); }
       }
     } catch { /* ignore */ }
   }, []);
   useEffect(() => {
     try {
       if (status === "idle") sessionStorage.removeItem(KEY);
-      else sessionStorage.setItem(KEY, JSON.stringify({ points, status, startedAt } satisfies Saved));
+      else sessionStorage.setItem(KEY, JSON.stringify({ points, status, startedAt, pausedMs, pausedAt } satisfies Saved));
     } catch { /* private mode */ }
-  }, [points, status, startedAt]);
+  }, [points, status, startedAt, pausedMs, pausedAt]);
 
   const stopWatch = () => { if (watch.current != null) navigator.geolocation.clearWatch(watch.current); watch.current = null; };
   const stopSim = () => { if (sim.current != null) window.clearInterval(sim.current); sim.current = null; };
@@ -146,15 +149,17 @@ export function useTracker(native?: { color: string; labels: Record<string, stri
     stopSim();
     setPoints([]);
     setStartedAt(Date.now());
+    setPausedMs(0);
+    setPausedAt(0);
     setStatus("tracking");
     void keepAwake();
     follow();
     void startNative(false);
   }, [follow, startNative]);
 
-  const pause = useCallback(() => { setStatus("paused"); releaseLock(); stopNative(false); }, [stopNative]);
-  const resume = useCallback(() => { setStatus("tracking"); void keepAwake(); follow(); void startNative(true); }, [follow, startNative]);
-  const reset = useCallback(() => { stopSim(); setPoints([]); setStatus("idle"); releaseLock(); stopNative(true); }, [stopNative]);
+  const pause = useCallback(() => { setPausedAt(Date.now()); setStatus("paused"); releaseLock(); stopNative(false); }, [stopNative]);
+  const resume = useCallback(() => { if (pausedAt) setPausedMs((m) => m + Math.max(0, Date.now() - pausedAt)); setPausedAt(0); setStatus("tracking"); void keepAwake(); follow(); void startNative(true); }, [follow, startNative, pausedAt]);
+  const reset = useCallback(() => { stopSim(); setPoints([]); setPausedMs(0); setPausedAt(0); setStatus("idle"); releaseLock(); stopNative(true); }, [stopNative]);
 
   /** Demo: walks a loop of `radiusM` around `center` in about 9 seconds (timestamps at walking pace). */
   const simulate = useCallback((center: GeoPoint, radiusM = 160) => {
@@ -163,6 +168,8 @@ export function useTracker(native?: { color: string; labels: Record<string, stri
     const walk = loopAround(center, radiusM, 40, Date.now(), 6.5);
     setPoints([]);
     setStartedAt(Date.now());
+    setPausedMs(0);
+    setPausedAt(0);
     setStatus("tracking");
     let i = 0;
     sim.current = window.setInterval(() => {
@@ -189,5 +196,7 @@ export function useTracker(native?: { color: string; labels: Record<string, stri
 
   const stats = cleanTrace(points);
   const loop = loopState(points);
-  return { points, status, startedAt, me, problem, awake, stats, loop, locate, start, pause, resume, reset, simulate, simulating: () => sim.current != null, background: () => nativeOn.current };
+  /** active walking time in seconds (pauses excluded) */
+  const elapsedSec = (now = Date.now()) => (startedAt ? Math.max(0, (now - startedAt - pausedMs - (status === "paused" && pausedAt ? now - pausedAt : 0)) / 1000) : 0);
+  return { points, status, startedAt, elapsedSec, me, problem, awake, stats, loop, locate, start, pause, resume, reset, simulate, simulating: () => sim.current != null, background: () => nativeOn.current };
 }

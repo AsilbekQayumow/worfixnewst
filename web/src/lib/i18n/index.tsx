@@ -106,7 +106,10 @@ export function useFmt() {
       return name.charAt(0).toUpperCase() + name.slice(1);
     },
     area: (m2: number) => (m2 >= 100_000 ? t("u.km2", { n: (m2 / 1_000_000).toFixed(2) }) : t("u.m2", { n: (uz ? Math.round(m2).toLocaleString("ru-RU") : Math.round(m2).toLocaleString(locale)) })),
-    clock: (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`,
+    clock: (s: number) => {
+      const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = String(Math.floor(s % 60)).padStart(2, "0");
+      return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${sec}` : `${m}:${sec}`;
+    },
     coords: (lat: number, lng: number) => `${Math.abs(lat).toFixed(4)}° ${lat >= 0 ? "N" : "S"}  ${Math.abs(lng).toFixed(4)}° ${lng >= 0 ? "E" : "W"}`,
   }), [locale, t, uz]);
 }

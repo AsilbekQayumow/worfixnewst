@@ -231,6 +231,8 @@ a.card:active { transform: translateY(1px); box-shadow: 0 1px 0 var(--line); }
 @media (prefers-reduced-motion: reduce) { .hud-chip.flame svg { animation: none !important; } }
 
 @media (max-width: 860px) {
+  /* the play tab bar is 70px, not the 64px globals.css assumes: keep every height sum honest */
+  :root { --tabbar: calc(70px + env(safe-area-inset-bottom)); }
   .main { padding: 16px 16px calc(var(--tabbar) + 20px); }
   .topbar { background: color-mix(in oklab, var(--surface) 94%, transparent); border-bottom: 2px solid var(--line); padding-right: 10px; }
   .tabbar { background: var(--surface); border-top: 2px solid var(--line); padding: 6px 6px env(safe-area-inset-bottom); gap: 4px; height: calc(70px + env(safe-area-inset-bottom)); }
@@ -538,6 +540,9 @@ html.is-native .side { overflow-y: auto; -webkit-overflow-scrolling: touch; }
    the map) that needs `.mapx` to fill the screen; other pages are untouched. */
 html.is-native .main-bleed .main-inner { height: 100%; }
 html.is-native .mapx { height: 100%; }
+/* the tab bar is fixed over the bottom of `.main`, so on phones the map stops above it: the OpenFreeMap/OSM
+   attribution and the zoom buttons used to be cut off underneath it */
+@media (max-width: 860px) { html.is-native .mapx { height: calc(100% - var(--tabbar)); } }
 
 /* Sharing photos into the app: pick the mission report */
 .share-pick {
