@@ -10,6 +10,9 @@ import { AVATAR_PRESETS, PresetArt } from "./avatar-presets";
 import { CATEGORY_ICON, Icon } from "./icons";
 import { Avatar, Button, Checkbox, Field, Notice, Select, TextArea, TextInput, useToast } from "./ui";
 import { UZ_DISTRICTS } from "@/lib/geo/uz-districts";
+import { PlacePicker, type PlaceValue } from "./place-picker";
+import { cityOfDistrict } from "@/lib/domain/validation";
+import { matchDistrict, matchMahalla } from "@/lib/game/places";
 
 /** Comma-separated tags input. */
 function TagsInput({ label, value, onChange, placeholder, error }: { label: string; value: string[]; onChange: (v: string[]) => void; placeholder?: string; error?: string }) {
@@ -30,7 +33,15 @@ export function ProfileForm({ me, onboarding, onSaved }: { me: SelfUser; onboard
     fullName: me.fullName, username: me.username.startsWith("user_") && onboarding ? "" : me.username, bio: me.bio, country: me.country || "Uzbekistan",
     province: me.province, city: me.city, feedVisible: me.feedVisible, languages: me.languages.length ? me.languages : ["O'zbek"], skills: me.skills,
     interests: me.interests as Category[], district: me.district ?? "", mahalla: me.mahalla ?? "",
+    districtId: me.districtId ?? null as number | null, mahallaId: me.mahallaId ?? null as string | null,
   });
+  // v7: older profiles typed their district and mahalla; match them to the list once
+  useEffect(() => {
+    if (me.districtId || !me.district || (me.country && me.country !== "Uzbekistan")) return;
+    const d = matchDistrict(me.province, me.district);
+    if (!d) return;
+    void matchMahalla(d.id, me.mahalla ?? "").then((m) => setForm((f) => (f.districtId ? f : { ...f, districtId: d.id, district: d.uz, mahallaId: m?.[0] ?? null, mahalla: m?.[1] ?? f.mahalla })));
+  }, [me]);
   const needAge = Boolean(onboarding && me.role === "volunteer" && !me.birthYear);
   const [birthYear, setBirthYear] = useState("");
   const [guardian, setGuardian] = useState(false);
@@ -48,9 +59,15 @@ export function ProfileForm({ me, onboarding, onSaved }: { me: SelfUser; onboard
   const provinces = geo.find((g) => g.n === form.country)?.s ?? [];
   const set = <K extends keyof typeof form>(k: K, v: (typeof form)[K]) => setForm((f) => ({ ...f, [k]: v }));
 
+  const uz = form.country === "Uzbekistan";
+  const place: PlaceValue = { province: form.province, districtId: form.districtId, district: form.district, mahallaId: form.mahallaId, mahalla: form.mahalla, missing: Boolean(form.districtId && !form.mahallaId && form.mahalla) };
+  const setPlace = (p: PlaceValue) => setForm((f) => ({ ...f, province: p.province, districtId: p.districtId, district: p.district, mahallaId: p.mahallaId, mahalla: p.mahalla, city: p.district ? cityOfDistrict(p.district) : f.city }));
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
     setBusy(true); setError(null); setFields({});
+    if (uz && me.role === "volunteer" && (!form.districtId || !form.mahalla.trim())) {
+      setFields({ ...(form.districtId ? {} : { district: "v.pickDistrict" }), ...(form.mahalla.trim() ? {} : { mahalla: "v.pickMahalla" }) }); setError(t("v.check")); setBusy(false); return;
+    }
     try {
       await api.updateProfile(form, { avatar, mapColor, onboarded: onboarding, ...(needAge ? { birthYear: Number(birthYear) || 0, guardianConsent: guardian } : {}) });
       toast(t("pf.saved"));
@@ -117,25 +134,29 @@ export function ProfileForm({ me, onboarding, onSaved }: { me: SelfUser; onboard
           <span className="label">{t("pf.location")}</span>
           <Button size="sm" variant="ghost" icon="crosshair" loading={locating} onClick={async () => {
             setLocating(true);
-            try { const d = await detectLocation(); setForm((f) => ({ ...f, ...d })); } catch (err) { toast(errText(err), "error"); } finally { setLocating(false); }
+            try { const d = await detectLocation(); setForm((f) => ({ ...f, ...d, ...(d.province !== f.province ? { districtId: null, district: "", mahallaId: null, mahalla: "" } : {}) })); } catch (err) { toast(errText(err), "error"); } finally { setLocating(false); }
           }}>{t("pf.detect")}</Button>
         </div>
-        <div className="grid cols-3">
-          <Select label={t("org.country")} value={form.country} onChange={(e) => setForm((f) => ({ ...f, country: e.target.value, province: "" }))} error={fields.country}>
+        <div className={uz ? "grid cols-2" : "grid cols-3"}>
+          <Select label={t("org.country")} value={form.country} onChange={(e) => setForm((f) => ({ ...f, country: e.target.value, province: "", districtId: null, mahallaId: null }))} error={fields.country}>
             {!geo.length && <option>{form.country}</option>}
             {geo.map((g) => <option key={g.c} value={g.n}>{g.n}</option>)}
           </Select>
-          <Select label={t("pf.province")} value={form.province} onChange={(e) => set("province", e.target.value)} disabled={!provinces.length}>
-            <option value="">—</option>
-            {provinces.map((p) => <option key={p} value={p}>{p}</option>)}
-          </Select>
+          {!uz && (
+            <Select label={t("pf.province")} value={form.province} onChange={(e) => set("province", e.target.value)} disabled={!provinces.length}>
+              <option value="">—</option>
+              {provinces.map((p) => <option key={p} value={p}>{p}</option>)}
+            </Select>
+          )}
           <TextInput label={t("org.city")} value={form.city} onChange={(e) => set("city", e.target.value)} error={fields.city} />
         </div>
-        <div className="grid cols-2">
-          <TextInput label={t("pf.district")} value={form.district} list="uz-districts" onChange={(e) => set("district", e.target.value)} error={fields.district} hint={t("pf.districtHint")} />
-          <TextInput label={t("pf.mahalla")} value={form.mahalla} onChange={(e) => set("mahalla", e.target.value)} error={fields.mahalla} placeholder={t("pf.mahallaPh")} />
-          <datalist id="uz-districts">{(UZ_DISTRICTS[form.province] ?? []).map((d) => <option key={d} value={d} />)}</datalist>
-        </div>
+        {uz ? <PlacePicker value={place} onChange={setPlace} errors={fields} /> : (
+          <div className="grid cols-2">
+            <TextInput label={t("pf.district")} value={form.district} list="uz-districts" onChange={(e) => set("district", e.target.value)} error={fields.district} hint={t("pf.districtHint")} />
+            <TextInput label={t("pf.mahalla")} value={form.mahalla} onChange={(e) => set("mahalla", e.target.value)} error={fields.mahalla} placeholder={t("pf.mahallaPh")} />
+            <datalist id="uz-districts">{(UZ_DISTRICTS[form.province] ?? []).map((d) => <option key={d} value={d} />)}</datalist>
+          </div>
+        )}
         <p className="t-small muted">{t("pf.areaWhy")}</p>
       </div>
       {needAge && (

@@ -5,7 +5,7 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { CATEGORY_ICON, Icon } from "@/components/icons";
 import { MissionsBoard } from "@/components/missions-board";
 import { useMe } from "@/components/providers";
-import { TerritoryMap, type MapArea, type MapMission } from "@/components/territory-map";
+import { TerritoryMap, type MapArea, type MapMission, type MapSpawn } from "@/components/territory-map";
 import { Avatar, Button, Dialog, Segmented, Skeleton, useToast } from "@/components/ui";
 import { GroupMark } from "@/components/group-bits";
 import { buzz, celebrate } from "@/lib/fx";
@@ -18,6 +18,10 @@ import { useErrorText, useFmt, useI18n } from "@/lib/i18n";
 import { api } from "@/lib/store/api";
 import { FIREBASE } from "@/lib/store/db";
 import { useApi } from "@/lib/store/hooks";
+import { api7 } from "@/lib/store/api7";
+import { BoostBar, ChestArt, QuizDialog, useAct } from "@/components/game";
+import type { QuizAsk } from "@/lib/game/quiz";
+import { SPAWN } from "@/lib/game/spawn";
 
 type Data = NonNullable<Awaited<ReturnType<typeof api.territoryMap>>>;
 type Capture = Awaited<ReturnType<typeof api.captureTerritory>>;
@@ -122,7 +126,7 @@ function TerritoryGame({ onList }: { onList: () => void }) {
 
   const d = q.data;
   const areas: MapArea[] = useMemo(() => (d?.areas ?? []).map((a) => ({
-    id: a.id, shape: a.shape, relation: a.relation, name: a.name, color: personColor(a.userId, a.mapColor),
+    id: a.id, shape: a.shape, relation: a.relation, name: a.name, color: personColor(a.userId, a.mapColor), pattern: a.pattern, flag: a.flag,
   })), [d]);
   const missions: MapMission[] = useMemo(() => (d?.missions ?? []).flatMap((m) => m.coordinates ? [{
     id: m.id, title: m.title, category: m.category, coordinates: m.coordinates, inMyArea: m.inMyArea, firstLook: Boolean(m.firstLookUntil), joined: m.joined,
@@ -131,6 +135,40 @@ function TerritoryGame({ onList }: { onList: () => void }) {
   const sorted = useMemo(() => [...(d?.missions ?? [])].sort((a, b) =>
     Number(b.inMyArea) - Number(a.inMyArea) || (here && a.coordinates && b.coordinates ? distanceM(here, a.coordinates) - distanceM(here, b.coordinates) : Date.parse(a.date) - Date.parse(b.date))), [d, here]);
   const sel = d?.missions.find((m) => m.id === selected) ?? null;
+
+  // v7: chests and events around the person (or their area until the GPS answers); refreshed every ~200 m.
+  const anchor = here ?? d?.areas.find((a) => a.relation === "mine")?.center ?? null;
+  const anchorKey = anchor ? `${anchor.lat.toFixed(3)},${anchor.lng.toFixed(3)}` : "";
+  const game = useApi(() => api7.game(anchor), [anchorKey]);
+  const spawns: MapSpawn[] = useMemo(() => (game.data ? [
+    ...game.data.chests.map((c) => ({ id: c.id, kind: c.kind, at: c.at, opened: c.opened })),
+    ...game.data.events.filter((e) => !e.opened).map((e) => ({ id: e.id, kind: e.kind, at: e.at, opened: false, event: true })),
+  ] : []), [game.data]);
+  const [quiz, setQuiz] = useState<QuizAsk | null>(null);
+  const { run: act, busy: acting } = useAct();
+  const reachable = here ? spawns.filter((x) => !x.opened && distanceM(here, x.at) <= SPAWN.reachM + Math.min(here.accuracy ?? 0, 20)) : [];
+  const openSpawn = async (id: string) => {
+    const x = spawns.find((s) => s.id === id);
+    if (!x) return;
+    if (x.opened) { toast(t("cs.opened")); return; }
+    if (!here) { gps.locate(); toast(t("cs.needGps"), "error"); return; }
+    const dist = distanceM(here, x.at);
+    if (dist > SPAWN.reachM + Math.min(here.accuracy ?? 0, 20)) { toast(t("cs.far", { d: f.distance(dist) })); setFocus({ point: x.at, zoom: 17, key: `sp${Date.now()}` }); return; }
+    const r = await act(id, { t: "open", id, pos: { lat: here.lat, lng: here.lng, acc: here.accuracy ?? null, mock: gps.fairplay().mock } });
+    if (!r) return;
+    buzz(30);
+    if (r.quiz) setQuiz(r.quiz);
+    else if (r.kind === "boost") toast(t("mev.boostOn"));
+  };
+  // v7: "someone took part of your area" opens here with the spot
+  const retake = params.get("retake");
+  const retakeBy = params.get("by");
+  const [retakeOpen, setRetakeOpen] = useState(Boolean(retake));
+  useEffect(() => {
+    if (!retake) return;
+    const [lat, lng] = retake.split(",").map(Number);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) setFocus({ point: { lat, lng }, zoom: 16, key: `rt${retake}` });
+  }, [retake]);
 
   // The loop closes on its own when the walker comes back to the start.
   useEffect(() => {
@@ -186,7 +224,27 @@ function TerritoryGame({ onList }: { onList: () => void }) {
         areas={areas} missions={capturing ? [] : missions} me={here} trace={gps.points} flash={flash} taken={taken} myColor={myColor}
         hot={d?.hot && !capturing ? { point: d.hot.point, label: t("tm.hot", { n: d.hot.people }) } : null} focus={focus} selected={selected}
         onMission={(id) => { setSelected(id); setSheet(false); buzz(8); }}
+        spawns={spawns} onSpawn={(id) => void openSpawn(id)}
       />
+
+      {/* v7: the nearest chest or event within reach, one big button (also while walking) */}
+      {reachable[0] && (
+        <div className="mapx-chest" role="status">
+          {reachable[0].event ? <span className="tm-spawn tm-event" data-kind={reachable[0].kind} aria-hidden="true"><Icon name="zap" size={16} /></span> : <ChestArt kind={reachable[0].kind} size={40} />}
+          <span className="stack g4 grow" style={{ minWidth: 0 }}><strong>{reachable[0].event ? t(`mev.${reachable[0].kind}`) : t(`cs.${reachable[0].kind}`)}</strong><span className="t-small secondary">{t("cs.here")}</span></span>
+          <Button variant="primary" loading={acting === reachable[0].id} onClick={() => void openSpawn(reachable[0].id)}>{t("cs.open")}</Button>
+        </div>
+      )}
+      {game.data?.boostUntil && <div className="mapx-boost"><BoostBar until={game.data.boostUntil} /></div>}
+      {retake && retakeOpen && !capturing && (
+        <div className="mapx-retake" role="alert">
+          <Icon name="flag" size={18} />
+          <span className="stack g4 grow"><strong>{t("rtk.title")}</strong><span className="t-small">{t("rtk.body", { name: retakeBy ?? "—" })}</span></span>
+          {d?.me.canCapture && <Button variant="primary" size="sm" icon="footprints" onClick={() => { setRetakeOpen(false); startCapture(); }}>{t("rtk.go")}</Button>}
+          <button type="button" className="mapx-card-x" style={{ position: "static" }} onClick={() => setRetakeOpen(false)} aria-label={t("a.close")}><Icon name="x" size={16} /></button>
+        </div>
+      )}
+      <QuizDialog quiz={quiz} onClose={() => setQuiz(null)} />
 
       {/* top bar over the map */}
       <div className="mapx-top">

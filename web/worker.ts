@@ -13,6 +13,7 @@ import { FUNCTIONS } from "./src/lib/server/functions";
 import { runTerritoryDecay } from "./src/lib/server/handlers";
 import { runStreakReminders } from "./src/lib/server/push";
 import { runMissionReminders } from "./src/lib/server/v6";
+import { runGameTick } from "./src/lib/server/v7";
 
 /**
  * v5 app links: worfix.site links open in the WORFIX app. SHA-256 fingerprints of the Android signing
@@ -93,7 +94,11 @@ export default {
     // 13:00 UTC (18:00 in Tashkent): "your streak ends today" pushes; every other cron: the territory decay.
     if (event.cron === "0 13 * * *") ctx.waitUntil(runStreakReminders().then((r) => console.log("[streak-reminders]", JSON.stringify(r))));
     // v6: "ending soon" mission reminders, every 30 minutes
-    else if (event.cron === "*/30 * * * *") ctx.waitUntil(runMissionReminders().then((r) => console.log("[mission-reminders]", JSON.stringify(r))));
+    // v7: the game tick (heat map, mahalla battles, duels) runs on the same cron
+    else if (event.cron === "*/30 * * * *") {
+      ctx.waitUntil(runMissionReminders().then((r) => console.log("[mission-reminders]", JSON.stringify(r))));
+      ctx.waitUntil(runGameTick().then((r) => console.log("[game-tick]", JSON.stringify(r))).catch((e) => console.error("[game-tick]", e)));
+    }
     else ctx.waitUntil(runTerritoryDecay().then((r) => console.log("[territory-decay]", JSON.stringify(r))));
   },
 };

@@ -1,3 +1,4 @@
+import { districtById, REGIONS } from "../game/places";
 import { CATEGORIES, DIFFICULTIES, LANGS, PRIVACY_MODES, type Category, type Difficulty, type Lang, type PrivacyMode } from "./types";
 
 export const MAX_IMAGE_BYTES = 12 * 1024 * 1024;
@@ -59,7 +60,29 @@ export interface RegisterInput {
   ageConfirmed: boolean; guardianConsent: boolean; birthYear: number;
   /** required when accountType = organization */
   organization?: OrganizationInput;
+  /** v7: required for volunteers — picked from the official list */
+  place?: PlaceInput;
 }
+
+/** v7: viloyat → tuman → mahalla, picked from the list (never typed, except a mahalla sent for adding). */
+export interface PlaceInput { province: string; districtId: number | null; district: string; mahallaId: string | null; mahalla: string }
+
+export function validatePlace(i: Partial<PlaceInput> | undefined, required: boolean): { errors: Errors; data: PlaceInput | null } {
+  const e: Errors = {};
+  const d = districtById(i?.districtId ?? null);
+  const region = d ? REGIONS.find((r) => r.id === d.r) : null;
+  const mahalla = str(i?.mahalla);
+  const mahallaId = str(i?.mahallaId);
+  if (!i || (!d && !required)) return { errors: e, data: null };
+  if (!region) e.province = "v.pickRegion";
+  if (!d) e.district = "v.pickDistrict";
+  if (!mahalla || mahalla.length > 80) e.mahalla = "v.pickMahalla";
+  if (mahallaId && !/^(m\d{1,6}|c_[a-z0-9-]{4,40})$/.test(mahallaId)) e.mahalla = "v.pickMahalla";
+  if (Object.keys(e).length) return { errors: e, data: null };
+  return { errors: e, data: { province: region!.p, districtId: d!.id, district: d!.uz, mahallaId: mahallaId || null, mahalla } };
+}
+/** The city a district stands for ("Urgut tumani" → "Urgut"). */
+export const cityOfDistrict = (district: string) => district.replace(/\s+(tumani|shahri)$/i, "");
 
 export function validateRegister(i: Partial<RegisterInput>): Result<RegisterInput> {
   const e: Errors = {};
@@ -81,9 +104,15 @@ export function validateRegister(i: Partial<RegisterInput>): Result<RegisterInpu
     if (!o.ok) for (const [k, v] of Object.entries(o.errors)) e[`org.${k}`] = v;
     else organization = o.data;
   }
+  let place: PlaceInput | undefined;
+  if (accountType === "volunteer") {
+    const pl = validatePlace(i.place, true);
+    Object.assign(e, pl.errors);
+    place = pl.data ?? undefined;
+  }
   return done(e, {
     fullName, email, password, accountType, ageConfirmed: i.ageConfirmed === true, guardianConsent: i.guardianConsent === true,
-    birthYear: Number(i.birthYear) || 0, organization,
+    birthYear: Number(i.birthYear) || 0, organization, place,
   });
 }
 
@@ -100,6 +129,8 @@ export interface ProfileInput {
   feedVisible: boolean; languages: string[]; skills: string[]; interests: Category[];
   /** v3: tuman and mahalla, for the local leaderboards (optional) */
   district?: string; mahalla?: string;
+  /** v7: ids from the official list */
+  districtId?: number | null; mahallaId?: string | null;
 }
 
 const list = (v: unknown, max: number) => (Array.isArray(v) ? v : []).map((x) => str(x)).filter(Boolean).slice(0, max);
@@ -110,8 +141,14 @@ export function validateProfile(i: Partial<ProfileInput>): Result<ProfileInput> 
     fullName: str(i.fullName), username: str(i.username).toLowerCase(), bio: str(i.bio), country: str(i.country), province: str(i.province),
     city: str(i.city), feedVisible: i.feedVisible !== false, languages: list(i.languages, 10), skills: list(i.skills, 20),
     interests: (Array.isArray(i.interests) ? i.interests : []).filter((c): c is Category => (CATEGORIES as readonly string[]).includes(c)),
-    district: str(i.district), mahalla: str(i.mahalla),
+    district: str(i.district), mahalla: str(i.mahalla), districtId: null, mahallaId: null,
   };
+  // v7: in Uzbekistan the district and mahalla come from the list
+  if (i.districtId != null && i.districtId !== ("" as unknown)) {
+    const pl = validatePlace({ province: d.province, districtId: i.districtId, district: d.district, mahallaId: i.mahallaId ?? null, mahalla: d.mahalla }, true);
+    Object.assign(e, pl.errors);
+    if (pl.data) Object.assign(d, { province: pl.data.province, district: pl.data.district, districtId: pl.data.districtId, mahalla: pl.data.mahalla, mahallaId: pl.data.mahallaId });
+  }
   if ((d.district ?? "").length > 80) e.district = "v.tooLong";
   if ((d.mahalla ?? "").length > 80) e.mahalla = "v.tooLong";
   if (d.fullName.length < 2 || d.fullName.length > 80) e.fullName = "v.name";

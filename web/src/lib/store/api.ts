@@ -19,7 +19,7 @@ import {
 } from "../domain/community";
 import { rankFor, RANKS, xpForLevel } from "../domain/rewards";
 import {
-  ageErrors, passwordProblem, validateLogin, validateMission, validateOrganization, validatePersonal, validateProfile, validateRegister,
+  ageErrors, cityOfDistrict, passwordProblem, validateLogin, validateMission, validateOrganization, validatePersonal, validateProfile, validateRegister,
   type Errors, type MissionInput, type OrganizationInput, type PersonalInput, type ProfileInput, type RegisterInput, type Result,
 } from "../domain/validation";
 import type {
@@ -145,7 +145,7 @@ function canSee(db: DB, viewer: UserProfile, target: UserProfile) {
 function person(u: UserProfile) {
   return {
     id: u.id, fullName: u.fullName, username: u.username, avatar: u.avatar, city: u.city, province: u.province, country: u.country,
-    district: u.district ?? "", mahalla: u.mahalla ?? "", mapColor: u.mapColor ?? null,
+    district: u.district ?? "", mahalla: u.mahalla ?? "", mapColor: u.mapColor ?? null, look: u.look ?? null,
     level: levelForXp(u.xp), xp: u.xp, hours: u.totalVolunteerHours, impact: u.totalImpact, streak: u.streak, privacy: privacyOf(u),
   };
 }
@@ -299,6 +299,10 @@ export const api = {
         onboarded: data.accountType === "organization", organizationId: null, role: data.accountType, status: "active", createdAt: t, updatedAt: t,
         lastLogin: t, language, privacy: "public", phone: "", birthYear: data.accountType === "volunteer" ? data.birthYear : null,
       };
+      if (data.place) Object.assign(user, {
+        country: "Uzbekistan", province: data.place.province, city: cityOfDistrict(data.place.district), district: data.place.district,
+        districtId: data.place.districtId, mahalla: data.place.mahalla, mahallaId: data.place.mahallaId,
+      });
       userId = user.id;
       db.users.push(user);
       log(db, { id: user.id, role: user.role }, "user.register", "users", user.id);
@@ -1873,7 +1877,7 @@ export const api = {
       const g = groupOf(db, t.userId);
       const relation: "mine" | "group" | "other" = t.userId === u.id ? "mine" : side.has(t.userId) ? "group" : "other";
       return {
-        id: t.id, userId: t.userId, name: owner?.fullName ?? "—", avatar: owner?.avatar ?? null, mapColor: owner?.mapColor ?? null, areaM2: t.areaM2, shape: decodeShape(t.shape)!,
+        id: t.id, userId: t.userId, name: owner?.fullName ?? "—", avatar: owner?.avatar ?? null, mapColor: owner?.mapColor ?? null, pattern: owner?.look?.pattern ?? null, flag: owner?.look?.flag ?? null, areaM2: t.areaM2, shape: decodeShape(t.shape)!,
         center: t.center, relation, group: g ? { id: g.id, name: g.name, color: g.color } : null, updatedAt: t.updatedAt,
       };
     }).filter((a) => a.shape);
@@ -2036,7 +2040,9 @@ export const api = {
           const recent = t.takenNotice && t.takenNotice.by === u.id && Date.now() - Date.parse(t.takenNotice.at) < 12 * 3_600_000;
           if (lost >= TERRITORY.notifyLossM2 && !recent) {
             t.takenNotice = { by: u.id, at: nowIso() };
-            notify(db, t.userId, "system", "n.territoryTaken", { name: u.fullName, area: fmtArea(lost), left: fmtArea(area) }, "/app/map");
+            const c = centerOf(res.shape);
+            // v7: the notice opens the map on the lost spot with a "take it back" banner
+            notify(db, t.userId, "system", "n.territoryTaken", { name: u.fullName, area: fmtArea(lost), left: fmtArea(area) }, c ? `/app/map?retake=${c.lat.toFixed(5)},${c.lng.toFixed(5)}&by=${encodeURIComponent(u.fullName)}` : "/app/map");
           }
         }
         const id = `${season}_${u.id}`;

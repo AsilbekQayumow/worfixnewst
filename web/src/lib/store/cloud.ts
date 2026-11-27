@@ -24,15 +24,19 @@ const config = {
   appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
 };
 
+import { gameDay, gameWeek } from "../game/core";
+
 export const FIREBASE_ENABLED = Boolean(config.apiKey && config.projectId && config.appId);
 
 /** Readable while signed out: what the public website shows. */
-const PUBLIC = ["missions", "organizations", "certificates", "shopItems", "challenges"] as const;
+const PUBLIC = ["missions", "organizations", "certificates", "shopItems", "challenges", "battles", "heat", "places"] as const;
 const PRIVATE = [
   "users", "participants", "submissions", "records", "notifications", "audits", "friendships", "cheers", "orders", "messages", "announcements",
   "news", "groups", "groupJoins", "helpSignals", "promoCodes", "territories", "territoryCaptures", "groupRequests",
   // v6
   "reports", "challengeProgress", "ratings", "orgFollows", "diaryNotes", "reminderLog",
+  // v7
+  "play", "duels", "placeRequests",
 ] as const;
 /** v3: read per group the signed-in user belongs to (see followGroups). */
 const PER_GROUP = ["groupMessages", "groupCodes"] as const;
@@ -76,7 +80,12 @@ let handlers: { onData: (name: SyncedName, docs: Doc[]) => void; onError: (messa
  */
 function refsFor(name: SyncedName, uid?: string): Query[] {
   const c = collection(fs, name);
+  // v7: only this week's and last week's battles, today's heat map
+  if (name === "battles") { const w = gameWeek(Date.now()); return [query(c, where("week", "in", [w, gameWeek(Date.now() - 7 * 86_400_000)]))]; }
+  if (name === "heat") return [query(c, where("day", "==", gameDay(Date.now())))];
   if (!uid) return [c];
+  if (name === "play" || name === "placeRequests") return [c, query(c, where("userId", "==", uid))];
+  if (name === "duels") return [query(c, where("players", "array-contains", uid))];
   if (name === "notifications" || name === "groupJoins" || name === "diaryNotes" || name === "reminderLog") return [query(c, where("userId", "==", uid))];
   // v6: admins read every report and follow; everyone else only their own
   if (name === "reports") return [c, query(c, where("reporterId", "==", uid))];

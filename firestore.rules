@@ -47,12 +47,13 @@ service cloud.firestore {
         && request.resource.data.status == 'active'
         && request.resource.data.xp == 0 && request.resource.data.points == 0 && request.resource.data.level == 1
         && request.resource.data.emailVerified == false
+        && request.resource.data.get('look', null) == null
         && noLegacyClaims();
       allow update: if
         // Owner: profile, personal info, language and privacy. Never role or rewards. Fixcoin may only go down
         // (spent in the shop — the order rule below checks the amount).
         (signedIn() && uid() == userId
-          && !touches(['id', 'role', 'xp', 'level', 'trustScore', 'reputation', 'streak', 'lastApprovedDay', 'totalVolunteerHours', 'totalImpact', 'impact'])
+          && !touches(['id', 'role', 'xp', 'level', 'trustScore', 'reputation', 'streak', 'lastApprovedDay', 'totalVolunteerHours', 'totalImpact', 'impact', 'look'])
           && (!touches(['points']) || (request.resource.data.points >= 0 && request.resource.data.points < resource.data.points))
           && (!touches(['status']) || request.resource.data.status == 'deleted')
           && (!touches(['emailVerified']) || request.auth.token.email_verified == true)
@@ -432,6 +433,43 @@ service cloud.firestore {
       allow read: if signedIn() && resource.data.userId == uid();
       allow update: if signedIn() && resource.data.userId == uid() && onlyTouches(['openedAt']);
       allow create, delete: if false;
+    }
+
+    // ── v7: the game ──
+    // play/{uid}: the per-person game state, written only by the `play` server function (Admin SDK).
+    match /play/{userId} {
+      allow read: if signedIn() && (uid() == userId || isAdmin());
+      allow write: if false;
+    }
+    // Heat map and mahalla battles: computed by the Worker cron; everyone may read them.
+    match /heat/{id} { allow read: if true; allow write: if false; }
+    match /battles/{id} { allow read: if true; allow write: if false; }
+    // Mahallas added by admins on top of the shipped list.
+    match /places/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    // A mahalla missing from the list: the person asks, an admin adds or rejects it.
+    match /placeRequests/{id} {
+      allow read: if signedIn() && (resource.data.userId == uid() || isAdmin());
+      allow create: if active() && request.resource.data.userId == uid() && request.resource.data.status == 'pending'
+        && request.resource.data.name is string && request.resource.data.name.size() >= 2 && request.resource.data.name.size() <= 80
+        && request.resource.data.districtId is int && request.resource.data.decidedBy == null;
+      allow update: if isAdmin() && onlyTouches(['status', 'decidedBy', 'decidedAt']) && request.resource.data.status in ['added', 'rejected'];
+      allow delete: if false;
+    }
+    // Duels between friends: created by one, accepted or declined by the other; scores and the result come from the cron.
+    match /duels/{id} {
+      allow read: if signedIn() && uid() in resource.data.players;
+      allow create: if active() && request.resource.data.from == uid() && request.resource.data.players == [uid(), request.resource.data.to]
+        && request.resource.data.status == 'pending' && request.resource.data.winner == null && request.resource.data.start == null
+        && request.resource.data.metric in ['area', 'walkKm', 'hours'] && areFriends(uid(), request.resource.data.to);
+      allow update: if active() && resource.data.status == 'pending'
+        && ((resource.data.to == uid() && onlyTouches(['status', 'start', 'end', 'scores', 'updatedAt'])
+              && (request.resource.data.status == 'declined'
+                  || (request.resource.data.status == 'active' && request.resource.data.scores[resource.data.players[0]] == 0 && request.resource.data.scores[resource.data.players[1]] == 0)))
+            || (resource.data.from == uid() && onlyTouches(['status', 'updatedAt']) && request.resource.data.status == 'declined'));
+      allow delete: if false;
     }
   }
 }

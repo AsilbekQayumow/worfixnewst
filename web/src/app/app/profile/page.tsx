@@ -3,6 +3,9 @@ import { MyFollows } from "@/components/follow-row";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { AchievementGrid, Medal } from "@/components/achievements";
+import { BadgeShelf, ImpactCounter, LookAvatar, LookTitle } from "@/components/game";
+import { tierRarity } from "@/lib/game/badges";
+import { api7 } from "@/lib/store/api7";
 import { MyTree } from "@/components/my-tree";
 import { personColor } from "@/lib/map-colors";
 import { ShareCard } from "@/components/results";
@@ -43,6 +46,7 @@ function Profile() {
   const [tab, setTab] = useState<Tab>(initial === "achievements" || initial === "certificates" || initial === "report" ? initial : "overview");
   const ins = useApi(() => api.myInsights());
   const certs = useApi(() => api.myCertificates());
+  const game = useApi(() => api7.game(null));
   const [open, setOpen] = useState<Certificate | null>(null);
   if (!me) return null;
   const lp = levelProgress(me.xp);
@@ -52,9 +56,11 @@ function Profile() {
       <PageHead title={t("nav.profile")} actions={<>{me.role === "volunteer" && <ShareCard />}<ButtonLink href="/app/diary" icon="book">{t("di.title")}</ButtonLink><ButtonLink href="/app/settings" icon="edit">{t("pf.edit")}</ButtonLink></>} />
       {me.role === "volunteer" && <MyFollows />}
       <section className="row g20 wrap profile5-head" style={{ ["--tint" as string]: personColor(me.id, me.mapColor) }}>
-        <span className="profile5-avatar"><Avatar name={me.fullName} src={me.avatar} size={96} /></span>
+        <span className="profile5-avatar"><LookAvatar name={me.fullName} src={me.avatar} size={96} frame={me.look?.frame} /></span>
         <div className="stack g8 grow" style={{ minWidth: 220 }}>
           <h2 className="t-h1">{me.fullName}</h2>
+          {me.look?.title && <LookTitle id={me.look.title} />}
+          {me.mahalla && <span className="t-small secondary row g4"><Icon name="pin" size={14} />{[me.mahalla, me.district].filter(Boolean).join(", ")}</span>}
           <span className="secondary">@{me.username} · {t("lvl.long", { n: lp.level })} · {t(levelTitleKey(lp.level))}{me.city ? ` · ${me.city}` : ""}</span>
           {me.bio && <p className="secondary" style={{ maxWidth: 560 }}>{me.bio}</p>}
           <div className="row g12 wrap">{me.interests.map((c) => <CategoryTag key={c} category={c} />)}</div>
@@ -103,22 +109,24 @@ function Profile() {
             </div>
             <p className="t-small muted">{t("pf.certRule")}</p>
           </section>
-          {Object.keys(me.impact).length > 0 && (
-            <section className="card pad stack g12">
-              <h3 className="t-h3">{t("pf.impact")}</h3>
-              <ul className="stack g8">
-                {Object.entries(me.impact).sort((a, b) => b[1] - a[1]).map(([k, v]) => (
-                  <li key={k} className="row between t-small"><span className="secondary">{k}</span><span className="num" style={{ fontWeight: 500 }}>{f.num(v)}</span></li>
-                ))}
-              </ul>
-            </section>
-          )}
+          <ImpactCounter items={Object.entries(me.impact).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])} />
+          {me.role === "volunteer" && <ButtonLink href="/app/wrapped" icon="share">{t("wr.open")}</ButtonLink>}
         </div>
       )}
 
       {tab === "report" && <MyReport />}
 
-      {tab === "achievements" && (ins.data ? <AchievementGrid list={ins.data.achievements} /> : <Skeleton rows={4} height={140} />)}
+      {tab === "achievements" && (ins.data ? (
+        <div className="stack g24">
+          <section className="card pad">
+            <BadgeShelf items={[
+              ...ins.data.achievements.map((a) => ({ id: a.id, rarity: tierRarity(a.tier), done: a.unlocked, value: a.current, goal: a.goal, label: a.title[lang] })),
+              ...(game.data?.badges ?? []).map((b) => ({ ...b, label: t(`bd.${b.family}`, { n: b.goal }) })),
+            ]} />
+          </section>
+          <details className="card pad"><summary className="t-h3">{t("bd.details")}</summary><AchievementGrid list={ins.data.achievements} /></details>
+        </div>
+      ) : <Skeleton rows={4} height={140} />)}
 
       {tab === "certificates" && (
         !certs.data ? <Skeleton rows={2} height={120} /> : certs.data.length === 0 ? (

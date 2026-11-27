@@ -7,9 +7,14 @@ import type { Category, GeoPoint } from "@/lib/domain/types";
 import { useI18n } from "@/lib/i18n";
 import { renderToStaticMarkup } from "react-dom/server";
 import { shade } from "@/lib/map-colors";
-import { CATEGORY_ICON, Icon } from "./icons";
+import { CATEGORY_ICON, Icon, type IconName } from "./icons";
+import { ChestArt } from "./game";
+import { FLAG_ICON } from "@/lib/game/season";
+import { centerOf } from "@/lib/domain/territory";
 
-export interface MapArea { id: string; shape: Shape; relation: "mine" | "group" | "other"; color: string; name: string }
+export interface MapArea { id: string; shape: Shape; relation: "mine" | "group" | "other"; color: string; name: string; pattern?: string | null; flag?: string | null }
+/** v7: chests and events on the map. */
+export interface MapSpawn { id: string; kind: string; at: GeoPoint; opened: boolean; event?: boolean }
 export interface MapMission { id: string; title: string; category: Category; coordinates: GeoPoint; inMyArea: boolean; firstLook: boolean; joined: boolean }
 
 const STYLE = { light: "https://tiles.openfreemap.org/styles/liberty", dark: "https://tiles.openfreemap.org/styles/dark" };
@@ -27,7 +32,7 @@ const css = (name: string, fallback: string) => (typeof document === "undefined"
 
 const fc = (features: GeoJSON.Feature[]): GeoJSON.FeatureCollection => ({ type: "FeatureCollection", features });
 const areaFeature = (a: MapArea): GeoJSON.Feature => ({
-  type: "Feature", id: a.id, properties: { id: a.id, relation: a.relation, name: a.name, color: a.color, line: shade(a.color) },
+  type: "Feature", id: a.id, properties: { id: a.id, relation: a.relation, name: a.name, color: a.color, line: shade(a.color), pattern: a.pattern ?? "" },
   geometry: { type: "MultiPolygon", coordinates: a.shape },
 });
 
@@ -50,7 +55,7 @@ function missionEl(m: MapMission) {
  * The game map: this month's areas, the missions on it, where I am and — while capturing — the loop being walked.
  * `flash` briefly fills a newly taken area. Liberty/dark vector tiles, raster OpenStreetMap as a fallback.
  */
-export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, done, onDone, focus, onMission, selected, myColor, height = "100%" }: {
+export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, done, onDone, spawns, onSpawn, focus, onMission, selected, myColor, height = "100%" }: {
   areas: MapArea[];
   missions: MapMission[];
   me: (GeoPoint & { accuracy?: number | null }) | null;
@@ -63,6 +68,9 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
   onDone?: (id: string) => void;
   /** This week's busiest spot: a slow pulse with a label. */
   hot?: { point: GeoPoint; label: string } | null;
+  /** v7: chests and events; tapping one calls onSpawn */
+  spawns?: MapSpawn[];
+  onSpawn?: (id: string) => void;
   focus: { point: GeoPoint; zoom?: number; key: string } | null;
   onMission: (id: string) => void;
   selected: string | null;
@@ -154,10 +162,18 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
       "fill-color": ["get", "color"],
       "fill-opacity": ["match", ["get", "relation"], "mine", 0.26, "group", 0.2, 0.13],
     } });
-    add({ id: "areas-line", type: "line", source: "areas", layout: { "line-join": "round" }, paint: {
+    add({ id: "areas-line", type: "line", source: "areas", filter: ["==", ["get", "pattern"], ""], layout: { "line-join": "round" }, paint: {
       "line-color": ["get", "line"], "line-width": ["match", ["get", "relation"], "mine", 2.6, 1.6],
       "line-dasharray": ["match", ["get", "relation"], "other", ["literal", [2, 1.5]], ["literal", [1, 0]]],
     } });
+    // v7: border patterns from the game (one layer each: dash arrays cannot vary per feature)
+    const pat = (id: string, paint: Record<string, unknown>, layout: Record<string, unknown> = { "line-join": "round" }) =>
+      add({ id: `areas-${id}`, type: "line", source: "areas", filter: ["==", ["get", "pattern"], id], layout, paint: { "line-color": ["get", "line"], ...paint } } as Parameters<MlMap["addLayer"]>[0]);
+    pat("pa_dash", { "line-width": 3, "line-dasharray": [3, 2] });
+    pat("pa_dots", { "line-width": 3.4, "line-dasharray": [0.1, 2] }, { "line-cap": "round", "line-join": "round" });
+    pat("pa_double", { "line-width": 1.8, "line-offset": -3 });
+    add({ id: "areas-pa_double2", type: "line", source: "areas", filter: ["==", ["get", "pattern"], "pa_double"], paint: { "line-color": ["get", "line"], "line-width": 1.8, "line-offset": 2 } });
+    pat("pa_bold", { "line-width": 5.5 });
     add({ id: "taken-fill", type: "fill", source: "taken", paint: { "fill-color": ["get", "color"], "fill-opacity": 0 } });
     add({ id: "taken-line", type: "line", source: "taken", paint: { "line-color": ["get", "color"], "line-width": 3, "line-opacity": 0, "line-dasharray": [1.5, 1] } });
     add({ id: "flash-fill", type: "fill", source: "flash", paint: { "fill-color": accent, "fill-opacity": 0 } });
@@ -276,6 +292,50 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
     });
     return () => { donePins.current.forEach((p) => p.remove()); donePins.current = []; };
   }, [done, ready > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // v7: chests and events.
+  const spawnPins = useRef<MlMarker[]>([]);
+  const pickSpawn = useRef(onSpawn);
+  pickSpawn.current = onSpawn;
+  const spawnKey = (spawns ?? []).map((x) => `${x.id}${x.opened ? "o" : ""}`).join("|");
+  useEffect(() => {
+    const m = map.current, ml = lib.current;
+    spawnPins.current.forEach((p) => p.remove());
+    spawnPins.current = [];
+    if (!m || !ml || !spawns?.length) return;
+    for (const x of spawns) {
+      const el = document.createElement("button");
+      el.type = "button";
+      el.className = x.event ? "tm-spawn tm-event" : "tm-spawn";
+      el.dataset.kind = x.kind;
+      if (x.opened) el.dataset.opened = "1";
+      el.setAttribute("aria-label", t(x.event ? `mev.${x.kind}` : `cs.${x.kind}`));
+      el.innerHTML = x.event ? renderToStaticMarkup(<Icon name={x.kind === "boost" ? "zap" : "target"} size={16} strokeWidth={2.4} />) : renderToStaticMarkup(<ChestArt kind={x.kind} size={30} open={x.opened} />);
+      el.addEventListener("click", (e) => { e.stopPropagation(); pickSpawn.current?.(x.id); });
+      spawnPins.current.push(new ml.Marker({ element: el, anchor: "bottom" }).setLngLat([x.at.lng, x.at.lat]).addTo(m));
+    }
+    return () => { spawnPins.current.forEach((p) => p.remove()); spawnPins.current = []; };
+  }, [spawnKey, ready > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // v7: area flags.
+  const flagPins = useRef<MlMarker[]>([]);
+  const flagKey = areas.filter((a) => a.flag).map((a) => `${a.id}${a.flag}${a.shape.length}`).join("|");
+  useEffect(() => {
+    const m = map.current, ml = lib.current;
+    flagPins.current.forEach((p) => p.remove());
+    flagPins.current = [];
+    if (!m || !ml) return;
+    for (const a of areas) {
+      if (!a.flag || !a.shape.length) continue;
+      const c = centerOf(a.shape);
+      const el = document.createElement("span");
+      el.className = "tm-flag";
+      el.style.setProperty("--c", a.color);
+      el.innerHTML = renderToStaticMarkup(<Icon name={(FLAG_ICON[a.flag] ?? "flag") as IconName} size={14} strokeWidth={2.4} />);
+      flagPins.current.push(new ml.Marker({ element: el, anchor: "bottom" }).setLngLat([c.lng, c.lat]).addTo(m));
+    }
+    return () => { flagPins.current.forEach((p) => p.remove()); flagPins.current = []; };
+  }, [flagKey, ready > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // This week's busiest spot.
   const hotMarker = useRef<MlMarker | null>(null);

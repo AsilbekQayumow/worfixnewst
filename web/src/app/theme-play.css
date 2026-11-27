@@ -710,3 +710,116 @@ button.star:active { transform: scale(0.9); }
 .choice { padding: 9px 12px; }
 .choice .t-small { font-size: 13px; }
 button.link { border: 0; background: none; padding: 0; font: inherit; cursor: pointer; }
+
+/* ───────────── v7 · the game ───────────── */
+.pad-s { padding: 12px; }
+.daily7 { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.daily7-art { display: grid; place-items: center; width: 72px; height: 72px; border-radius: 20px; background: var(--sun-soft); box-shadow: inset 0 -3px 0 var(--sun-lip); flex: none; }
+.daily7[data-done] .daily7-art { background: var(--raised); box-shadow: none; }
+.daily7:not([data-done]) .chest-art { animation: chest-bob 2.6s var(--ease-out) infinite; }
+@keyframes chest-bob { 0%, 70%, 100% { transform: translateY(0) rotate(0); } 78% { transform: translateY(-4px) rotate(-4deg); } 86% { transform: translateY(0) rotate(3deg); } }
+.streak-dots { display: inline-flex; gap: 4px; margin-top: 2px; }
+.streak-dots i { width: 14px; height: 8px; border-radius: 4px; background: var(--line); }
+.streak-dots i[data-on] { background: var(--flame); }
+.streak-dots i[data-big] { width: 22px; }
+.quest7 { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 16px; border: 2px solid var(--line); background: var(--surface); color: inherit; text-decoration: none; }
+.quest7[data-done] { opacity: .62; }
+.quest7.mini { padding: 8px 10px; border-width: 1px; }
+.quest7-ic { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 11px; background: var(--accent-soft); color: var(--accent); flex: none; }
+.boost7 { padding: 8px 14px; border-radius: 14px; background: var(--sun-soft); color: var(--text); box-shadow: inset 0 -2px 0 var(--sun-lip); width: fit-content; }
+.game-home { border-color: color-mix(in oklab, var(--sun) 45%, var(--line)); }
+
+/* quiz */
+.quiz7-opt { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 14px; border-radius: 14px; border: 2px solid var(--line); background: var(--surface); color: var(--text); font: inherit; cursor: pointer; transition: transform .12s var(--ease-out), border-color .12s; }
+.quiz7-opt:not(:disabled):active { transform: scale(.98); }
+@media (hover: hover) and (pointer: fine) { .quiz7-opt:not(:disabled):hover { border-color: var(--accent); } }
+.quiz7-opt:disabled { cursor: default; }
+.quiz7-l { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 9px; background: var(--raised); font-weight: 800; flex: none; }
+.quiz7-opt[data-picked] { border-color: var(--sky); }
+.quiz7-opt[data-right] { border-color: var(--accent); background: var(--accent-soft); }
+.quiz7-opt[data-wrong] { border-color: var(--danger); background: var(--danger-soft); }
+
+/* season pass */
+.season7 { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.season7-tier { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 16px; border: 2px solid var(--line); background: var(--surface); min-height: 56px; }
+.season7-tier[data-reached] { border-color: color-mix(in oklab, var(--accent) 55%, var(--line)); }
+.season7-tier[data-claimed] { background: var(--accent-soft); }
+.season7-tier[data-item="rare"] { box-shadow: inset 0 0 0 1px var(--berry); }
+.season7-tier[data-item="legendary"] { box-shadow: inset 0 0 0 2px var(--flame); }
+.season7-n { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: var(--raised); font-weight: 800; flex: none; }
+.season7-r { flex: 1; min-width: 0; }
+.cos7 { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
+.cos7-ring { width: 16px; height: 16px; border-radius: 50%; border: 3px solid var(--fr, var(--accent)); }
+.cos7-line { width: 22px; border-top: 3px solid var(--text); }
+.cos7-line[data-pattern="pa_dash"] { border-top-style: dashed; } .cos7-line[data-pattern="pa_dots"] { border-top-style: dotted; } .cos7-line[data-pattern="pa_double"] { border-top-style: double; border-top-width: 5px; } .cos7-line[data-pattern="pa_bold"] { border-top-width: 5px; }
+.look7-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.look7-item { display: flex; flex-direction: column; gap: 8px; padding: 12px; align-items: flex-start; }
+.look7-item[data-on] { border-color: var(--accent); }
+.look7-item[data-rarity="legendary"] { box-shadow: 0 3px 0 var(--flame); }
+.look7-item[data-rarity="rare"] { box-shadow: 0 3px 0 var(--berry); }
+/* avatar frames (game looks) */
+.look-avatar { position: relative; display: inline-grid; border-radius: 50%; flex: none; }
+.look-avatar[data-frame]::after { content: ""; position: absolute; inset: -5px; border-radius: 50%; border: 4px solid var(--fr); pointer-events: none; }
+[data-frame="fr_leaf"] { --fr: var(--leaf, #2f9e44); } [data-frame="fr_sky"] { --fr: var(--sky); } [data-frame="fr_sun"] { --fr: var(--sun); }
+[data-frame="fr_bronze"] { --fr: #b0713a; } [data-frame="fr_silver"] { --fr: #9aa3ad; } [data-frame="fr_gold"] { --fr: #e0a422; }
+.look-avatar[data-frame="fr_gold"]::after { box-shadow: 0 0 0 2px #fff3c4, 0 0 14px rgb(224 164 34 / .55); }
+.look-title { display: inline-flex; width: fit-content; padding: 2px 10px; border-radius: 999px; font-size: 12px; font-weight: 700; background: var(--accent-soft); color: var(--on-accent-soft); }
+.look-title[data-rarity="rare"] { background: var(--berry-soft); color: var(--berry); }
+.look-title[data-rarity="legendary"] { background: var(--flame-soft); color: var(--flame); }
+
+/* battle and duels */
+.battle7-vs { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; padding: 14px; border-radius: 18px; background: var(--raised); }
+.battle7-x { font-weight: 900; font-size: 20px; color: var(--flame); }
+.battle7-row[data-me] { background: var(--accent-soft); }
+.battle7-rank { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 9px; background: var(--raised); font-weight: 800; flex: none; }
+.battle7-win { border-color: var(--sun); background: var(--sun-soft); }
+.duel7-form { align-items: end; }
+.duel7-bar { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; }
+.duel7-track { height: 12px; border-radius: 6px; background: var(--coral-soft); overflow: hidden; }
+.duel7-track i { display: block; height: 100%; background: var(--accent); transition: width .4s var(--ease-out); }
+
+/* badge shelf */
+.rar7-dot { width: 12px; height: 12px; border-radius: 50%; background: var(--line-strong); }
+.rar7-dot[data-rarity="rare"] { background: var(--berry); } .rar7-dot[data-rarity="legendary"] { background: var(--flame); }
+.shelf7 { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; }
+.shelf7-item { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 12px 8px; border-radius: 16px; border: 2px dashed var(--line); text-align: center; color: var(--muted); }
+.shelf7-item[data-done] { border-style: solid; color: var(--text); background: var(--surface); }
+.shelf7-medal { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--raised); }
+.shelf7-item[data-done][data-rarity="common"] .shelf7-medal { background: var(--accent-soft); color: var(--accent); }
+.shelf7-item[data-done][data-rarity="rare"] .shelf7-medal { background: var(--berry-soft); color: var(--berry); }
+.shelf7-item[data-done][data-rarity="legendary"] .shelf7-medal { background: var(--flame-soft); color: var(--flame); box-shadow: 0 0 0 3px var(--flame-soft); }
+.shelf7-name { line-height: 1.25; }
+.shelf7-prog { width: 70%; height: 5px; border-radius: 3px; background: var(--line); overflow: hidden; }
+.shelf7-prog i { display: block; height: 100%; background: var(--muted); }
+
+/* impact and the monthly card */
+.impact7-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.impact7-cell { display: flex; flex-direction: column; gap: 2px; padding: 12px; border-radius: 14px; background: var(--accent-soft); }
+.impact7-cell b { font-size: 26px; font-family: var(--font-display); color: var(--accent); }
+.wrapped7 { display: flex; flex-direction: column; gap: 20px; padding: 24px; border-radius: 28px; color: #fff; background: linear-gradient(140deg, #0d5c2e, #16324f); box-shadow: 0 6px 0 #0b2a1a; }
+.wrapped7-sub { color: rgb(255 255 255 / .8); }
+.wrapped7-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+.wrapped7-cell { display: flex; flex-direction: column; gap: 2px; padding: 16px; border-radius: 20px; background: rgb(255 255 255 / .12); }
+.wrapped7-cell b { font-size: 34px; font-family: var(--font-display); line-height: 1; }
+.wrapped7-cell span { font-size: 13px; color: rgb(255 255 255 / .85); }
+@media (min-width: 700px) { .wrapped7-grid { grid-template-columns: repeat(3, 1fr); } }
+
+/* the map: chests, events, flags, the reach bar, the retake banner */
+.tm-spawn { display: grid; place-items: center; padding: 0; border: 0; background: none; cursor: pointer; filter: drop-shadow(0 3px 2px rgb(0 0 0 / .3)); animation: pin-in 420ms var(--ease-spring) both; }
+.tm-spawn[data-opened] { opacity: .45; filter: grayscale(.6); }
+.tm-spawn[data-kind="legendary"]:not([data-opened]) { animation: pin-in 420ms var(--ease-spring) both, chest-glow 1.8s ease-in-out infinite 420ms; }
+@keyframes chest-glow { 50% { filter: drop-shadow(0 0 8px rgb(255 170 40 / .9)); } }
+.tm-event { width: 34px; height: 34px; border-radius: 50%; color: #fff; background: var(--sun); border: 3px solid #fff; box-shadow: 0 0 0 0 rgb(240 180 40 / .6); animation: pin-in 420ms var(--ease-spring) both, ev-pulse 1.6s ease-out infinite 420ms; }
+.tm-event[data-kind="flash"] { background: var(--sky); }
+@keyframes ev-pulse { 0% { box-shadow: 0 0 0 0 rgb(240 180 40 / .55); } 100% { box-shadow: 0 0 0 18px rgb(240 180 40 / 0); } }
+.tm-flag { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px 8px 8px 2px; color: #fff; background: var(--c); border: 2px solid #fff; box-shadow: 0 2px 4px rgb(0 0 0 / .3); }
+.mapx-chest { position: absolute; z-index: 6; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; width: min(440px, calc(100% - 32px)); padding: 12px 14px; border-radius: 22px; background: var(--surface); border: 2px solid var(--sun); box-shadow: 0 5px 0 var(--sun-lip), 0 18px 40px -16px rgb(0 0 0 / .4); animation: pin-in 380ms var(--ease-spring) both; }
+.mapx-boost { position: absolute; z-index: 5; top: 72px; right: 16px; }
+.mapx-retake { position: absolute; z-index: 6; top: 72px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; width: min(560px, calc(100% - 32px)); padding: 12px 14px; border-radius: 18px; background: var(--coral-soft); border: 2px solid var(--coral); color: var(--text); }
+@media (min-width: 861px) { .mapx-chest, .mapx-retake { left: calc(50% + 206px); } }
+@media (max-width: 860px) { .mapx-chest { bottom: calc(var(--peek, 252px) + 12px); } .mapx[data-capturing] .mapx-chest { bottom: 180px; } }
+@media (prefers-reduced-motion: reduce) { .tm-spawn, .tm-event, .mapx-chest, .daily7 .chest-art { animation: none !important; } }
+.quest7-t { font-weight: 600; min-width: 0; line-height: 1.3; }
+.battle7-vs { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+.battle7-vs > div { min-width: 0; }
+@media (max-width: 520px) { .battle7-vs { padding: 12px; gap: 8px; } .battle7-vs .t-h2 { font-size: 22px; } }

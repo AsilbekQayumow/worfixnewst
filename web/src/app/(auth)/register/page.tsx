@@ -8,6 +8,8 @@ import { Button, Checkbox, Notice, PasswordInput, Select, TextArea, TextInput } 
 import type { OrganizationInput } from "@/lib/domain/validation";
 import { useErrorText, useI18n } from "@/lib/i18n";
 import { api, ValidationError } from "@/lib/store/api";
+import { api7 } from "@/lib/store/api7";
+import { emptyPlace, PlacePicker, type PlaceValue } from "@/components/place-picker";
 
 const ORG_TYPES = ["ngo", "school", "university", "government", "company", "community", "other"] as const;
 
@@ -20,6 +22,7 @@ function Register() {
   const [type, setType] = useState<"volunteer" | "organization">(params.get("type") === "organization" ? "organization" : "volunteer");
   const [v, setV] = useState({ fullName: "", email: "", password: "", birthYear: "", ageConfirmed: false, guardianConsent: false });
   const [o, setO] = useState<OrganizationInput>({ name: "", organizationType: "ngo", description: "", email: "", phone: "", website: "", address: "", country: "Uzbekistan", city: "" });
+  const [place, setPlace] = useState<PlaceValue>(emptyPlace());
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -35,7 +38,10 @@ function Register() {
         fullName: v.fullName, email: v.email, password: v.password, accountType: type, birthYear: Number(v.birthYear) || 0,
         ageConfirmed: v.ageConfirmed, guardianConsent: v.guardianConsent,
         organization: type === "organization" ? { ...o, organizationType: t(`orgType.${o.organizationType}`) } : undefined,
+        place: type === "volunteer" ? place : undefined,
       }, lang);
+      // v7: a mahalla that is not on the list goes to the admins once the account exists
+      if (type === "volunteer" && place.missing && place.districtId && place.mahalla.trim()) await api7.requestPlace(place.districtId, place.mahalla).catch(() => undefined);
       reload();
       const q = r.devVerifyToken ? `?dev=${r.devVerifyToken}` : "";
       router.replace(type === "organization" ? `/verify-email${q}${q ? "&" : "?"}next=/org` : `/verify-email${q}${q ? "&" : "?"}next=/app/onboarding`);
@@ -80,6 +86,11 @@ function Register() {
           {age !== null && age >= 15 && age < 18 && (
             <Checkbox checked={v.guardianConsent} onChange={(c) => setV({ ...v, guardianConsent: c })} error={fields.guardianConsent}>{t("auth.guardian")}</Checkbox>
           )}
+          <fieldset className="stack g8" style={{ border: 0, padding: 0, margin: 0 }}>
+            <legend className="label" style={{ marginBottom: 4 }}>{t("pl.where")}</legend>
+            <PlacePicker value={place} onChange={setPlace} errors={fields} signedIn={false} />
+            <p className="t-small muted">{t("pl.why")}</p>
+          </fieldset>
           <Checkbox checked={v.ageConfirmed} onChange={(c) => setV({ ...v, ageConfirmed: c })} error={fields.ageConfirmed}>{t("auth.ageConfirm")}</Checkbox>
         </>
       ) : (

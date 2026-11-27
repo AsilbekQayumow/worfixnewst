@@ -113,6 +113,11 @@ export interface UserProfile {
   discoverable?: boolean;
   /** v6: "assisted" (wheelchair, bike, not on foot) turns the step check off */
   moveMode?: "walk" | "assisted";
+  /** v7: the place picked from the official list (SOATO district id, mahalla id); `district`/`mahalla` keep the names */
+  districtId?: number | null;
+  mahallaId?: string | null;
+  /** v7: what the person wears from the game (written only by the game engine) */
+  look?: { frame: string | null; title: string | null; pattern: string | null; flag: string | null } | null;
 }
 
 export interface Organization {
@@ -590,3 +595,17 @@ export interface GroupRequest {
   decidedBy: string | null;
   decidedAt: string | null;
 }
+
+/** v7: a mahalla missing from the list, sent from the place picker; admins add it (`places`). */
+export interface PlaceRequest {
+  id: string;
+  userId: string;
+  districtId: number;
+  name: string;
+  status: "pending" | "added" | "rejected";
+  createdAt: string;
+  decidedBy: string | null;
+  decidedAt: string | null;
+}
+/** v7: a mahalla added by an admin on top of the shipped list. */
+export interface CustomPlace { id: string; districtId: number; name: string; createdAt: string; createdBy: string }

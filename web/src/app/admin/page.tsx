@@ -5,6 +5,7 @@ import { Suspense, useState } from "react";
 import { AdminComms, ContactDialog } from "@/components/admin-comms";
 import { AdminCommsTabs, AdminNews } from "@/components/admin-news";
 import { AdminChallenges, AdminEmergency, AdminFairplay, AdminReports } from "@/components/admin-v6";
+import { AdminPlaces } from "@/components/admin-v7";
 import { api6 } from "@/lib/store/api6";
 import { AiAudit } from "@/components/ai-audit";
 import { monthShort } from "@/components/report";
@@ -123,7 +124,7 @@ function ReviewSection() {
 function Moderation() {
   const { t } = useI18n();
   const router = useRouter();
-  const SUBS = ["organizations", "missions", "reports", "fairplay", "challenges", "emergency"] as const;
+  const SUBS = ["organizations", "missions", "reports", "fairplay", "challenges", "emergency", "places"] as const;
   const raw = useSearchParams().get("sub");
   const sub = (SUBS as readonly string[]).includes(raw ?? "") ? (raw as (typeof SUBS)[number]) : "organizations";
   const reports = useApi(() => api6.adminReports(), []);
@@ -132,7 +133,7 @@ function Moderation() {
       <Tabs value={sub} onChange={(v) => router.replace(`/admin?tab=moderation&sub=${v}`, { scroll: false })} items={[
         { value: "organizations", label: t("nav.organizations") }, { value: "missions", label: t("nav.missions") },
         { value: "reports", label: t("rpt.ad.tab"), count: reports.data?.length || undefined }, { value: "fairplay", label: t("fp.tab") },
-        { value: "challenges", label: t("ch.ad.tab") }, { value: "emergency", label: t("em.ad.tab") },
+        { value: "challenges", label: t("ch.ad.tab") }, { value: "emergency", label: t("em.ad.tab") }, { value: "places", label: t("pl.ad.tab") },
       ]} />
       {sub === "organizations" && <Organizations />}
       {sub === "missions" && <Missions />}
@@ -140,6 +141,7 @@ function Moderation() {
       {sub === "fairplay" && <AdminFairplay />}
       {sub === "challenges" && <AdminChallenges />}
       {sub === "emergency" && <AdminEmergency />}
+      {sub === "places" && <AdminPlaces />}
     </div>
   );
 }

@@ -12,13 +12,16 @@ import * as cloud from "./cloud";
 import { track } from "./outbox";
 import type {
   Announcement, AuditLog, Certificate, Cheer, Friendship, Group, GroupMessage, HelpSignal, Message, Mission, MissionParticipant, NewsPost, Notification,
-  Order, Organization, PromoCode, ShopItem, Submission, UserProfile, VerificationRecord, Territory, TerritoryCapture, GroupRequest,
+  Order, Organization, PromoCode, ShopItem, Submission, UserProfile, VerificationRecord, Territory, TerritoryCapture, GroupRequest, PlaceRequest, CustomPlace,
 } from "../domain/types";
 import { makeGroupCode } from "../domain/community";
 import type { Report } from "../domain/reports";
 import type { Challenge, ChallengeProgress } from "../domain/challenges";
 import type { Rating } from "../domain/ratings";
 import type { ReminderLog } from "../domain/reminders";
+import type { PlayState } from "../game/core";
+import type { Battle, Duel } from "../game/league";
+import type { Heat } from "../game/spawn";
 
 /** v6: following an organization (id `${userId}_${orgId}`). */
 export interface OrgFollow { id: string; userId: string; orgId: string; notify: boolean; createdAt: string }
@@ -70,6 +73,13 @@ export interface DB {
   orgFollows: OrgFollow[];
   diaryNotes: DiaryNote[];
   reminderLog: ReminderLog[];
+  /** v7 */
+  play: PlayState[];
+  duels: Duel[];
+  battles: Battle[];
+  heat: (Heat & { id: string })[];
+  placeRequests: PlaceRequest[];
+  places: CustomPlace[];
   credentials: Credential[];
   tokens: Token[];
   loginAttempts: Record<string, { count: number; first: number }>;
@@ -111,7 +121,7 @@ function empty(): DB {
   return {
     version: 2, users: [], organizations: [], missions: [], participants: [], submissions: [], records: [], certificates: [], notifications: [],
     audits: [], friendships: [], cheers: [], shopItems: [], orders: [], messages: [], announcements: [],
-    news: [], groups: [], groupCodes: [], groupJoins: [], groupMessages: [], helpSignals: [], territories: [], territoryCaptures: [], groupRequests: [], promoCodes: [], reports: [], challenges: [], challengeProgress: [], ratings: [], orgFollows: [], diaryNotes: [], reminderLog: [], credentials: [], tokens: [], loginAttempts: {},
+    news: [], groups: [], groupCodes: [], groupJoins: [], groupMessages: [], helpSignals: [], territories: [], territoryCaptures: [], groupRequests: [], promoCodes: [], reports: [], challenges: [], challengeProgress: [], ratings: [], orgFollows: [], diaryNotes: [], reminderLog: [], play: [], duels: [], battles: [], heat: [], placeRequests: [], places: [], credentials: [], tokens: [], loginAttempts: {},
   };
 }
 
@@ -220,11 +230,11 @@ async function seed(db: DB) {
     province: "Samarqand Region", city: "Samarqand", feedVisible: true, languages: ["O'zbek", "Русский"], skills: [], interests: ["environment"],
     level: 1, xp: 0, points: 0, trustScore: 50, reputation: 0, streak: 0, lastApprovedDay: null, totalVolunteerHours: 0, totalImpact: 0,
     impact: {}, onboarded: true, organizationId: null, role: "volunteer", status: "active", createdAt: ago(60), updatedAt: t, lastLogin: null,
-    language: "uz", privacy: "public", phone: "", birthYear: null, district: "Samarqand shahri", mahalla: "Registon", authProvider: "email", ...over,
+    language: "uz", privacy: "public", phone: "", birthYear: null, district: "Samarqand shahri", districtId: 1718401, mahalla: "Mirzo Ulugbek MFY", mahallaId: "m5062", authProvider: "email", ...over,
   });
 
   const orgId = uid();
-  const vol = person({ email: DEMO_ACCOUNTS[0].email, fullName: "Dilnoza Rahimova", username: "dilnoza", bio: "Hafta oxirlari daraxt ekaman va daryo bo'yini tozalayman.", interests: ["environment", "water", "animals"], skills: ["Birinchi yordam", "Ingliz tili"], birthYear: 2004, mahalla: "Bog‘ishamol" });
+  const vol = person({ email: DEMO_ACCOUNTS[0].email, fullName: "Dilnoza Rahimova", username: "dilnoza", bio: "Hafta oxirlari daraxt ekaman va daryo bo'yini tozalayman.", interests: ["environment", "water", "animals"], skills: ["Birinchi yordam", "Ingliz tili"], birthYear: 2004, mahalla: "Bog‘i shamol MFY", mahallaId: "m4973" });
   const orgUser = person({ email: DEMO_ACCOUNTS[1].email, fullName: "Bekzod Tursunov", username: "bekzod_org", role: "organization", organizationId: orgId });
   const admin = person({ email: DEMO_ACCOUNTS[2].email, fullName: "WORFIX moderatori", username: "moderator", role: "admin" });
   db.users.push(vol, orgUser, admin);
@@ -276,10 +286,10 @@ async function seed(db: DB) {
   const p5 = past("Dashtda tog' yo'lini tiklash", "environment", "hard", 300, "Ohalik tog' yo'li", 39.5890, 66.8790, 16, ["metr yo'lak", 20]);
 
   const friends = [
-    person({ email: "aziza@demo.worfix.uz", fullName: "Aziza Karimova", username: "aziza_k", bio: "Ko'chat ekishni yaxshi ko'raman.", interests: ["environment", "water"], mahalla: "Bog‘ishamol" }),
+    person({ email: "aziza@demo.worfix.uz", fullName: "Aziza Karimova", username: "aziza_k", bio: "Ko'chat ekishni yaxshi ko'raman.", interests: ["environment", "water"], mahalla: "Bog‘i shamol MFY", mahallaId: "m4973" }),
     person({ email: "timur@demo.worfix.uz", fullName: "Timur Rahimov", username: "timur", bio: "Ariqlar va qayta ishlash.", interests: ["water", "recycling"] }),
-    person({ email: "malika@demo.worfix.uz", fullName: "Malika Yusupova", username: "malika", province: "Tashkent", city: "Tashkent", district: "Chilonzor", mahalla: "Navro‘z", bio: "Bolalar bilan kitob o'qiyman.", interests: ["education", "community"], privacy: "friends" }),
-    person({ email: "jasur@demo.worfix.uz", fullName: "Jasur Aliyev", username: "jasur", province: "Bukhara Region", city: "Bukhara", district: "Buxoro shahri", mahalla: "Ko‘hna shahar", bio: "Boshpanadagi itlar bilan sayr.", interests: ["animals"] }),
+    person({ email: "malika@demo.worfix.uz", fullName: "Malika Yusupova", username: "malika", province: "Tashkent", city: "Tashkent", district: "Chilonzor tumani", districtId: 1726294, mahalla: "Qatortol MFY", mahallaId: "m9768", bio: "Bolalar bilan kitob o'qiyman.", interests: ["education", "community"], privacy: "friends" }),
+    person({ email: "jasur@demo.worfix.uz", fullName: "Jasur Aliyev", username: "jasur", province: "Bukhara Region", city: "Bukhara", district: "Buxoro shahri", districtId: 1706401, mahalla: "6-son Ko‘kaldosh MFY", mahallaId: "m1374", bio: "Boshpanadagi itlar bilan sayr.", interests: ["animals"] }),
   ];
   db.users.push(...friends);
   const [aziza, timur, malika, jasur] = friends;
@@ -352,7 +362,7 @@ async function seed(db: DB) {
   const code = makeGroupCode();
   db.groups.push({
     id: groupId, name: "Yashil Bog‘ishamol", description: "Mahallamizdagi bog‘ va ariqlarni birga parvarish qilamiz.", color: "#0a6a2c", ownerId: timur.id,
-    members: [timur.id, vol.id, aziza.id], province: "Samarqand Region", district: "Samarqand shahri", mahalla: "Bog‘ishamol", createdAt: ago(25),
+    members: [timur.id, vol.id, aziza.id], province: "Samarqand Region", district: "Samarqand shahri", mahalla: "Bog‘i shamol MFY", createdAt: ago(25),
   });
   db.groupCodes.push({ id: code, groupId, createdAt: ago(25) });
   for (const s of db.submissions) if ([vol.id, timur.id, aziza.id].includes(s.userId)) s.groupId = groupId;
@@ -367,7 +377,7 @@ async function seed(db: DB) {
   const readersCode = makeGroupCode();
   db.groups.push({
     id: readersId, name: "Kitob do‘stlari", description: "Maktab kutubxonalarida bolalar bilan ertak va kitob soatlari o‘tkazamiz.", color: "#1d5fa8", ownerId: malika.id,
-    members: [malika.id], province: "Tashkent", district: "Chilonzor", mahalla: "Navro‘z", createdAt: ago(8),
+    members: [malika.id], province: "Tashkent", district: "Chilonzor tumani", mahalla: "Qatortol MFY", createdAt: ago(8),
   });
   db.groupCodes.push({ id: readersCode, groupId: readersId, createdAt: ago(8) });
   const mchat = [vol.id, malika.id].sort().join("_");
@@ -433,5 +443,13 @@ async function seed(db: DB) {
   });
   db.orgFollows.push({ id: `${vol.id}_${orgId}`, userId: vol.id, orgId, notify: true, createdAt: ago(20) });
   db.organizations.find((o) => o.id === orgId)!.followers = 1;
+  // v7: walks this week and last week (the mahalla battle has something to show), and a duel invite from Timur
+  const walk = (userId: string, hAgo: number, gainedM2: number, distanceM: number) => db.territoryCaptures.push({
+    id: uid(), userId, groupId: null, season: seasonOf(Date.now() - hAgo * 3_600_000), areaM2: gainedM2, gainedM2, distanceM, durationS: Math.round(distanceM / 1.3),
+    maxSpeedKmh: 7, droppedFast: 0, takenFrom: [], createdAt: hoursAgo(hAgo),
+  });
+  walk(timur.id, 30, 26000, 2400); walk(aziza.id, 20, 9000, 1500); walk(vol.id, 50, 6000, 1300);
+  walk(timur.id, 8 * 24, 15000, 2000); walk(vol.id, 7 * 24 + 6, 21000, 2600); walk(aziza.id, 9 * 24, 12000, 1900);
+  db.duels.push({ id: uid(), players: [timur.id, vol.id], from: timur.id, to: vol.id, metric: "area", status: "pending", createdAt: hoursAgo(3), start: null, end: null, scores: {}, winner: null, updatedAt: hoursAgo(3) });
   db.audits.push({ id: uid(), actor: "system", actorRole: "system", action: "seed.demo", resource: "system", resourceId: "demo", timestamp: t, detail: "", ipAddress: null, device: null });
 }

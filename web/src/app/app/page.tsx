@@ -19,6 +19,8 @@ import { SignalRow } from "@/components/signals";
 import { useFmt, useI18n } from "@/lib/i18n";
 import { api, isVerifiedAccount } from "@/lib/store/api";
 import { useApi } from "@/lib/store/hooks";
+import { api7 } from "@/lib/store/api7";
+import { GameHomeCard } from "@/components/game";
 
 export default function Home() {
   const { t, lang } = useI18n();
@@ -26,6 +28,7 @@ export default function Home() {
   const { me } = useMe();
   const q = useApi(() => api.myInsights());
   const signals = useApi(() => api.helpSignals());
+  const game = useApi(() => api7.game(null));
   if (!me) return null;
   const lp = levelProgress(me.xp);
   const d = q.data;
@@ -72,6 +75,7 @@ export default function Home() {
       )}
       {d && d.needsInfo > 0 && <Notice tone="info">{t("home.app.needsInfo", { n: d.needsInfo })} <Link className="link" href="/app/map?view=list&tab=active">{t("nav.missions")}</Link></Notice>}
 
+      {me.role === "volunteer" && game.data && <GameHomeCard g={game.data} />}
       {me.role === "volunteer" && <div className="spots5"><MapSpot /><GroupSpot /></div>}
       {me.role === "volunteer" && <ChallengeCard />}
 

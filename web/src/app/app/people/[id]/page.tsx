@@ -1,4 +1,5 @@
 "use client";
+import { LookAvatar, LookTitle } from "@/components/game";
 import { ReportButton } from "@/components/v6-bits";
 import Link from "next/link";
 import { useParams } from "next/navigation";
@@ -29,9 +30,10 @@ export default function PersonPage() {
     <div className="stack g24 enter">
       <Link href="/app/chat" className="row g8 t-small secondary" style={{ width: "fit-content" }}><Icon name="arrowLeft" size={16} />{t("nav.chat")}</Link>
       <section className="row g20 wrap">
-        <Avatar name={p.fullName} src={p.avatar} size={88} />
+        <LookAvatar name={p.fullName} src={p.avatar} size={88} frame={p.look?.frame} />
         <div className="stack g8 grow" style={{ minWidth: 220 }}>
           <h1 className="t-h1">{p.fullName}</h1>
+          {p.look?.title && <LookTitle id={p.look.title} />}
           <span className="secondary">@{p.username} · {t("lvl.long", { n: p.level })} · {t(levelTitleKey(p.level))}{p.city ? ` · ${p.city}` : ""}</span>
           {d.bio && <p className="secondary" style={{ maxWidth: 560 }}>{d.bio}</p>}
           {d.interests.length > 0 && <div className="row g12 wrap">{d.interests.map((c) => <CategoryTag key={c} category={c} />)}</div>}

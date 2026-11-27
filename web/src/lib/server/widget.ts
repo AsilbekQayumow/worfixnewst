@@ -67,8 +67,8 @@ const seasonAreas = (db: Firestore, season: string) => cached(`areas:${season}`,
   return s.docs.map((d) => d.data() as Territory).filter((t) => t.areaM2 > 0).map((t) => ({ userId: t.userId, areaM2: t.areaM2 }));
 });
 
-const weekPulse = (db: Firestore) => cached("pulse", 30 * 60_000, async () => {
-  const since = new Date(Date.now() - 7 * 86_400_000).toISOString();
+const weekPulse = (db: Firestore, now = Date.now()) => cached("pulse", 30 * 60_000, async () => {
+  const since = new Date(now - 7 * 86_400_000).toISOString();
   const s = await db.collection("submissions").where("reviewedAt", ">=", since).get();
   const subs = s.docs.map((d) => d.data() as Submission).filter((x) => x.verificationStatus === "approved");
   const missions = new Map((await openMissions(db)).map((m) => [m.id, m]));
@@ -136,7 +136,7 @@ export async function widgetData(db: Firestore, uid: string, here: { lat: number
     db.collection("participants").where("userId", "==", uid).get(),
     openMissions(db),
     seasonAreas(db, season),
-    weekPulse(db),
+    weekPulse(db, now),
     db.doc(`territories/${season}_${uid}`).get(),
   ]);
 

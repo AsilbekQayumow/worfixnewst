@@ -9,6 +9,7 @@ import { handleAiReview, handleShopFulfil } from "./handlers";
 import { handlePushRegister, handlePushSend, handlePushUnregister } from "./push";
 import { handleWidget, handleWidgetToken } from "./widget";
 import { handleEmergencyBroadcast } from "./v6";
+import { handlePlay } from "./v7";
 
 export const FUNCTIONS: Record<string, { method: "GET" | "POST"; run: (req: Request) => Promise<Response> }> = {
   "ai-missions": { method: "POST", run: handleMissions },
@@ -25,4 +26,6 @@ export const FUNCTIONS: Record<string, { method: "GET" | "POST"; run: (req: Requ
   "widget": { method: "GET", run: handleWidget },
   // v6: the emergency notice to everyone in the area (feature 19)
   "emergency-broadcast": { method: "POST", run: handleEmergencyBroadcast },
+  // v7: every game reward (chests, quizzes, quests, season pass, looks, battles, duels)
+  "play": { method: "POST", run: handlePlay },
 };
