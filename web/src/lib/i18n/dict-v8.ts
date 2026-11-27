@@ -37,7 +37,7 @@ export const R8: Record<string, T> = {
   "ny.musicOn": ["Yangi yil musiqasini yoqish", "Включить новогоднюю музыку", "Play New Year music"],
   "ny.musicOff": ["Musiqani o'chirish", "Выключить музыку", "Stop the music"],
   "ny.snowOn": ["Qorni yoqish", "Включить снег", "Turn on the snow"], "ny.snowOff": ["Qorni o'chirish", "Выключить снег", "Turn off the snow"],
-  "ny.musicNote": ["Kuylar — xalq va mualliflik huquqi muddati tugagan yangi yil qo'shiqlari, sayt ichida ijro etiladi", "Мелодии — народные новогодние песни и песни, перешедшие в общественное достояние; играют прямо на сайте", "The tunes are folk and public-domain holiday songs, played right in the app"],
+  "ny.musicNote": ["Musiqa saytga kirganingizda o'zi boshlanadi. O'chirsangiz, keyingi safar ham o'chiq turadi.", "Музыка включается сама при входе на сайт. Если выключить, она останется выключенной.", "The music starts by itself when you open the site. Turn it off and it stays off."],
   "ny.moodH": ["Bayram kayfiyati", "Праздничное настроение", "Festive mood"],
   "ny.santa": ["Qorbobo", "Дед Мороз", "Santa"], "ny.hoho": ["Ho-ho-ho!", "Хо-хо-хо!", "Ho-ho-ho!"],
   "ny.sceneKicker": ["WORFIX · {year}", "WORFIX · {year}", "WORFIX · {year}"],

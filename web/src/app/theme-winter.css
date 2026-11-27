@@ -411,3 +411,5 @@
 .hello5-name { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
 /* a gift is easy to tap on a phone */
 .tm-spawn:not(.tm-event) { min-width: 44px; min-height: 44px; }
+/* zoomed out, chests and gifts are hidden (they would pile into one heap) */
+.tm-far .tm-spawn { display: none; }

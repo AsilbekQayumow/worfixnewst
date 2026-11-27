@@ -29,7 +29,7 @@ test("spawns are deterministic, busier cells get more chests, all within the cel
   const a = chestsInCell(cell, "2026-11-27"), b = chestsInCell(cell, "2026-11-27");
   assert.deepEqual(a, b);
   assert.equal(a.length, SPAWN.minPerCell);
-  assert.equal(chestsForHeat(0), 3);
+  assert.equal(chestsForHeat(0), 1);
   assert.ok(chestsForHeat(20) > chestsForHeat(3));
   assert.ok(chestsForHeat(10_000) <= SPAWN.maxPerCell);
   const heat = buildHeat("2026-11-27", Array.from({ length: 30 }, (_, i) => ({ userId: `p${i}`, at: { lat: SAM.lat + 0.0001 * (i % 5), lng: SAM.lng } })));

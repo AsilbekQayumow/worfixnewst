@@ -1,75 +1,22 @@
 /**
- * v8: background music for the New Year season — public-domain melodies (Jingle Bells, 1857; Deck the Halls and
- * We Wish You a Merry Christmas, traditional; Shchedryk / "Carol of the Bells", 1916) played live by a small
- * music-box synth in Web Audio. No recordings are downloaded, so nothing is licensed and the page stays light.
- * It starts only after a tap (browsers require that) and keeps playing across pages.
+ * v8: New Year background music — three songs in public/music (supplied by the WORFIX team), played one after
+ * another in a loop. A small Web Audio synth gives the short "chime" for rewards.
+ * Browsers allow sound only after the first tap or key press, so start() is tried on load and again on the first tap.
  */
-type Note = [freq: number, beats: number];
-interface Song { id: string; bpm: number; beat?: number; melody: Note[]; bass: Note[]; bells?: boolean; lead?: number }
-
 const A4 = 440;
 const SEMI: Record<string, number> = { C: -9, D: -7, E: -5, F: -4, G: -2, A: 0, B: 2 };
 function hz(name: string): number {
-  if (name === "r") return 0;
   const m = /^([A-G])([#b]?)(\d)$/.exec(name);
   if (!m) return 0;
   const n = SEMI[m[1]] + (m[2] === "#" ? 1 : m[2] === "b" ? -1 : 0) + (Number(m[3]) - 4) * 12;
   return A4 * Math.pow(2, n / 12);
 }
-/** "B4:1 B4:1 B4:2 r:1" → notes */
-const seq = (s: string): Note[] => s.trim().split(/\s+/).map((tok) => { const [n, b] = tok.split(":"); return [hz(n), Number(b ?? 1)]; });
-
-const JINGLE_CHORUS = `B4:1 B4:1 B4:2 B4:1 B4:1 B4:2 B4:1 D5:1 G4:1.5 A4:0.5 B4:4
-C5:1 C5:1 C5:1.5 C5:0.5 C5:1 B4:1 B4:1 B4:0.5 B4:0.5 B4:1 A4:1 A4:1 B4:1 A4:2 D5:2
-B4:1 B4:1 B4:2 B4:1 B4:1 B4:2 B4:1 D5:1 G4:1.5 A4:0.5 B4:4
-C5:1 C5:1 C5:1.5 C5:0.5 C5:1 B4:1 B4:1 B4:0.5 B4:0.5 D5:1 D5:1 C5:1 A4:1 G4:4`;
-const JINGLE_VERSE = `D4:1 B4:1 A4:1 G4:1 D4:3 D4:0.5 D4:0.5 D4:1 B4:1 A4:1 G4:1 E4:4
-E4:1 C5:1 B4:1 A4:1 F#4:4 D5:1 D5:1 C5:1 A4:1 B4:4
-D4:1 B4:1 A4:1 G4:1 D4:4 D4:1 B4:1 A4:1 G4:1 E4:3 E4:1
-E4:1 C5:1 B4:1 A4:1 D5:1 D5:1 D5:1 D5:1 E5:1 D5:1 C5:1 A4:1 G4:2 D5:2`;
-const bassBars = (roots: string, beatsPerBar = 4) => seq(roots.split(/\s+/).map((r) => `${r}:${beatsPerBar}`).join(" "));
-
-const SONGS: Song[] = [
-  {
-    id: "jingle", bpm: 132, bells: true,
-    melody: seq(`${JINGLE_VERSE} ${JINGLE_CHORUS}`),
-    bass: bassBars("G2 G2 G2 C3 C3 D3 D3 G2 G2 G2 G2 C3 C3 D3 D3 D3  G2 G2 G2 G2 C3 G2 A2 D3 G2 G2 G2 G2 C3 G2 D3 G2"),
-  },
-  {
-    id: "deck", bpm: 116,
-    melody: seq(`D5:1.5 C5:0.5 B4:1 A4:1 G4:1 A4:1 B4:1 G4:1 A4:0.5 B4:0.5 C5:0.5 A4:0.5 B4:1.5 A4:0.5 G4:1 F#4:1 G4:2
-D5:1.5 C5:0.5 B4:1 A4:1 G4:1 A4:1 B4:1 G4:1 A4:0.5 B4:0.5 C5:0.5 A4:0.5 B4:1.5 A4:0.5 G4:1 F#4:1 G4:2
-A4:1.5 B4:0.5 C5:1 A4:1 B4:1.5 C5:0.5 D5:1 A4:1 B4:0.5 C#5:0.5 D5:1 E5:0.5 F#5:0.5 G5:1 F#5:1 E5:1 D5:2
-D5:1.5 C5:0.5 B4:1 A4:1 G4:1 A4:1 B4:1 G4:1 E5:0.5 E5:0.5 E5:0.5 E5:0.5 D5:1.5 C5:0.5 B4:1 A4:1 G4:2`),
-    bass: bassBars("G2 G2 D3 G2 G2 G2 D3 G2 D3 G2 A2 D3 G2 C3 D3 G2"),
-  },
-  {
-    id: "wish", bpm: 150, beat: 3,
-    melody: seq(`D4:1 G4:1 G4:0.5 A4:0.5 G4:0.5 F#4:0.5 E4:1 E4:1 E4:1 A4:1 A4:0.5 B4:0.5 A4:0.5 G4:0.5 F#4:1 D4:1 D4:1
-B4:1 B4:0.5 C5:0.5 B4:0.5 A4:0.5 G4:1 E4:1 D4:0.5 D4:0.5 E4:1 A4:1 F#4:1 G4:2
-D4:1 G4:1 G4:1 G4:1 F#4:2 F#4:1 G4:1 F#4:1 E4:1 D4:2 A4:1 B4:1 A4:1 G4:1 D5:1 D4:1 D4:0.5 D4:0.5 E4:1 A4:1 F#4:1 G4:3`),
-    bass: seq(`r:1 G2:3 C3:3 A2:3 D3:3 G2:3 C3:3 D3:3 G2:3 G2:3 D3:3 C3:3 D3:3 G2:3 B2:3 D3:3 G2:3`),
-  },
-  {
-    id: "bells", bpm: 168, beat: 3, lead: 0.9,
-    // the four-note figure of Shchedryk, then a second voice above it, over a falling bass
-    melody: seq(Array(16).fill("Bb4:1 A4:0.5 Bb4:0.5 G4:1").join(" ")),
-    bass: seq(Array(4).fill("G2:3 F2:3 Eb2:3 D2:3").join(" ")),
-  },
-];
-/** The upper voice of "bells" enters after four bars. */
-const BELLS_UPPER = seq(`r:12 ${Array(12).fill("D5:1 C5:0.5 D5:0.5 Bb4:1").join(" ")}`);
+const TRACKS = ["/music/newyear-1.mp3", "/music/newyear-2.mp3", "/music/newyear-3.mp3"];
 
 /* ── the synth ── */
 let ctx: AudioContext | null = null;
 let master: GainNode | null = null;
 let wet: GainNode | null = null;
-let timer = 0;
-let songIdx = 0;
-let nextT = 0;
-let playing = false;
-let volume = 0.55;
-const listeners = new Set<(on: boolean) => void>();
 
 function setup() {
   if (ctx) return ctx;
@@ -78,7 +25,7 @@ function setup() {
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = -18; comp.ratio.value = 3;
   master = ctx.createGain();
-  master.gain.value = 0;
+  master.gain.value = 0.9;
   master.connect(comp).connect(ctx.destination);
   // a short hall: decaying noise as the impulse response
   const len = Math.floor(ctx.sampleRate * 2.4);
@@ -117,22 +64,6 @@ function bell(f: number, t: number, dur: number, amp: number) {
   }
 }
 
-function bass(f: number, t: number, dur: number) {
-  if (!ctx || !master || !f) return;
-  const o = ctx.createOscillator();
-  const g = ctx.createGain();
-  const lp = ctx.createBiquadFilter();
-  o.type = "triangle";
-  o.frequency.value = f;
-  lp.type = "lowpass"; lp.frequency.value = 600;
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(0.22, t + 0.02);
-  g.gain.exponentialRampToValueAtTime(0.0001, t + Math.min(dur, 2.2));
-  o.connect(lp).connect(g).connect(master);
-  o.start(t);
-  o.stop(t + dur + 0.05);
-}
-
 let noise: AudioBuffer | null = null;
 function jingle(t: number, amp: number) {
   if (!ctx || !master) return;
@@ -154,77 +85,66 @@ function jingle(t: number, amp: number) {
   src.stop(t + 0.2);
 }
 
-/** Schedules one whole song from time t; returns its length in seconds. */
-function schedule(song: Song, t: number) {
-  const spb = 60 / song.bpm;
-  let x = t;
-  for (const [f, b] of song.melody) { bell(f, x, b * spb, 0.16 * (song.lead ?? 1)); x += b * spb; }
-  const end = x;
-  x = t;
-  for (const [f, b] of song.bass) { bass(f, x, b * spb); x += b * spb; }
-  if (song.id === "bells") { x = t; for (const [f, b] of BELLS_UPPER) { bell(f, x, b * spb, 0.09); x += b * spb; } }
-  if (song.bells) {
-    const per = song.beat ?? 4;
-    for (let k = 0; t + k * spb < end; k++) jingle(t + k * spb, k % per === 0 ? 0.05 : 0.025);
-  }
-  return end - t;
-}
+/* ── the songs ── */
+let audio: HTMLAudioElement | null = null;
+let track = 0;
+let playing = false;
+let volume = 0.45;
+let fade = 0;
+const listeners = new Set<(on: boolean) => void>();
+const emit = () => listeners.forEach((fn) => fn(playing));
 
-function pump() {
-  if (!ctx || !playing) return;
-  // schedule the next song a little before the current one ends
-  if (nextT - ctx.currentTime < 1.5) {
-    const song = SONGS[songIdx % SONGS.length];
-    songIdx++;
-    const len = schedule(song, Math.max(nextT, ctx.currentTime + 0.1));
-    nextT = Math.max(nextT, ctx.currentTime + 0.1) + len + 1.6;
-  }
+function player() {
+  if (audio) return audio;
+  audio = new Audio();
+  audio.preload = "auto";
+  audio.addEventListener("ended", () => { track = (track + 1) % TRACKS.length; audio!.src = TRACKS[track]; void audio!.play().catch(() => undefined); });
+  return audio;
+}
+function rampTo(target: number, ms: number, done?: () => void) {
+  const a = player();
+  window.clearInterval(fade);
+  const from = a.volume, t0 = performance.now();
+  fade = window.setInterval(() => {
+    const k = Math.min(1, (performance.now() - t0) / ms);
+    a.volume = Math.max(0, Math.min(1, from + (target - from) * k));
+    if (k >= 1) { window.clearInterval(fade); fade = 0; done?.(); }
+  }, 40);
 }
 
 export const music = {
   get on() { return playing; },
-  /** Must be called from a tap or click the first time. */
-  async start() {
-    const c = setup();
-    if (c.state === "suspended") await c.resume().catch(() => undefined);
-    if (playing) return;
+  /** Starts the songs; resolves false when the browser still blocks sound (no tap yet). */
+  async start(): Promise<boolean> {
+    if (playing) return true;
+    const a = player();
+    if (!a.src) { track = Math.floor(Math.random() * TRACKS.length); a.src = TRACKS[track]; }
+    a.volume = 0;
+    try { await a.play(); } catch { return false; }
     playing = true;
-    songIdx = Math.floor(Math.random() * SONGS.length);
-    nextT = c.currentTime + 0.15;
-    master!.gain.cancelScheduledValues(c.currentTime);
-    master!.gain.setTargetAtTime(volume, c.currentTime, 0.4);
-    pump();
-    timer = window.setInterval(pump, 400);
-    listeners.forEach((fn) => fn(true));
+    rampTo(volume, 1200);
+    emit();
+    return true;
   },
   stop() {
-    if (!ctx || !playing) return;
+    if (!playing || !audio) return;
     playing = false;
-    window.clearInterval(timer);
-    const c = ctx;
-    master!.gain.cancelScheduledValues(c.currentTime);
-    master!.gain.setTargetAtTime(0, c.currentTime, 0.25);
-    // what was already scheduled fades out; then the context sleeps
-    window.setTimeout(() => { if (!playing) void c.suspend().catch(() => undefined); }, 1200);
-    // the next start begins a fresh song
-    nextT = 0;
-    listeners.forEach((fn) => fn(false));
+    emit();
+    rampTo(0, 500, () => audio?.pause());
   },
   setVolume(v: number) {
     volume = Math.max(0, Math.min(1, v));
-    if (ctx && master && playing) master.gain.setTargetAtTime(volume, ctx.currentTime, 0.1);
+    if (audio && playing) audio.volume = volume;
   },
   get volume() { return volume; },
-  /** A short jingle for a reward (works even when the music is off, after any tap). */
+  /** A short jingle for a reward. */
   chime() {
     try {
       const c = setup();
       if (c.state === "suspended") void c.resume();
-      if (!playing) master!.gain.setTargetAtTime(volume, c.currentTime, 0.01);
       const t = c.currentTime + 0.02;
       [hz("G5"), hz("B5"), hz("D6"), hz("G6")].forEach((f, i) => bell(f, t + i * 0.08, 0.5, 0.12));
       jingle(t, 0.05); jingle(t + 0.12, 0.04);
-      if (!playing) master!.gain.setTargetAtTime(0, t + 1.6, 0.3);
     } catch { /* no audio */ }
   },
   subscribe(fn: (on: boolean) => void) { listeners.add(fn); return () => { listeners.delete(fn); }; },

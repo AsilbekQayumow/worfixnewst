@@ -36,15 +36,19 @@ export function SeasonProvider({ children }: { children: ReactNode }) {
     setW(s && read("worfix.season") !== "off");
     setS(read("worfix.snow") !== "off");
     const off = music.subscribe(setPlaying);
-    // The music was on last time: start it again at the first tap (browsers allow sound only after one).
-    if (s && read("worfix.music") === "on" && read("worfix.season") !== "off") {
-      const go = () => { void music.start(); remove(); };
-      const remove = () => { window.removeEventListener("pointerdown", go); window.removeEventListener("keydown", go); };
-      window.addEventListener("pointerdown", go, { once: true });
-      window.addEventListener("keydown", go, { once: true });
-      return () => { off(); remove(); };
-    }
-    return off;
+    // v8: the music starts by itself on entering the site (unless it was switched off). Browsers allow sound only
+    // after a first tap or key press, so if the first try is blocked it starts at the first touch anywhere.
+    if (!s || read("worfix.season") === "off" || read("worfix.music") === "off") return off;
+    const events = ["pointerdown", "keydown", "touchstart"] as const;
+    const remove = () => events.forEach((e) => window.removeEventListener(e, go, true));
+    const go = (e: Event) => {
+      // a first tap on the music button itself is left to the button
+      if ((e.target as Element | null)?.closest?.(".season-btn")) { remove(); return; }
+      remove();
+      if (read("worfix.music") !== "off") void music.start();
+    };
+    void music.start().then((ok) => { if (!ok) events.forEach((e) => window.addEventListener(e, go, { capture: true, once: true })); });
+    return () => { off(); remove(); };
   }, []);
 
   useEffect(() => {

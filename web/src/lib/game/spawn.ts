@@ -18,7 +18,7 @@ export interface MapEvent { id: string; kind: EventKind; at: LatLng; cell: strin
 export interface Heat { day: string; cells: Record<string, { n: number; pts: [number, number][] }> }
 
 export const SPAWN = {
-  minPerCell: 3, maxPerCell: 14, reachM: 35, maxAccuracyM: 40, perDay: 15, eventEveryMin: 30, eventChance: 0.4, boostMin: 30, viewKm: 1.6,
+  minPerCell: 1, maxPerCell: 5, reachM: 35, maxAccuracyM: 40, perDay: 15, eventEveryMin: 30, eventChance: 0.4, boostMin: 30, viewKm: 1.1,
 } as const;
 
 export const cellOf = (p: LatLng) => `${Math.floor(p.lat / CELL.lat)}:${Math.floor(p.lng / CELL.lng)}`;
@@ -32,7 +32,7 @@ export function distanceM(a: LatLng, b: LatLng) {
 }
 
 /** How many chests a cell gets: 3 for a quiet cell, growing with the logarithm of active people, at most 14. */
-export const chestsForHeat = (n: number) => Math.min(SPAWN.maxPerCell, SPAWN.minPerCell + Math.round(3 * Math.log2(1 + Math.max(0, n))));
+export const chestsForHeat = (n: number) => Math.min(SPAWN.maxPerCell, SPAWN.minPerCell + Math.round(1.2 * Math.log2(1 + Math.max(0, n))));
 
 function kindOf(r: number): ChestKind {
   if (r < 0.03) return "legendary";

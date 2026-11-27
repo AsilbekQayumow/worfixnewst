@@ -10,7 +10,6 @@ import { shade } from "@/lib/map-colors";
 import { CATEGORY_ICON, Icon, type IconName } from "./icons";
 import { ChestArt, GiftArt } from "./game";
 import { SleighArt } from "./winter/sleigh";
-import { music } from "@/lib/season/music";
 import { FLAG_ICON } from "@/lib/game/season";
 import { centerOf } from "@/lib/domain/territory";
 import { savedHero, type HeroId } from "@/lib/season/winter";
@@ -28,15 +27,17 @@ const RASTER: StyleSpecification = {
   layers: [{ id: "osm", type: "raster", source: "osm", paint: { "raster-saturation": -0.6 } }],
 };
 const themeNow = () => (typeof document !== "undefined" && document.documentElement.dataset.theme === "dark" ? "dark" : "light");
-/** Dark map with the dark theme, and in the evening (19:00–06:00 local) whatever the theme. */
+/** v8: the map follows the theme only (a light theme keeps a light map, also in the evening). */
 export const isNight = (d = new Date()) => d.getHours() >= 19 || d.getHours() < 6;
-const styleNow = () => (themeNow() === "dark" || isNight() ? "dark" : "light");
+const styleNow = () => themeNow();
 const reduced = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 const winterOn = () => typeof document !== "undefined" && document.documentElement.dataset.season === "winter";
 /** v8: gifts already dropped today (this browser session), so they are not hidden again on the next visit. */
-const DROP_KEY = () => `worfix.dropped.${new Date().toISOString().slice(0, 10)}`;
-const dropped = () => { try { return new Set<string>(JSON.parse(sessionStorage.getItem(DROP_KEY()) ?? "[]")); } catch { return new Set<string>(); } };
-const remember = (id: string) => { try { const d = dropped(); d.add(id); sessionStorage.setItem(DROP_KEY(), JSON.stringify([...d].slice(-400))); } catch { /* private mode */ } };
+const FLOWN_KEY = () => `worfix.sleigh.${new Date(Date.now() + 18e6).toISOString().slice(0, 10)}`;
+const flownToday = () => { try { return localStorage.getItem(FLOWN_KEY()) === "1"; } catch { return true; } };
+const markFlown = () => { try { localStorage.setItem(FLOWN_KEY(), "1"); } catch { /* private mode */ } };
+/** Below this zoom chests/gifts are hidden. */
+const MIN_GIFT_ZOOM = 14.5;
 const css = (name: string, fallback: string) => (typeof document === "undefined" ? fallback : getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback);
 
 const fc = (features: GeoJSON.Feature[]): GeoJSON.FeatureCollection => ({ type: "FeatureCollection", features });
@@ -128,7 +129,6 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
       let current = styleNow();
       const restyle = () => { const next = styleNow(); if (!raster && next !== current) { current = next; m.setStyle(STYLE[next]); } };
       observer = new MutationObserver(restyle);
-      clock = window.setInterval(restyle, 60_000);
       observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
     }).catch(() => { if (!cancelled) setFailed(true); });
     return () => {
@@ -343,7 +343,7 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
     spawnPins.current = [];
     spawnEls.current.clear();
     if (!m || !ml || !spawns?.length) return;
-    const awaitDrop = winterOn() && !reduced();
+    const awaitDrop = winterOn() && !reduced() && !flownToday();
     for (const x of spawns) {
       const el = document.createElement("button");
       el.type = "button";
@@ -354,7 +354,7 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
       el.innerHTML = x.event ? renderToStaticMarkup(<Icon name={x.kind === "boost" ? "zap" : "target"} size={16} strokeWidth={2.4} />) : renderToStaticMarkup(<ChestArt kind={x.kind} size={30} open={x.opened} />);
       el.addEventListener("click", (e) => { e.stopPropagation(); pickSpawn.current?.(x.id); });
       // v8: in the season, a gift waits hidden until Qorbobo flies over and drops it
-      if (awaitDrop && !x.event && !x.opened && !dropped().has(x.id)) el.dataset.await = "1";
+      if (awaitDrop && !x.event && !x.opened) el.dataset.await = "1";
       spawnEls.current.set(x.id, { el, at: x.at });
       spawnPins.current.push(new ml.Marker({ element: el, anchor: "bottom" }).setLngLat([x.at.lng, x.at.lat]).addTo(m));
     }
@@ -362,45 +362,42 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
     return () => { spawnPins.current.forEach((p) => p.remove()); spawnPins.current = []; };
   }, [spawnKey, ready > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // v8: Qorbobo's sleigh flies across the map and drops the gifts that are waiting in view; it passes by again now and then.
+  // v8: Qorbobo comes ONCE a day: on the first map visit of the day his sleigh flies over and drops the gifts in view.
+  // Gifts outside the view are simply there when the flight ends. No repeat flights.
   const stage = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const m = map.current;
-    if (!m || !stage.current || !winterOn() || reduced()) return;
-    let busy = false, raf = 0, soon = 0;
+    if (!m || !stage.current || !spawnTick || !winterOn() || reduced() || flownToday()) return;
+    let raf = 0, started = false, soon = 0;
     const sleigh = document.createElement("button");
     sleigh.type = "button";
     sleigh.className = "tm-sleigh";
     sleigh.setAttribute("aria-label", t("ny.santa"));
     sleigh.innerHTML = renderToStaticMarkup(<SleighArt width={150} />) + `<span class="tm-sleigh-say">${t("ny.hoho")}</span>`;
-    sleigh.addEventListener("click", () => { sleigh.classList.remove("says"); void sleigh.offsetWidth; sleigh.classList.add("says"); if (music.on) music.chime(); });
+    sleigh.addEventListener("click", () => { sleigh.classList.remove("says"); void sleigh.offsetWidth; sleigh.classList.add("says"); });
     stage.current.appendChild(sleigh);
     const giftSvg = (kind: string) => renderToStaticMarkup(<GiftArt kind={kind} size={30} />);
+    const revealAll = () => spawnEls.current.forEach((v) => { if (v.el.dataset.await) { delete v.el.dataset.await; v.el.classList.add("tm-dropped"); } });
 
     const drop = (id: string, from: { x: number; y: number }) => {
       const s0 = spawnEls.current.get(id);
-      if (!s0 || !stage.current) return;
+      if (!s0 || !stage.current || !s0.el.dataset.await) return;
       const to = m.project([s0.at.lng, s0.at.lat]);
       const g = document.createElement("span");
       g.className = "tm-gift-fall";
       g.innerHTML = giftSvg(s0.el.dataset.kind ?? "common");
       stage.current.appendChild(g);
       const a = g.animate([
-        { transform: `translate(${from.x - 15}px, ${from.y}px) rotate(0deg) scale(.6)`, opacity: 1 },
-        { transform: `translate(${(from.x + to.x) / 2 - 15}px, ${from.y - 18}px) rotate(160deg) scale(.9)`, opacity: 1, offset: 0.3 },
-        { transform: `translate(${to.x - 15}px, ${to.y - 30}px) rotate(360deg) scale(1)`, opacity: 1 },
+        { transform: `translate(${from.x - 15}px, ${from.y}px) rotate(0deg) scale(.6)` },
+        { transform: `translate(${(from.x + to.x) / 2 - 15}px, ${from.y - 18}px) rotate(160deg) scale(.9)`, offset: 0.3 },
+        { transform: `translate(${to.x - 15}px, ${to.y - 30}px) rotate(360deg) scale(1)` },
       ], { duration: 820, easing: "cubic-bezier(.45,0,.9,.6)" });
-      a.onfinish = () => {
-        g.remove();
-        delete s0.el.dataset.await;
-        s0.el.classList.add("tm-dropped");
-        remember(id);
-      };
+      a.onfinish = () => { g.remove(); delete s0.el.dataset.await; s0.el.classList.add("tm-dropped"); };
     };
 
     const fly = () => {
       const box = stage.current;
-      if (busy || document.hidden || !box) return;
+      if (started || document.hidden || !box || m.getZoom() < MIN_GIFT_ZOOM) return;
       const W = box.clientWidth, H = box.clientHeight;
       const inView = (p: { x: number; y: number }) => p.x > 20 && p.x < W - 20 && p.y > 60 && p.y < H - 40;
       const waiting = [...spawnEls.current.entries()]
@@ -408,76 +405,69 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
         .map(([id, v]) => ({ id, p: m.project([v.at.lng, v.at.lat]) }))
         .filter((x) => inView(x.p))
         .sort((a, b) => a.p.x - b.p.x)
-        .slice(0, 14);
-      busy = true;
-      const ltr = waiting.length ? true : Math.random() < 0.5;
-      const yMid = waiting.length ? waiting.reduce((s2, w) => s2 + w.p.y, 0) / waiting.length : H * (0.25 + Math.random() * 0.3);
-      const startP = { x: ltr ? -180 : W + 180, y: Math.max(80, yMid - 80) };
-      const endP = { x: ltr ? W + 180 : -180, y: Math.max(60, yMid - 140) };
-      // path points in map coordinates, so the flight stays put when the map is panned
-      const pts = [startP, ...waiting.map((w) => w.p), endP].map((p) => m.unproject([p.x, p.y]));
+        .slice(0, 12);
+      if (!waiting.length) return; // wait until some gifts are in view
+      started = true;
+      markFlown();
+      const yMid = waiting.reduce((s2, w) => s2 + w.p.y, 0) / waiting.length;
+      const startP = { x: -180, y: Math.max(80, yMid - 80) };
+      const endP = { x: W + 180, y: Math.max(60, yMid - 140) };
       const scr = [startP, ...waiting.map((w) => w.p), endP];
+      const pts = scr.map((p) => m.unproject([p.x, p.y]));
       const cum = [0];
       for (let i = 1; i < scr.length; i++) cum.push(cum[i - 1] + Math.hypot(scr[i].x - scr[i - 1].x, scr[i].y - scr[i - 1].y));
       const total = cum[cum.length - 1];
-      const dur = Math.max(5000, Math.min(16000, (total / 230) * 1000));
-      const lift = 74; // the sleigh flies this high above the ground path
-      let next = 1;
+      const dur = Math.max(5000, Math.min(14000, (total / 230) * 1000));
+      const lift = 74;
+      let next = 1, lastSpark = 0;
       const t0 = performance.now();
-      let lastSpark = 0;
       sleigh.classList.add("on");
-      sleigh.style.setProperty("--dir", ltr ? "1" : "-1");
-      if (music.on) music.chime();
+      sleigh.style.setProperty("--dir", "1");
       const step = (now: number) => {
         const k = Math.min(1, (now - t0) / dur);
         const d = k * total;
         let i = 1;
         while (i < cum.length - 1 && cum[i] < d) i++;
-        const seg = Math.max(1e-6, cum[i] - cum[i - 1]);
-        const f = (d - cum[i - 1]) / seg;
+        const f = (d - cum[i - 1]) / Math.max(1e-6, cum[i] - cum[i - 1]);
         const a = m.project(pts[i - 1]), b = m.project(pts[i]);
         const x = a.x + (b.x - a.x) * f, y = a.y + (b.y - a.y) * f - lift + Math.sin(now / 180) * 4;
-        sleigh.style.transform = `translate(${x - 75}px, ${y - 32}px) scaleX(var(--dir))`;
-        // drop each waiting gift as the sleigh passes over it
+        sleigh.style.transform = `translate(${x - 75}px, ${y - 32}px)`;
         while (next < scr.length - 1 && d >= cum[next]) { drop(waiting[next - 1].id, { x, y: y + 20 }); next++; }
         if (now - lastSpark > 70 && stage.current) {
           lastSpark = now;
           const sp = document.createElement("span");
           sp.className = "tm-spark";
-          sp.style.transform = `translate(${x - (ltr ? 70 : -70) + (Math.random() * 16 - 8)}px, ${y + 14 + Math.random() * 10}px)`;
+          sp.style.transform = `translate(${x - 70 + (Math.random() * 16 - 8)}px, ${y + 14 + Math.random() * 10}px)`;
           stage.current.appendChild(sp);
           window.setTimeout(() => sp.remove(), 900);
         }
         if (k < 1) raf = requestAnimationFrame(step);
-        else { sleigh.classList.remove("on"); busy = false; }
+        else { sleigh.classList.remove("on"); window.setTimeout(revealAll, 900); m.off("moveend", onMove); }
       };
       raf = requestAnimationFrame(step);
     };
-
-    const schedule = (ms: number) => { window.clearTimeout(soon); soon = window.setTimeout(fly, ms); };
-    // first flight shortly after the map shows; again when new gifts wait in view; and a pass every ~80 s
-    schedule(1400);
-    const onMove = () => { if ([...spawnEls.current.values()].some((v) => v.el.dataset.await)) schedule(1500); };
+    const onMove = () => { window.clearTimeout(soon); soon = window.setTimeout(fly, 700); };
+    soon = window.setTimeout(fly, 1400);
     m.on("moveend", onMove);
-    const onNew = () => schedule(1200);
-    window.addEventListener("worfix:sleigh", onNew);
-    const every = window.setInterval(() => fly(), 80_000);
     return () => {
-      window.clearTimeout(soon); window.clearInterval(every); cancelAnimationFrame(raf);
+      window.clearTimeout(soon); cancelAnimationFrame(raf);
       m.off("moveend", onMove);
-      window.removeEventListener("worfix:sleigh", onNew);
       sleigh.remove();
       stage.current?.querySelectorAll(".tm-gift-fall,.tm-spark").forEach((n) => n.remove());
-      // anything still waiting is shown right away next time
-      spawnEls.current.forEach((v) => { if (v.el.dataset.await) { delete v.el.dataset.await; } });
+      // a flight cut short: everything is shown
+      if (started) revealAll();
     };
   }, [ready > 0, spawnTick > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // new gifts arriving later (walked into a new area): the sleigh comes for them
+  // v7/v8: gifts show only when zoomed in (zoomed out they would pile up into one heap)
   useEffect(() => {
-    if (!spawnTick || !winterOn() || reduced()) return;
-    if ([...spawnEls.current.values()].some((v) => v.el.dataset.await)) window.dispatchEvent(new Event("worfix:sleigh"));
-  }, [spawnTick]);
+    const m = map.current, el = box.current?.parentElement;
+    if (!m || !el) return;
+    const z = () => el.classList.toggle("tm-far", m.getZoom() < MIN_GIFT_ZOOM);
+    z();
+    m.on("zoomend", z);
+    return () => { m.off("zoomend", z); };
+  }, [ready > 0]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // v7: area flags.
   const flagPins = useRef<MlMarker[]>([]);
