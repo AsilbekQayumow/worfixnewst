@@ -19,7 +19,7 @@ import { monthsWithActivity, wrapped } from "../game/wrapped";
 import type { QuizRow } from "../game/quiz-bank";
 import type { CustomPlace, PlaceRequest, UserProfile } from "../domain/types";
 import { actor, friendIdsOf, log, notify, readSession, requireAdmin } from "./api";
-import { commit, FIREBASE, getDB, nowIso, ready, uid, type DB } from "./db";
+import { commit, FIREBASE, getDB, nowIso, patchLocal, ready, uid, type DB } from "./db";
 import * as cloud from "./cloud";
 
 /* The quiz bank ships only in demo builds: with Firebase configured the questions stay on the server. */
@@ -133,9 +133,15 @@ export const api7 = {
     await ready();
     if (FIREBASE) {
       const res = await cloud.callFunction("play", action);
-      const body = (await res.json().catch(() => ({}))) as PlayResult & { error?: string };
+      const body = (await res.json().catch(() => ({}))) as Result & { error?: string; points?: number };
       if (!res.ok) throw new DomainError("conflict", body.error ?? "e.generic");
-      return body;
+      // show the new state at once (the Firestore listeners confirm it a moment later)
+      const me = readSession(getDB());
+      if (body.play) patchLocal("play", body.play as unknown as PlayState & Record<string, unknown>);
+      if (me && (typeof body.points === "number" || body.look)) patchLocal("users", { id: me.id, ...(typeof body.points === "number" ? { points: body.points } : {}), ...(body.look ? { look: body.look } : {}) });
+      const { play: _p, error: _e, points: _pt, ...rest } = body;
+      void _p; void _e; void _pt;
+      return rest;
     }
     const b = action.t === "open" ? await bank() : undefined;
     let out: PlayResult = { coins: 0, xp: 0 };

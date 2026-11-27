@@ -79,9 +79,7 @@ export async function handlePlay(req: Request): Promise<Response> {
       if (r.coins) patch.points = Math.max(0, u.points + r.coins);
       if (r.look) patch.look = r.look;
       if (Object.keys(patch).length) tx.update(uRef, { ...patch, updatedAt: new Date(now).toISOString() });
-      const { play: _p, ...rest } = r;
-      void _p;
-      return rest;
+      return { ...r, points: patch.points ?? u.points };
     });
     return json(out);
   } catch (e) {

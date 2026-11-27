@@ -195,6 +195,16 @@ function startCloud() {
   });
 }
 
+/** v7: shows a document the server just wrote right away; its listener confirms it later (never synced from here). */
+export function patchLocal(name: "play" | "users", doc: { id: string } & Record<string, unknown>) {
+  const db = load() as unknown as Record<string, { id: string }[]>;
+  const list = db[name] ?? (db[name] = []);
+  const i = list.findIndex((x) => x.id === doc.id);
+  if (i >= 0) list[i] = { ...list[i], ...doc }; else list.push(doc);
+  version++;
+  listeners.forEach((l) => l());
+}
+
 export function resetDemoData() {
   localStorage.removeItem(KEY);
   localStorage.removeItem(SESSION_KEY);
