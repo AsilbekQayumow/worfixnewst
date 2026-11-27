@@ -18,7 +18,7 @@ function Login() {
   const params = useSearchParams();
   const next = params.get("next");
   const { reload } = useMe();
-  const [email, setEmail] = useState("");
+  const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [fields, setFields] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
@@ -45,7 +45,7 @@ function Login() {
     } catch (err) {
       await (await worfix()).clearLogin().catch(() => {});
       setBio((b) => (b ? { ...b, hasLogin: false } : b));
-      setEmail(saved.email);
+      setLogin(saved.email);
       setError(err instanceof ValidationError ? t("nt.bioStale") : errText(err));
     } finally {
       setBusy(false);
@@ -53,7 +53,7 @@ function Login() {
   };
 
   const enableBio = async (u: SelfUser) => {
-    try { await (await worfix()).saveLogin({ email, password, ...bioText }); } catch { /* declined at the prompt */ }
+    try { await (await worfix()).saveLogin({ email: login, password, ...bioText }); } catch { /* declined at the prompt */ }
     setOffer(null);
     done(u);
   };
@@ -75,7 +75,7 @@ function Login() {
     setError(null);
     setFields({});
     try {
-      const u = await api.login({ email, password });
+      const u = await api.login({ login, password });
       let declined = false;
       try { declined = localStorage.getItem("worfix.bio.declined") === "1"; } catch { /* ignore */ }
       if (bioReady && !bio?.hasLogin && !declined) setOffer(u);
@@ -109,7 +109,7 @@ function Login() {
         footer={offer && <><Button variant="ghost" onClick={() => skipBio(offer)}>{t("nt.later")}</Button><Button variant="primary" icon="key" onClick={() => void enableBio(offer)}>{t("nt.bioEnable")}</Button></>}>
         <p className="secondary">{t("nt.bioOfferBody")}</p>
       </Dialog>
-      <TextInput label={t("auth.email")} type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} error={fields.email} required />
+      <TextInput label={t("auth.loginName")} hint={t("auth.loginNameHint")} autoComplete="username" autoCapitalize="none" spellCheck={false} value={login} onChange={(e) => setLogin(e.target.value)} error={fields.login} required />
       <div className="stack g8">
         <PasswordInput label={t("auth.password")} autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} error={fields.password} required />
         <Link href="/forgot-password" className="link t-small" style={{ alignSelf: "flex-end" }}>{t("auth.forgot")}</Link>
@@ -122,7 +122,7 @@ function Login() {
           <span className="t-small" style={{ fontWeight: 500 }}>{t("auth.demoAccounts")}</span>
           <div className="row g8 wrap">
             {DEMO_ACCOUNTS.map((a) => (
-              <button key={a.email} type="button" className="chip" onClick={() => { setEmail(a.email); setPassword(a.password); }}>{t(`role.${a.label}`)}</button>
+              <button key={a.email} type="button" className="chip" onClick={() => { setLogin(a.username); setPassword(a.password); }}>{t(`role.${a.label}`)}</button>
             ))}
           </div>
         </div>

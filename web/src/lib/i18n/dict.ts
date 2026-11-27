@@ -5,6 +5,7 @@ import { R32 } from "./dict-v32";
 import { R5 } from "./dict-v5";
 import { R6 } from "./dict-v6";
 import { R7 } from "./dict-v7";
+import { R8 } from "./dict-v8";
 
 /** [O‘zbekcha, Русский, English] */
 type Row = [string, string, string];
@@ -1073,7 +1074,7 @@ const R: Record<string, Row> = {
   "ai.noPlaces": ["Yaqin atrofda xaritada belgilangan ochiq joy topilmadi", "Рядом не нашлось отмеченных на карте мест", "No mapped public places were found nearby"],
 };
 
-Object.assign(R, R3, R31, R32, R5, R6, R7);
+Object.assign(R, R3, R31, R32, R5, R6, R7, R8);
 
 function build(i: 0 | 1 | 2): Record<string, string> {
   const out: Record<string, string> = {};

@@ -6,6 +6,7 @@ import { onSyncError } from "@/lib/store/db";
 import { useApi } from "@/lib/store/hooks";
 import { NativeBridge } from "./native-bridge";
 import { ToastProvider, useToast } from "./ui";
+import { SeasonProvider } from "./winter/season";
 
 type Theme = "light" | "dark";
 const ThemeCtx = createContext<{ theme: Theme; toggle: () => void }>({ theme: "light", toggle: () => {} });
@@ -57,9 +58,11 @@ export function Providers({ children }: { children: ReactNode }) {
       <I18nProvider>
         <ToastProvider>
           <MeProvider>
-            <SyncErrors />
-            <NativeBridge />
-            {children}
+            <SeasonProvider>
+              <SyncErrors />
+              <NativeBridge />
+              {children}
+            </SeasonProvider>
           </MeProvider>
         </ToastProvider>
       </I18nProvider>

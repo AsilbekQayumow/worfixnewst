@@ -6,7 +6,7 @@
 import { DAY_MS, gameDay, isBoosted, prevDay, roll, TZ_MS, type Look, type PlayState } from "./core";
 import { findSpawn, inReach, SPAWN, type Chest, type Heat, type LatLng, type MapEvent } from "./spawn";
 import { questById, questDone, questKey, questsFor, statsNow, type ActivityInput } from "./quests";
-import { cosmetic, seasonXp, tierOf, tierReward, type LookSlot } from "./season";
+import { adventReward, cosmetic, seasonXp, tierOf, tierReward, type LookSlot } from "./season";
 import { battleReward, duelReward, type Battle, type Duel } from "./league";
 import { ask, isRight, pickQuestion, QUIZ, type QuizAsk } from "./quiz";
 import type { QuizRow } from "./quiz-bank";
@@ -57,7 +57,8 @@ export type Action =
   | { t: "answer"; choice: number }
   | { t: "quest"; id: string } | { t: "tier"; n: number }
   | { t: "buy"; id: string } | { t: "equip"; slot: LookSlot; id: string | null }
-  | { t: "battle"; week: string } | { t: "duel"; id: string };
+  | { t: "battle"; week: string } | { t: "duel"; id: string }
+  | { t: "advent" };
 
 export interface Result {
   play: PlayState;
@@ -190,6 +191,17 @@ export function play(ctx: Ctx, a: Action): Result {
       if (!r) throw new GameError("notYet");
       p.battles = [...p.battles, a.week].slice(-20);
       return { play: p, ...grant(p, r.xp, r.coins, now, false) };
+    }
+    case "advent": {
+      // v8: one gift a day, 1–31 December (Tashkent time), only the gift of that very day
+      if (today.slice(5, 7) !== "12") throw new GameError("notYet");
+      const day = Number(today.slice(8, 10));
+      p.advent = (p.advent ?? []).filter((d) => d.slice(0, 4) === today.slice(0, 4));
+      if (p.advent.includes(today)) throw new GameError("claimed");
+      const r = adventReward(day);
+      p.advent.push(today);
+      if (r.item && !p.owned.includes(r.item)) p.owned.push(r.item);
+      return { play: p, ...grant(p, r.xp, r.coins, now, false), item: r.item, kind: "advent" };
     }
     case "duel": {
       const d = ctx.duel;

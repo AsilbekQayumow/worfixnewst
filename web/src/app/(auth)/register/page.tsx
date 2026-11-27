@@ -10,6 +10,7 @@ import { useErrorText, useI18n } from "@/lib/i18n";
 import { api, ValidationError } from "@/lib/store/api";
 import { api7 } from "@/lib/store/api7";
 import { emptyPlace, PlacePicker, type PlaceValue } from "@/components/place-picker";
+import { UsernameField } from "@/components/username-field";
 
 const ORG_TYPES = ["ngo", "school", "university", "government", "company", "community", "other"] as const;
 
@@ -20,7 +21,7 @@ function Register() {
   const { reload } = useMe();
   const params = useSearchParams();
   const [type, setType] = useState<"volunteer" | "organization">(params.get("type") === "organization" ? "organization" : "volunteer");
-  const [v, setV] = useState({ fullName: "", email: "", password: "", birthYear: "", ageConfirmed: false, guardianConsent: false });
+  const [v, setV] = useState({ fullName: "", username: "", email: "", password: "", birthYear: "", ageConfirmed: false, guardianConsent: false });
   const [o, setO] = useState<OrganizationInput>({ name: "", organizationType: "ngo", description: "", email: "", phone: "", website: "", address: "", country: "Uzbekistan", city: "" });
   const [place, setPlace] = useState<PlaceValue>(emptyPlace());
   const [fields, setFields] = useState<Record<string, string>>({});
@@ -35,7 +36,7 @@ function Register() {
     setFields({});
     try {
       const r = await api.register({
-        fullName: v.fullName, email: v.email, password: v.password, accountType: type, birthYear: Number(v.birthYear) || 0,
+        fullName: v.fullName, username: v.username, email: v.email, password: v.password, accountType: type, birthYear: Number(v.birthYear) || 0,
         ageConfirmed: v.ageConfirmed, guardianConsent: v.guardianConsent,
         organization: type === "organization" ? { ...o, organizationType: t(`orgType.${o.organizationType}`) } : undefined,
         place: type === "volunteer" ? place : undefined,
@@ -77,7 +78,8 @@ function Register() {
       {error && <Notice tone="bad">{error}</Notice>}
 
       <TextInput label={type === "organization" ? t("auth.contactName") : t("auth.fullName")} autoComplete="name" value={v.fullName} onChange={(e) => setV({ ...v, fullName: e.target.value })} error={fields.fullName} />
-      <TextInput label={t("auth.email")} type="email" autoComplete="email" value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} error={fields.email} />
+      <UsernameField value={v.username} onChange={(username) => setV({ ...v, username })} error={fields.username} />
+      <TextInput label={t("auth.email")} hint={t("auth.emailWhy")} type="email" autoComplete="email" value={v.email} onChange={(e) => setV({ ...v, email: e.target.value })} error={fields.email} />
       <PasswordInput label={t("auth.password")} autoComplete="new-password" hint={t("auth.passwordHint")} value={v.password} onChange={(e) => setV({ ...v, password: e.target.value })} error={fields.password} />
 
       {type === "volunteer" ? (

@@ -805,15 +805,15 @@ button.link { border: 0; background: none; padding: 0; font: inherit; cursor: po
 @media (min-width: 700px) { .wrapped7-grid { grid-template-columns: repeat(3, 1fr); } }
 
 /* the map: chests, events, flags, the reach bar, the retake banner */
-.tm-spawn { display: grid; place-items: center; padding: 0; border: 0; background: none; cursor: pointer; filter: drop-shadow(0 3px 2px rgb(0 0 0 / .3)); animation: pin-in 420ms var(--ease-spring) both; }
+.tm-spawn { display: grid; place-items: center; padding: 0; border: 0; background: none; cursor: pointer; filter: drop-shadow(0 3px 2px rgb(0 0 0 / .3)); animation: pin-drop 420ms var(--ease-spring) both; }
 .tm-spawn[data-opened] { opacity: .45; filter: grayscale(.6); }
-.tm-spawn[data-kind="legendary"]:not([data-opened]) { animation: pin-in 420ms var(--ease-spring) both, chest-glow 1.8s ease-in-out infinite 420ms; }
+.tm-spawn[data-kind="legendary"]:not([data-opened]) { animation: pin-drop 420ms var(--ease-spring) both, chest-glow 1.8s ease-in-out infinite 420ms; }
 @keyframes chest-glow { 50% { filter: drop-shadow(0 0 8px rgb(255 170 40 / .9)); } }
-.tm-event { width: 34px; height: 34px; border-radius: 50%; color: #fff; background: var(--sun); border: 3px solid #fff; box-shadow: 0 0 0 0 rgb(240 180 40 / .6); animation: pin-in 420ms var(--ease-spring) both, ev-pulse 1.6s ease-out infinite 420ms; }
+.tm-event { width: 34px; height: 34px; border-radius: 50%; color: #fff; background: var(--sun); border: 3px solid #fff; box-shadow: 0 0 0 0 rgb(240 180 40 / .6); animation: pin-drop 420ms var(--ease-spring) both, ev-pulse 1.6s ease-out infinite 420ms; }
 .tm-event[data-kind="flash"] { background: var(--sky); }
 @keyframes ev-pulse { 0% { box-shadow: 0 0 0 0 rgb(240 180 40 / .55); } 100% { box-shadow: 0 0 0 18px rgb(240 180 40 / 0); } }
 .tm-flag { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px 8px 8px 2px; color: #fff; background: var(--c); border: 2px solid #fff; box-shadow: 0 2px 4px rgb(0 0 0 / .3); }
-.mapx-chest { position: absolute; z-index: 6; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; width: min(440px, calc(100% - 32px)); padding: 12px 14px; border-radius: 22px; background: var(--surface); border: 2px solid var(--sun); box-shadow: 0 5px 0 var(--sun-lip), 0 18px 40px -16px rgb(0 0 0 / .4); animation: pin-in 380ms var(--ease-spring) both; }
+.mapx-chest { position: absolute; z-index: 6; left: 50%; bottom: 24px; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; width: min(440px, calc(100% - 32px)); padding: 12px 14px; border-radius: 22px; background: var(--surface); border: 2px solid var(--sun); box-shadow: 0 5px 0 var(--sun-lip), 0 18px 40px -16px rgb(0 0 0 / .4); animation: pin-drop 380ms var(--ease-spring) both; }
 .mapx-boost { position: absolute; z-index: 5; top: 72px; right: 16px; }
 .mapx-retake { position: absolute; z-index: 6; top: 72px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 12px; width: min(560px, calc(100% - 32px)); padding: 12px 14px; border-radius: 18px; background: var(--coral-soft); border: 2px solid var(--coral); color: var(--text); }
 @media (min-width: 861px) { .mapx-chest, .mapx-retake { left: calc(50% + 206px); } }

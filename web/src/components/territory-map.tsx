@@ -8,9 +8,13 @@ import { useI18n } from "@/lib/i18n";
 import { renderToStaticMarkup } from "react-dom/server";
 import { shade } from "@/lib/map-colors";
 import { CATEGORY_ICON, Icon, type IconName } from "./icons";
-import { ChestArt } from "./game";
+import { ChestArt, GiftArt } from "./game";
+import { SleighArt } from "./winter/sleigh";
+import { music } from "@/lib/season/music";
 import { FLAG_ICON } from "@/lib/game/season";
 import { centerOf } from "@/lib/domain/territory";
+import { savedHero, type HeroId } from "@/lib/season/winter";
+import type { HeroLayer } from "./winter/hero-layer";
 
 export interface MapArea { id: string; shape: Shape; relation: "mine" | "group" | "other"; color: string; name: string; pattern?: string | null; flag?: string | null }
 /** v7: chests and events on the map. */
@@ -28,6 +32,11 @@ const themeNow = () => (typeof document !== "undefined" && document.documentElem
 export const isNight = (d = new Date()) => d.getHours() >= 19 || d.getHours() < 6;
 const styleNow = () => (themeNow() === "dark" || isNight() ? "dark" : "light");
 const reduced = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+const winterOn = () => typeof document !== "undefined" && document.documentElement.dataset.season === "winter";
+/** v8: gifts already dropped today (this browser session), so they are not hidden again on the next visit. */
+const DROP_KEY = () => `worfix.dropped.${new Date().toISOString().slice(0, 10)}`;
+const dropped = () => { try { return new Set<string>(JSON.parse(sessionStorage.getItem(DROP_KEY()) ?? "[]")); } catch { return new Set<string>(); } };
+const remember = (id: string) => { try { const d = dropped(); d.add(id); sessionStorage.setItem(DROP_KEY(), JSON.stringify([...d].slice(-400))); } catch { /* private mode */ } };
 const css = (name: string, fallback: string) => (typeof document === "undefined" ? fallback : getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback);
 
 const fc = (features: GeoJSON.Feature[]): GeoJSON.FeatureCollection => ({ type: "FeatureCollection", features });
@@ -84,6 +93,8 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
   const lib = useRef<typeof import("maplibre-gl") | null>(null);
   const pins = useRef<Map<string, MlMarker>>(new Map());
   const meMarker = useRef<MlMarker | null>(null);
+  const heroLayer = useRef<HeroLayer | null>(null);
+  const [hero3d, setHero3d] = useState(false);
   const [ready, setReady] = useState(0);
   const [failed, setFailed] = useState(false);
   const pick = useRef(onMission);
@@ -127,6 +138,7 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
       pins.current.forEach((p) => p.remove());
       pins.current.clear();
       meMarker.current?.remove();
+      heroLayer.current = null;
       map.current?.remove();
       map.current = null;
     };
@@ -174,6 +186,10 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
     pat("pa_double", { "line-width": 1.8, "line-offset": -3 });
     add({ id: "areas-pa_double2", type: "line", source: "areas", filter: ["==", ["get", "pattern"], "pa_double"], paint: { "line-color": ["get", "line"], "line-width": 1.8, "line-offset": 2 } });
     pat("pa_bold", { "line-width": 5.5 });
+    // v8: a garland border — red and gold lights side by side
+    add({ id: "areas-pa_garland", type: "line", source: "areas", filter: ["==", ["get", "pattern"], "pa_garland"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#ff4d5a", "line-width": 6, "line-dasharray": [0.1, 2.4], "line-offset": -2 } });
+    add({ id: "areas-pa_garland2", type: "line", source: "areas", filter: ["==", ["get", "pattern"], "pa_garland"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#ffc93c", "line-width": 6, "line-dasharray": [0.1, 2.4], "line-offset": 3 } });
+    add({ id: "areas-pa_garland3", type: "line", source: "areas", filter: ["==", ["get", "pattern"], "pa_garland"], paint: { "line-color": ["get", "line"], "line-width": 1.2, "line-opacity": 0.8 } });
     add({ id: "taken-fill", type: "fill", source: "taken", paint: { "fill-color": ["get", "color"], "fill-opacity": 0 } });
     add({ id: "taken-line", type: "line", source: "taken", paint: { "line-color": ["get", "color"], "line-width": 3, "line-opacity": 0, "line-dasharray": [1.5, 1] } });
     add({ id: "flash-fill", type: "fill", source: "flash", paint: { "fill-color": accent, "fill-opacity": 0 } });
@@ -192,8 +208,29 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
         ? { "text-color": "#f3f0e8", "text-halo-color": "#16181c", "text-halo-width": 1.6 }
         : { "text-color": css("--text", "#1b1b1b"), "text-halo-color": css("--surface", "#ffffff"), "text-halo-width": 1.6 } });
     } catch { /* raster fallback has no glyphs */ }
+    // v8: me as a 3D person (three.js in the map's own WebGL context); the flat dot stays if that cannot run
+    const ml = lib.current;
+    if (ml && !m.getLayer("hero3d") && typeof WebGL2RenderingContext !== "undefined") {
+      void import("./winter/hero-layer").then(({ makeHeroLayer }) => {
+        if (map.current !== m || m.getLayer("hero3d") || !m.getSource("areas")) return;
+        try {
+          const layer = makeHeroLayer(ml, savedHero());
+          m.addLayer(layer);
+          heroLayer.current = layer;
+          layer.set(latest.current.me);
+          setHero3d(true);
+        } catch { setHero3d(false); }
+      }).catch(() => setHero3d(false));
+    }
     setReady((n) => n + 1);
   }, [ready]);
+
+  // v8: a new hero picked anywhere in the app
+  useEffect(() => {
+    const on = (e: Event) => heroLayer.current?.setHero((e as CustomEvent<HeroId>).detail);
+    window.addEventListener("worfix:hero", on);
+    return () => window.removeEventListener("worfix:hero", on);
+  }, []);
 
   // Areas.
   useEffect(() => {
@@ -298,11 +335,15 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
   const pickSpawn = useRef(onSpawn);
   pickSpawn.current = onSpawn;
   const spawnKey = (spawns ?? []).map((x) => `${x.id}${x.opened ? "o" : ""}`).join("|");
+  const spawnEls = useRef(new Map<string, { el: HTMLElement; at: GeoPoint }>());
+  const [spawnTick, setSpawnTick] = useState(0);
   useEffect(() => {
     const m = map.current, ml = lib.current;
     spawnPins.current.forEach((p) => p.remove());
     spawnPins.current = [];
+    spawnEls.current.clear();
     if (!m || !ml || !spawns?.length) return;
+    const awaitDrop = winterOn() && !reduced();
     for (const x of spawns) {
       const el = document.createElement("button");
       el.type = "button";
@@ -312,10 +353,131 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
       el.setAttribute("aria-label", t(x.event ? `mev.${x.kind}` : `cs.${x.kind}`));
       el.innerHTML = x.event ? renderToStaticMarkup(<Icon name={x.kind === "boost" ? "zap" : "target"} size={16} strokeWidth={2.4} />) : renderToStaticMarkup(<ChestArt kind={x.kind} size={30} open={x.opened} />);
       el.addEventListener("click", (e) => { e.stopPropagation(); pickSpawn.current?.(x.id); });
+      // v8: in the season, a gift waits hidden until Qorbobo flies over and drops it
+      if (awaitDrop && !x.event && !x.opened && !dropped().has(x.id)) el.dataset.await = "1";
+      spawnEls.current.set(x.id, { el, at: x.at });
       spawnPins.current.push(new ml.Marker({ element: el, anchor: "bottom" }).setLngLat([x.at.lng, x.at.lat]).addTo(m));
     }
+    setSpawnTick((n) => n + 1);
     return () => { spawnPins.current.forEach((p) => p.remove()); spawnPins.current = []; };
   }, [spawnKey, ready > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // v8: Qorbobo's sleigh flies across the map and drops the gifts that are waiting in view; it passes by again now and then.
+  const stage = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const m = map.current;
+    if (!m || !stage.current || !winterOn() || reduced()) return;
+    let busy = false, raf = 0, soon = 0;
+    const sleigh = document.createElement("button");
+    sleigh.type = "button";
+    sleigh.className = "tm-sleigh";
+    sleigh.setAttribute("aria-label", t("ny.santa"));
+    sleigh.innerHTML = renderToStaticMarkup(<SleighArt width={150} />) + `<span class="tm-sleigh-say">${t("ny.hoho")}</span>`;
+    sleigh.addEventListener("click", () => { sleigh.classList.remove("says"); void sleigh.offsetWidth; sleigh.classList.add("says"); if (music.on) music.chime(); });
+    stage.current.appendChild(sleigh);
+    const giftSvg = (kind: string) => renderToStaticMarkup(<GiftArt kind={kind} size={30} />);
+
+    const drop = (id: string, from: { x: number; y: number }) => {
+      const s0 = spawnEls.current.get(id);
+      if (!s0 || !stage.current) return;
+      const to = m.project([s0.at.lng, s0.at.lat]);
+      const g = document.createElement("span");
+      g.className = "tm-gift-fall";
+      g.innerHTML = giftSvg(s0.el.dataset.kind ?? "common");
+      stage.current.appendChild(g);
+      const a = g.animate([
+        { transform: `translate(${from.x - 15}px, ${from.y}px) rotate(0deg) scale(.6)`, opacity: 1 },
+        { transform: `translate(${(from.x + to.x) / 2 - 15}px, ${from.y - 18}px) rotate(160deg) scale(.9)`, opacity: 1, offset: 0.3 },
+        { transform: `translate(${to.x - 15}px, ${to.y - 30}px) rotate(360deg) scale(1)`, opacity: 1 },
+      ], { duration: 820, easing: "cubic-bezier(.45,0,.9,.6)" });
+      a.onfinish = () => {
+        g.remove();
+        delete s0.el.dataset.await;
+        s0.el.classList.add("tm-dropped");
+        remember(id);
+      };
+    };
+
+    const fly = () => {
+      const box = stage.current;
+      if (busy || document.hidden || !box) return;
+      const W = box.clientWidth, H = box.clientHeight;
+      const inView = (p: { x: number; y: number }) => p.x > 20 && p.x < W - 20 && p.y > 60 && p.y < H - 40;
+      const waiting = [...spawnEls.current.entries()]
+        .filter(([, v]) => v.el.dataset.await)
+        .map(([id, v]) => ({ id, p: m.project([v.at.lng, v.at.lat]) }))
+        .filter((x) => inView(x.p))
+        .sort((a, b) => a.p.x - b.p.x)
+        .slice(0, 14);
+      busy = true;
+      const ltr = waiting.length ? true : Math.random() < 0.5;
+      const yMid = waiting.length ? waiting.reduce((s2, w) => s2 + w.p.y, 0) / waiting.length : H * (0.25 + Math.random() * 0.3);
+      const startP = { x: ltr ? -180 : W + 180, y: Math.max(80, yMid - 80) };
+      const endP = { x: ltr ? W + 180 : -180, y: Math.max(60, yMid - 140) };
+      // path points in map coordinates, so the flight stays put when the map is panned
+      const pts = [startP, ...waiting.map((w) => w.p), endP].map((p) => m.unproject([p.x, p.y]));
+      const scr = [startP, ...waiting.map((w) => w.p), endP];
+      const cum = [0];
+      for (let i = 1; i < scr.length; i++) cum.push(cum[i - 1] + Math.hypot(scr[i].x - scr[i - 1].x, scr[i].y - scr[i - 1].y));
+      const total = cum[cum.length - 1];
+      const dur = Math.max(5000, Math.min(16000, (total / 230) * 1000));
+      const lift = 74; // the sleigh flies this high above the ground path
+      let next = 1;
+      const t0 = performance.now();
+      let lastSpark = 0;
+      sleigh.classList.add("on");
+      sleigh.style.setProperty("--dir", ltr ? "1" : "-1");
+      if (music.on) music.chime();
+      const step = (now: number) => {
+        const k = Math.min(1, (now - t0) / dur);
+        const d = k * total;
+        let i = 1;
+        while (i < cum.length - 1 && cum[i] < d) i++;
+        const seg = Math.max(1e-6, cum[i] - cum[i - 1]);
+        const f = (d - cum[i - 1]) / seg;
+        const a = m.project(pts[i - 1]), b = m.project(pts[i]);
+        const x = a.x + (b.x - a.x) * f, y = a.y + (b.y - a.y) * f - lift + Math.sin(now / 180) * 4;
+        sleigh.style.transform = `translate(${x - 75}px, ${y - 32}px) scaleX(var(--dir))`;
+        // drop each waiting gift as the sleigh passes over it
+        while (next < scr.length - 1 && d >= cum[next]) { drop(waiting[next - 1].id, { x, y: y + 20 }); next++; }
+        if (now - lastSpark > 70 && stage.current) {
+          lastSpark = now;
+          const sp = document.createElement("span");
+          sp.className = "tm-spark";
+          sp.style.transform = `translate(${x - (ltr ? 70 : -70) + (Math.random() * 16 - 8)}px, ${y + 14 + Math.random() * 10}px)`;
+          stage.current.appendChild(sp);
+          window.setTimeout(() => sp.remove(), 900);
+        }
+        if (k < 1) raf = requestAnimationFrame(step);
+        else { sleigh.classList.remove("on"); busy = false; }
+      };
+      raf = requestAnimationFrame(step);
+    };
+
+    const schedule = (ms: number) => { window.clearTimeout(soon); soon = window.setTimeout(fly, ms); };
+    // first flight shortly after the map shows; again when new gifts wait in view; and a pass every ~80 s
+    schedule(1400);
+    const onMove = () => { if ([...spawnEls.current.values()].some((v) => v.el.dataset.await)) schedule(1500); };
+    m.on("moveend", onMove);
+    const onNew = () => schedule(1200);
+    window.addEventListener("worfix:sleigh", onNew);
+    const every = window.setInterval(() => fly(), 80_000);
+    return () => {
+      window.clearTimeout(soon); window.clearInterval(every); cancelAnimationFrame(raf);
+      m.off("moveend", onMove);
+      window.removeEventListener("worfix:sleigh", onNew);
+      sleigh.remove();
+      stage.current?.querySelectorAll(".tm-gift-fall,.tm-spark").forEach((n) => n.remove());
+      // anything still waiting is shown right away next time
+      spawnEls.current.forEach((v) => { if (v.el.dataset.await) { delete v.el.dataset.await; } });
+    };
+  }, [ready > 0, spawnTick > 0]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // new gifts arriving later (walked into a new area): the sleigh comes for them
+  useEffect(() => {
+    if (!spawnTick || !winterOn() || reduced()) return;
+    if ([...spawnEls.current.values()].some((v) => v.el.dataset.await)) window.dispatchEvent(new Event("worfix:sleigh"));
+  }, [spawnTick]);
 
   // v7: area flags.
   const flagPins = useRef<MlMarker[]>([]);
@@ -429,6 +591,7 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
   useEffect(() => {
     const m = map.current, ml = lib.current;
     if (!m || !ml) return;
+    heroLayer.current?.set(me);
     if (!me) { meMarker.current?.remove(); meMarker.current = null; return; }
     if (!meMarker.current) {
       const el = document.createElement("div");
@@ -436,7 +599,9 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
       el.innerHTML = '<span class="tm-me-ring"></span><span class="tm-me-dot"></span>';
       meMarker.current = new ml.Marker({ element: el }).setLngLat([me.lng, me.lat]).addTo(m);
     } else meMarker.current.setLngLat([me.lng, me.lat]);
-  }, [me, ready]);
+    // with the 3D person on, only the pulsing ring stays at the feet
+    (meMarker.current.getElement() as HTMLElement).classList.toggle("tm-me-3d", hero3d);
+  }, [me, ready, hero3d]);
 
   // Fly somewhere when asked.
   useEffect(() => {
@@ -449,6 +614,7 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
   return (
     <div className="tm" style={{ height }} role="region" aria-label={t("map.label")}>
       <div ref={box} className="tm-canvas" />
+      <div ref={stage} className="tm-stage" />
       {failed && <div className="map-failed t-small secondary"><Icon name="map" size={18} />{t("map.failed")}</div>}
     </div>
   );

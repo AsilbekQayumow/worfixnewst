@@ -15,14 +15,20 @@ import { LangSwitch } from "./lang-switch";
 import { DemoBanner } from "./demo-banner";
 import { LevelUp } from "./level-up";
 import { levelForXp, levelTitleKey } from "@/lib/domain/rewards";
+import { Garland } from "./winter/garland";
+import { useSeason } from "./winter/season";
 
 interface NavItem { href: string; label: string; icon: IconName; badge?: number; mobile?: boolean; exact?: boolean; also?: string[] }
 type Badges = Awaited<ReturnType<typeof api.badges>>;
 
 function useNav(area: Area): { main: NavItem[]; extra: NavItem[]; b?: Badges } {
   const { t } = useI18n();
+  const { winter } = useSeason();
   const b = useApi(() => api.badges()).data;
-  return { ...navItems(area, t, b), b };
+  const items = navItems(area, t, b);
+  // v8: the New Year hub, right after Home, while the season lasts
+  if (winter && area === "volunteer") items.main.splice(1, 0, { href: "/app/newyear", label: t("nav.newyear"), icon: "tree" });
+  return { ...items, b };
 }
 
 function navItems(area: Area, t: (k: string) => string, b: Badges | undefined): { main: NavItem[]; extra: NavItem[] } {
@@ -83,7 +89,7 @@ function isCurrent(item: NavItem, path: string, tab: string | null) {
 /** v5: each section keeps one colour, in the sidebar and the tab bar. */
 const TONE: Partial<Record<IconName, string>> = {
   home: "var(--accent)", map: "var(--sky)", message: "var(--berry)", trophy: "var(--sun)", bag: "var(--flame)", user: "var(--sea)",
-  bell: "var(--coral)", settings: "var(--muted)", flag: "var(--sky)", shield: "var(--sea)", building: "var(--flame)", users: "var(--berry)", send: "var(--sky)",
+  bell: "var(--coral)", settings: "var(--muted)", tree: "var(--xmas-red, var(--coral))", flag: "var(--sky)", shield: "var(--sea)", building: "var(--flame)", users: "var(--berry)", send: "var(--sky)",
 };
 const tone = (i: IconName) => ({ ["--tone" as string]: TONE[i] ?? "var(--accent)" });
 
@@ -113,6 +119,7 @@ function ShellInner({ area, children }: { area: Area; children: ReactNode }) {
   const bleed = path === "/app/map" && search.get("view") !== "list";
   const nav = useNav(area);
   const b = nav.b;
+  const season = useSeason();
 
   // v3.2: a group that approved my join request takes me in on my next visit.
   const toast = useToast();
@@ -157,6 +164,7 @@ function ShellInner({ area, children }: { area: Area; children: ReactNode }) {
   return (
     <div className="shell">
       <aside className="side">
+        <Garland count={5} className="side-garland" />
         <div className="side-brand"><Logo href={homeForRole(me.role)} /></div>
         <nav className="nav" aria-label={t("nav.main")}>
           <NavLinks items={nav.main} path={path} tab={tab} />
@@ -169,6 +177,7 @@ function ShellInner({ area, children }: { area: Area; children: ReactNode }) {
             <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={toggle} aria-label={theme === "dark" ? t("a.lightMode") : t("a.darkMode")}>
               <Icon name={theme === "dark" ? "sun" : "moon"} size={16} />
             </button>
+            {season.winter && <MusicButton />}
             <button type="button" className="btn btn-ghost btn-sm btn-icon" onClick={logout} aria-label={t("a.logout")} style={{ marginLeft: "auto" }}>
               <Icon name="logout" size={16} />
             </button>
@@ -187,8 +196,10 @@ function ShellInner({ area, children }: { area: Area; children: ReactNode }) {
 
       <div className="shell-col" style={{ minWidth: 0 }}>
         <header className="topbar">
+          <Garland count={8} className="top-garland" />
           <Logo href={homeForRole(me.role)} compact />
           <div className="row g4">
+            {season.winter && <MusicButton />}
             {area === "volunteer" && (
               <span className="hud-chips">
                 <Link href="/app/profile" className="hud-chip flame" data-off={me.streak ? undefined : ""} aria-label={t("home.app.streak")}><Icon name="flame" size={17} />{me.streak}</Link>
@@ -226,6 +237,18 @@ function ShellInner({ area, children }: { area: Area; children: ReactNode }) {
         </nav>
       </div>
     </div>
+  );
+}
+
+/** v8: New Year music on and off. */
+export function MusicButton() {
+  const { t } = useI18n();
+  const { music, toggleMusic } = useSeason();
+  return (
+    <button type="button" className="btn btn-ghost btn-sm btn-icon season-btn" data-on={music ? "" : undefined} onClick={toggleMusic}
+      aria-pressed={music} aria-label={music ? t("ny.musicOff") : t("ny.musicOn")} title={music ? t("ny.musicOff") : t("ny.musicOn")}>
+      <Icon name={music ? "music" : "musicOff"} size={17} />
+    </button>
   );
 }
 

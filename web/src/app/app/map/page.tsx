@@ -20,6 +20,7 @@ import { FIREBASE } from "@/lib/store/db";
 import { useApi } from "@/lib/store/hooks";
 import { api7 } from "@/lib/store/api7";
 import { BoostBar, ChestArt, QuizDialog, useAct } from "@/components/game";
+import { HeroPicker } from "@/components/winter/hero-picker";
 import type { QuizAsk } from "@/lib/game/quiz";
 import { SPAWN } from "@/lib/game/spawn";
 
@@ -66,6 +67,8 @@ function TerritoryGame({ onList }: { onList: () => void }) {
   const [selected, setSelected] = useState<string | null>(null);
   const [tab, setTab] = useState<"missions" | "season">("missions");
   const [intro, setIntro] = useState(false);
+  // v8: choose the 3D person you walk as
+  const [heroOpen, setHeroOpen] = useState(false);
   const [flash, setFlash] = useState<Shape | null>(null);
   const [taken, setTaken] = useState<{ shape: Shape; color: string }[] | null>(null);
   const [replay, setReplay] = useState(false);
@@ -253,6 +256,7 @@ function TerritoryGame({ onList }: { onList: () => void }) {
           { value: "list", label: <span className="row g8"><Icon name="list" size={16} />{t("tm.viewList")}</span> },
         ]} />
         <div className="row g8">
+          <button type="button" className="mapx-fab-sm mapx-hero" onClick={() => setHeroOpen(true)} aria-label={t("hero.title")} title={t("hero.title")}><Icon name="user" size={18} /></button>
           <button type="button" className="mapx-fab-sm" onClick={() => setIntro(true)} aria-label={t("tm.how")}><Icon name="info" size={18} /></button>
           <button type="button" className="mapx-fab-sm" aria-label={t("tm.locate")} onClick={() => { gps.locate(); if (here) setFocus({ point: here, zoom: 16, key: `me${Date.now()}` }); }}><Icon name="crosshair" size={18} /></button>
         </div>
@@ -368,6 +372,9 @@ function TerritoryGame({ onList }: { onList: () => void }) {
         <CaptureHud gps={gps} busy={busy} onFinish={() => finish(true)} onCancel={() => setConfirmCancel(true)} />
       )}
 
+      <Dialog open={heroOpen} onClose={() => setHeroOpen(false)} title={t("hero.title")}>
+        {heroOpen && <HeroPicker onDone={() => setHeroOpen(false)} />}
+      </Dialog>
       <Dialog open={replay} onClose={() => setReplay(false)} title={t("tl.title")} wide>
         {replay && <SeasonReplay color={myColor} />}
       </Dialog>

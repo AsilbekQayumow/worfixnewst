@@ -118,6 +118,8 @@ export interface UserProfile {
   mahallaId?: string | null;
   /** v7: what the person wears from the game (written only by the game engine) */
   look?: { frame: string | null; title: string | null; pattern: string | null; flag: string | null } | null;
+  /** v8: the 3D person this user walks the map as */
+  hero?: string | null;
 }
 
 export interface Organization {

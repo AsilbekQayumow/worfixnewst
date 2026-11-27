@@ -77,6 +77,14 @@ const P = {
   ticket: <><path d="M3.5 8a1.5 1.5 0 0 0 1.5-1.5h14A1.5 1.5 0 0 0 20.5 8v2.5a1.5 1.5 0 0 0 0 3V16a1.5 1.5 0 0 0-1.5 1.5H5A1.5 1.5 0 0 0 3.5 16v-2.5a1.5 1.5 0 0 0 0-3Z" /><path d="M14.5 6.5v11" strokeDasharray="1.5 2" /></>,
   copy: <><rect x="8" y="8" width="12" height="12" rx="2" /><path d="M16 8V5.5A1.5 1.5 0 0 0 14.5 4h-9A1.5 1.5 0 0 0 4 5.5v9A1.5 1.5 0 0 0 5.5 16H8" /></>,
   printer: <><path d="M7 9V4h10v5M7 17H5a1.5 1.5 0 0 1-1.5-1.5v-5A1.5 1.5 0 0 1 5 9h14a1.5 1.5 0 0 1 1.5 1.5v5A1.5 1.5 0 0 1 19 17h-2" /><rect x="7" y="13.5" width="10" height="7" rx="1" /></>,
+  // v8: the New Year season
+  gift: <><rect x="3.5" y="9" width="17" height="4" rx="1" /><path d="M5 13v6.5A1.5 1.5 0 0 0 6.5 21h11a1.5 1.5 0 0 0 1.5-1.5V13M12 9v12" /><path d="M12 9C10.5 5 6.5 4.5 6.5 7S10 9 12 9Zm0 0c1.5-4 5.5-4.5 5.5-2S14 9 12 9Z" /></>,
+  snowflake: <><path d="M12 2.5v19M3.8 7.2l16.4 9.6M3.8 16.8l16.4-9.6" /><path d="m9.5 4.5 2.5 2 2.5-2M9.5 19.5l2.5-2 2.5 2M4.3 10.4l3.2-.6-1-3M19.7 13.6l-3.2.6 1 3M4.3 13.6l3.2.6-1 3M19.7 10.4l-3.2-.6 1-3" /></>,
+  tree: <><path d="M12 2.5 7 9h2.5L5.5 14.5H9L4.5 20h15L15 14.5h3.5L14.5 9H17Z" /><path d="M12 20v2" /></>,
+  music: <><path d="M9 18V5.5l11-2V16" /><circle cx="6.5" cy="18" r="2.5" /><circle cx="17.5" cy="16" r="2.5" /></>,
+  musicOff: <><path d="M9 13.5V18M9 8.5V5.5l11-2V13" /><circle cx="6.5" cy="18" r="2.5" /><path d="M3 3l18 18" /></>,
+  star: <><path d="m12 3.5 2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 16.9l-5.2 2.8 1-5.9-4.3-4.1 5.9-.8Z" /></>,
+  sled: <><path d="M3 16.5h15a3 3 0 0 0 3-3M5 16.5l1.5-5h10l1.5 5" /><path d="M8 11.5V8.5h7v3" /></>,
 } satisfies Record<string, ReactNode>;
 
 export type IconName = keyof typeof P;

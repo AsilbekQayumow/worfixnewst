@@ -4,9 +4,9 @@
  */
 export type LookSlot = "frame" | "title" | "pattern" | "flag";
 export type Rarity = "common" | "rare" | "legendary";
-export interface Cosmetic { id: string; slot: LookSlot; rarity: Rarity; price: number | null; tier: number | null }
+export interface Cosmetic { id: string; slot: LookSlot; rarity: Rarity; price: number | null; tier: number | null; /** v8: a gift of the New Year calendar on this December day */ advent?: number | null }
 
-const c = (id: string, slot: LookSlot, rarity: Rarity, price: number | null, tier: number | null = null): Cosmetic => ({ id, slot, rarity, price, tier });
+const c = (id: string, slot: LookSlot, rarity: Rarity, price: number | null, tier: number | null = null, advent: number | null = null): Cosmetic => ({ id, slot, rarity, price, tier, advent });
 
 export const COSMETICS: Cosmetic[] = [
   // frames
@@ -19,10 +19,21 @@ export const COSMETICS: Cosmetic[] = [
   c("pa_dash", "pattern", "common", 50), c("pa_dots", "pattern", "common", 50), c("pa_double", "pattern", "rare", null, 25), c("pa_bold", "pattern", "rare", 200),
   // area flags
   c("fl_leaf", "flag", "common", 70), c("fl_star", "flag", "rare", null, 12), c("fl_heart", "flag", "common", 70), c("fl_bolt", "flag", "rare", 220), c("fl_crown", "flag", "legendary", null, 28),
+  // v8: the New Year — two for Fixcoin, the rest only from the gift calendar
+  c("ti_snowflake", "title", "common", 90), c("fl_gift", "flag", "common", 80),
+  c("fl_snow", "flag", "rare", null, null, 3), c("fr_snow", "frame", "rare", null, null, 7), c("ti_santa", "title", "rare", null, null, 14),
+  c("pa_garland", "pattern", "rare", null, null, 21), c("fr_garland", "frame", "legendary", null, null, 25), c("fl_tree", "flag", "legendary", null, null, 31),
 ];
 export const cosmetic = (id: string | null | undefined) => COSMETICS.find((x) => x.id === id) ?? null;
 /** Icon names (components/icons) for flags. */
-export const FLAG_ICON: Record<string, string> = { fl_leaf: "leaf", fl_star: "award", fl_heart: "heart", fl_bolt: "zap", fl_crown: "trophy" };
+export const FLAG_ICON: Record<string, string> = { fl_leaf: "leaf", fl_star: "award", fl_heart: "heart", fl_bolt: "zap", fl_crown: "trophy", fl_gift: "gift", fl_snow: "snowflake", fl_tree: "tree" };
+
+/** v8: the New Year gift calendar (1–31 December): what each day's gift holds. */
+export function adventReward(day: number): { xp: number; coins: number; item: string | null } {
+  const item = COSMETICS.find((x) => x.advent === day)?.id ?? null;
+  if (day === 31) return { xp: 250, coins: 75, item };
+  return { xp: 15 + day * 2, coins: item ? 5 : 3 + Math.floor(day / 3), item };
+}
 
 export const SEASON_TIERS = 30;
 /** XP needed to reach tier n (cumulative): grows gently, 7 800 for all 30. */

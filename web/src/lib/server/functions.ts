@@ -10,6 +10,7 @@ import { handlePushRegister, handlePushSend, handlePushUnregister } from "./push
 import { handleWidget, handleWidgetToken } from "./widget";
 import { handleEmergencyBroadcast } from "./v6";
 import { handlePlay } from "./v7";
+import { handleLoginName, handleUsernameCheck } from "./v8";
 
 export const FUNCTIONS: Record<string, { method: "GET" | "POST"; run: (req: Request) => Promise<Response> }> = {
   "ai-missions": { method: "POST", run: handleMissions },
@@ -28,4 +29,7 @@ export const FUNCTIONS: Record<string, { method: "GET" | "POST"; run: (req: Requ
   "emergency-broadcast": { method: "POST", run: handleEmergencyBroadcast },
   // v7: every game reward (chests, quizzes, quests, season pass, looks, battles, duels)
   "play": { method: "POST", run: handlePlay },
+  // v8: sign in with a username
+  "login-name": { method: "POST", run: handleLoginName },
+  "username-check": { method: "GET", run: handleUsernameCheck },
 };

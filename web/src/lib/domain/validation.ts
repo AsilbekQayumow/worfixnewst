@@ -56,7 +56,7 @@ export function validateOrganization(i: Partial<OrganizationInput>): Result<Orga
 }
 
 export interface RegisterInput {
-  fullName: string; email: string; password: string; accountType: "volunteer" | "organization";
+  fullName: string; username: string; email: string; password: string; accountType: "volunteer" | "organization";
   ageConfirmed: boolean; guardianConsent: boolean; birthYear: number;
   /** required when accountType = organization */
   organization?: OrganizationInput;
@@ -88,8 +88,11 @@ export function validateRegister(i: Partial<RegisterInput>): Result<RegisterInpu
   const e: Errors = {};
   const fullName = str(i.fullName);
   const email = str(i.email).toLowerCase();
+  const username = cleanUsername(i.username);
   const password = typeof i.password === "string" ? i.password : "";
   if (fullName.length < 2 || fullName.length > 80) e.fullName = "v.name";
+  const un = usernameProblem(username);
+  if (un) e.username = un;
   if (!EMAIL.test(email)) e.email = "v.email";
   const pw = passwordProblem(password);
   if (pw) e.password = pw;
@@ -111,17 +114,32 @@ export function validateRegister(i: Partial<RegisterInput>): Result<RegisterInpu
     place = pl.data ?? undefined;
   }
   return done(e, {
-    fullName, email, password, accountType, ageConfirmed: i.ageConfirmed === true, guardianConsent: i.guardianConsent === true,
+    fullName, username, email, password, accountType, ageConfirmed: i.ageConfirmed === true, guardianConsent: i.guardianConsent === true,
     birthYear: Number(i.birthYear) || 0, organization, place,
   });
 }
 
-export function validateLogin(i: { email?: string; password?: string }): Result<{ email: string; password: string }> {
+/** v8: usernames — 3–24 of a-z, 0-9 and _, not starting with a digit-only form, never a reserved word. */
+export const USERNAME = /^[a-z0-9_]{3,24}$/;
+const RESERVED = new Set(["admin", "administrator", "worfix", "moderator", "support", "root", "system", "official", "help", "qorbobo", "santa"]);
+export function usernameProblem(name: string): string | null {
+  if (!USERNAME.test(name)) return "v.username";
+  if (RESERVED.has(name) || name.startsWith("worfix") || name.startsWith("deleted_") || name.startsWith("user_")) return "v.usernameReserved";
+  return null;
+}
+/** "@Dilnoza " → "dilnoza" */
+export const cleanUsername = (v: unknown) => str(v).replace(/^@+/, "").toLowerCase();
+
+export interface LoginData { login: string; password: string; email: string | null; username: string | null }
+/** v8: sign in with the username (or, for older accounts, the email) and the password. */
+export function validateLogin(i: { login?: string; email?: string; password?: string }): Result<LoginData> {
   const e: Errors = {};
-  const email = str(i.email).toLowerCase();
-  if (!EMAIL.test(email)) e.email = "v.email";
+  const raw = str(i.login ?? i.email);
+  const email = raw.includes("@") && !raw.startsWith("@") ? raw.toLowerCase() : null;
+  const username = email ? null : cleanUsername(raw);
+  if (email ? !EMAIL.test(email) : !USERNAME.test(username ?? "")) e.login = raw ? "v.login" : "v.loginEmpty";
   if (!i.password) e.password = "v.passwordEmpty";
-  return done(e, { email, password: i.password ?? "" });
+  return done(e, { login: email ?? username ?? "", password: i.password ?? "", email, username });
 }
 
 export interface ProfileInput {

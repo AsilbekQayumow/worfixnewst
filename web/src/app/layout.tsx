@@ -8,6 +8,8 @@ import "@fontsource-variable/nunito/wght.css";
 import "@fontsource-variable/jetbrains-mono/wght.css";
 import "./globals.css";
 import "./theme-play.css";
+import "./theme-winter.css";
+import { SEASON_SCRIPT } from "@/lib/season/winter";
 
 export const metadata: Metadata = {
   title: { default: "WORFIX — ko'ngillilik, tasdiqlangan natija bilan", template: "%s · WORFIX" },
@@ -31,7 +33,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       <head>
         <script
           // Set the theme before paint so dark-mode users don't see a light flash.
-          dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem("worfix.theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.dataset.theme=t;var l=localStorage.getItem("worfix.lang");if(l)document.documentElement.lang=l}catch(e){}` }}
+          dangerouslySetInnerHTML={{ __html: `try{var t=localStorage.getItem("worfix.theme")||(matchMedia("(prefers-color-scheme: dark)").matches?"dark":"light");document.documentElement.dataset.theme=t;var l=localStorage.getItem("worfix.lang");if(l)document.documentElement.lang=l}catch(e){}${SEASON_SCRIPT}` }}
         />
       </head>
       <body>

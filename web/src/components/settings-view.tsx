@@ -176,7 +176,7 @@ export function SettingsView() {
       <Section id="password" title={t("set.password")} sub={t("set.passwordSub")}>
         <div className="stack g20">
           <form className="stack g16" onSubmit={changePw} noValidate>
-            <input type="email" autoComplete="username" value={me.email} readOnly hidden />
+            <input type="text" autoComplete="username" value={me.username} readOnly hidden />
             <PasswordInput label={t("set.currentPw")} autoComplete="current-password" value={pw.current} onChange={(e) => setPw({ ...pw, current: e.target.value })} error={pwFields.current} />
             <div className="grid cols-2">
               <PasswordInput label={t("auth.newPassword")} autoComplete="new-password" value={pw.next} onChange={(e) => setPw({ ...pw, next: e.target.value })} error={pwFields.next} hint={t("auth.passwordHint")} />

@@ -13,8 +13,10 @@ function interpolate(s: string, v?: Values) {
   return s.replace(/\{(\w+)\}/g, (_, k: string) => (v[k] === undefined || v[k] === null ? "" : String(v[k])));
 }
 
-export function translate(lang: Lang, key: string, values?: Values): string {
-  const s = DICT[lang][key] ?? DICT.en[key];
+/** v8: in the New Year season a key may have a festive variant ("cs.common@w": chest → gift). */
+export function translate(lang: Lang, key: string, values?: Values, winter = false): string {
+  const w = winter ? DICT[lang][`${key}@w`] ?? DICT.en[`${key}@w`] : undefined;
+  const s = w ?? DICT[lang][key] ?? DICT.en[key];
   if (s !== undefined) return interpolate(s, values);
   return key;
 }
@@ -41,13 +43,22 @@ const I18n = createContext<Ctx | null>(null);
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [lang, setLangState] = useState<Lang>("uz");
+  // v8: festive wording follows html[data-season] — read after hydration, so the server and first client render agree
+  const [winter, setWinter] = useState(false);
   useEffect(() => { setLangState(detect()); }, []);
+  useEffect(() => {
+    const read = () => setWinter(document.documentElement.dataset.season === "winter");
+    read();
+    const mo = new MutationObserver(read);
+    mo.observe(document.documentElement, { attributes: true, attributeFilter: ["data-season"] });
+    return () => mo.disconnect();
+  }, []);
   useEffect(() => { document.documentElement.lang = lang; }, [lang]);
   const setLang = useCallback((l: Lang) => {
     setLangState(l);
     try { localStorage.setItem(KEY, l); } catch { /* ignore */ }
   }, []);
-  const value = useMemo<Ctx>(() => ({ lang, setLang, locale: LOCALE[lang], t: (k, v) => translate(lang, k, v) }), [lang, setLang]);
+  const value = useMemo<Ctx>(() => ({ lang, setLang, locale: LOCALE[lang], t: (k, v) => translate(lang, k, v, winter) }), [lang, setLang, winter]);
   return <I18n.Provider value={value}>{children}</I18n.Provider>;
 }
 

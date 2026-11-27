@@ -17,7 +17,7 @@ import { langOf, notificationText, sendToUser } from "./push";
 
 const json = (body: unknown, status = 200) => Response.json(body, { status });
 const DAY = 86_400_000;
-const ACTIONS = new Set(["daily", "save", "open", "answer", "quest", "tier", "buy", "equip", "battle", "duel"]);
+const ACTIONS = new Set(["daily", "save", "open", "answer", "quest", "tier", "buy", "equip", "battle", "duel", "advent"]);
 
 function cleanAction(raw: unknown): Action | null {
   const a = (raw ?? {}) as Record<string, unknown>;
@@ -36,7 +36,7 @@ function cleanAction(raw: unknown): Action | null {
     case "equip": return { t: "equip", slot: s(a.slot) as "frame", id: a.id === null ? null : s(a.id) };
     case "battle": return { t: "battle", week: s(a.week, 10) };
     case "duel": return { t: "duel", id: s(a.id) };
-    default: return { t: a.t as "daily" | "save" };
+    default: return { t: a.t as "daily" | "save" | "advent" };
   }
 }
 

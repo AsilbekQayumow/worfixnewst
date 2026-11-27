@@ -21,6 +21,8 @@ import { api, isVerifiedAccount } from "@/lib/store/api";
 import { useApi } from "@/lib/store/hooks";
 import { api7 } from "@/lib/store/api7";
 import { GameHomeCard } from "@/components/game";
+import { NewYearCountdown } from "@/components/winter/countdown";
+import { useSeason } from "@/components/winter/season";
 
 export default function Home() {
   const { t, lang } = useI18n();
@@ -29,18 +31,20 @@ export default function Home() {
   const q = useApi(() => api.myInsights());
   const signals = useApi(() => api.helpSignals());
   const game = useApi(() => api7.game(null));
+  const { winter } = useSeason();
   if (!me) return null;
   const lp = levelProgress(me.xp);
   const d = q.data;
 
   return (
     <div className="stack g24 enter home5">
+      {winter && <NewYearCountdown cta={me.role === "volunteer"} />}
       <section className="hello5">
         <div className="hello5-main">
           <Link href="/app/profile" className="hello5-avatar" aria-label={t("nav.profile")}><Avatar name={me.fullName} src={me.avatar} size={68} /></Link>
           <div className="stack g4" style={{ minWidth: 0 }}>
             <span className="t-small hello5-date">{f.today().replace(/^./, (c) => c.toUpperCase())}</span>
-            <h1 className="t-h1 truncate">{t("h5.hello", { name: me.fullName.split(/\s+/)[0] })}</h1>
+            <h1 className="t-h1 hello5-name">{t("h5.hello", { name: me.fullName.split(/\s+/)[0] })}</h1>
           </div>
         </div>
         <Link href="/app/profile" className="hello5-level">

@@ -15,7 +15,34 @@ type Lang = "uz" | "ru" | "en";
 
 /* ── art ── */
 const CHEST_TONE: Record<string, string> = { common: "var(--sun)", quiz: "var(--sky)", rare: "var(--berry)", legendary: "var(--flame)", boost: "var(--leaf, #2f9e44)", flash: "var(--sky)" };
+/** v8: in the New Year season the chests are wrapped gifts (box colour, ribbon colour). */
+const GIFT_TONE: Record<string, [string, string]> = {
+  common: ["#1d9a4a", "#d6262f"], quiz: ["#d6262f", "#ffc93c"], rare: ["#2f7fd6", "#e8eef5"], legendary: ["#f2b705", "#d6262f"], flash: ["#7a4ad6", "#ffc93c"], boost: ["#10b3a3", "#fff"],
+};
+const winterNow = () => typeof document !== "undefined" && document.documentElement.dataset.season === "winter";
+export function GiftArt({ kind = "common", size = 40, open = false }: { kind?: string; size?: number; open?: boolean }) {
+  const [box, ribbon] = GIFT_TONE[kind] ?? GIFT_TONE.common;
+  const edge = "rgb(0 0 0 / .28)";
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true" className="chest-art gift-art" data-kind={kind} data-open={open || undefined}>
+      <ellipse cx="24" cy="44.5" rx="15" ry="2.4" fill="rgb(0 0 0 / .18)" />
+      <rect x="9" y="22" width="30" height="21" rx="2.5" fill={box} stroke={edge} strokeWidth="1.6" />
+      <rect x="9" y="22" width="30" height="5" fill="rgb(0 0 0 / .12)" />
+      <rect x="21.5" y="22" width="5" height="21" fill={ribbon} />
+      <g transform={open ? "translate(-3 -9) rotate(-14 24 18)" : undefined}>
+        <rect x="6.5" y="15" width="35" height="8" rx="2" fill={box} stroke={edge} strokeWidth="1.6" style={{ filter: "brightness(1.12)" }} />
+        <rect x="21.5" y="15" width="5" height="8" fill={ribbon} />
+        <path d="M24 15c-3-6-10-8-11-4s6 4 11 4Zm0 0c3-6 10-8 11-4s-6 4-11 4Z" fill={ribbon} stroke={edge} strokeWidth="1.2" />
+      </g>
+      {open && <g fill="#ffe27a">{[[14, 10], [33, 8], [24, 4], [38, 15]].map(([x, y], i) => <circle key={i} cx={x} cy={y} r="1.6" />)}</g>}
+      {kind === "quiz" && <text x="24" y="38" textAnchor="middle" fontSize="11" fontWeight="900" fill="#fff" stroke="rgb(0 0 0 / .3)" strokeWidth=".6">?</text>}
+      {kind === "legendary" && <path d="M15 33l1.3 2.6 2.9.4-2.1 2 .5 2.9-2.6-1.4-2.6 1.4.5-2.9-2.1-2 2.9-.4Z" fill="#fff" />}
+    </svg>
+  );
+}
+
 export function ChestArt({ kind = "common", size = 40, open = false }: { kind?: string; size?: number; open?: boolean }) {
+  if (winterNow()) return <GiftArt kind={kind} size={size} open={open} />;
   const c = CHEST_TONE[kind] ?? CHEST_TONE.common;
   return (
     <svg width={size} height={size} viewBox="0 0 48 48" aria-hidden="true" className="chest-art" data-kind={kind} data-open={open || undefined}>
@@ -249,7 +276,7 @@ export function LookLocker({ g }: { g: GameView }) {
                     <Button size="sm" variant={on ? "ghost" : "secondary"} loading={busy === c.id} onClick={() => run(c.id, { t: "equip", slot, id: on ? null : c.id })}>{on ? t("lk.off") : t("lk.on")}</Button>
                   ) : c.price !== null ? (
                     <Button size="sm" variant="primary" disabled={g.me.points < c.price} loading={busy === c.id} onClick={() => run(c.id, { t: "buy", id: c.id })}><Coins value={c.price} size={14} /></Button>
-                  ) : <span className="t-small muted row g4"><Icon name="lock" size={12} />{t("lk.tier", { n: c.tier ?? 0 })}</span>}
+                  ) : <span className="t-small muted row g4"><Icon name={c.advent ? "gift" : "lock"} size={12} />{c.advent ? t("adv.fromDay", { n: c.advent }) : t("lk.tier", { n: c.tier ?? 0 })}</span>}
                 </div>
               );
             })}

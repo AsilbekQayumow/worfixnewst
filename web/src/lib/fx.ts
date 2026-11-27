@@ -8,6 +8,9 @@ import { haptic, isNative } from "./native";
 const reduced = () => typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 const PALETTE = ["#4daa27", "#6cc24a", "#0a6a2c", "#e0a84a", "#9a5b0b", "#cfe8bf"];
+/** v8: in the New Year season the burst is snowflakes, gold stars and red and green paper. */
+const WINTER = ["#ffffff", "#d6262f", "#ffc93c", "#1d9a4a", "#bfe3ff", "#ff7a7a"];
+const winterOn = () => typeof document !== "undefined" && document.documentElement.dataset.season === "winter";
 
 type Piece = { x: number; y: number; vx: number; vy: number; r: number; spin: number; w: number; h: number; c: string; leaf: boolean; life: number };
 
@@ -29,12 +32,14 @@ export function celebrate(from?: { x: number; y: number } | HTMLElement | null, 
   const ctx = canvas.getContext("2d")!;
   ctx.scale(dpr, dpr);
 
+  const winter = winterOn();
+  const pal = winter ? WINTER : PALETTE;
   const pieces: Piece[] = Array.from({ length: amount }, () => {
     const a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.1;
     const speed = 6 + Math.random() * 9;
     return {
       x: ox, y: oy, vx: Math.cos(a) * speed, vy: Math.sin(a) * speed, r: Math.random() * Math.PI, spin: (Math.random() - 0.5) * 0.3,
-      w: 6 + Math.random() * 6, h: 4 + Math.random() * 8, c: PALETTE[(Math.random() * PALETTE.length) | 0], leaf: Math.random() < 0.45, life: 1,
+      w: 6 + Math.random() * 6, h: 4 + Math.random() * 8, c: pal[(Math.random() * pal.length) | 0], leaf: Math.random() < 0.45, life: 1,
     };
   });
 
@@ -59,7 +64,20 @@ export function celebrate(from?: { x: number; y: number } | HTMLElement | null, 
       ctx.translate(p.x, p.y);
       ctx.rotate(p.r);
       ctx.fillStyle = p.c;
-      if (p.leaf) {
+      if (winter && p.leaf) {
+        // a snowflake (white) or a star (any other colour)
+        ctx.strokeStyle = p.c;
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        if (p.c === "#ffffff" || p.c === "#bfe3ff") {
+          for (let k = 0; k < 6; k++) { const a = (k * Math.PI) / 3; ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * p.w, Math.sin(a) * p.w); }
+          ctx.stroke();
+        } else {
+          for (let k = 0; k < 10; k++) { const a = (k * Math.PI) / 5 - Math.PI / 2, r = k % 2 ? p.w * 0.45 : p.w; ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+          ctx.closePath();
+          ctx.fill();
+        }
+      } else if (p.leaf) {
         ctx.beginPath();
         ctx.moveTo(0, -p.h);
         ctx.quadraticCurveTo(p.w, 0, 0, p.h);

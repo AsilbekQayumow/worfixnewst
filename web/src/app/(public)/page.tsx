@@ -12,6 +12,8 @@ import { CATEGORIES } from "@/lib/domain/types";
 import { useFmt, useI18n } from "@/lib/i18n";
 import { api } from "@/lib/store/api";
 import { useApi } from "@/lib/store/hooks";
+import { NewYearCountdown } from "@/components/winter/countdown";
+import { useSeason } from "@/components/winter/season";
 
 const STEP_TONE = ["var(--sky)", "var(--sun)", "var(--accent)"];
 
@@ -28,6 +30,7 @@ export default function Landing() {
     { icon: "camera", title: t("ld.how3"), body: t("ld.how3b") },
   ];
   const titleWords = t("ld.title1").split(" ").length;
+  const { winter } = useSeason();
 
   return (
     <div className="landing v5">
@@ -58,6 +61,7 @@ export default function Landing() {
           <HeroPlay />
         </div>
       </section>
+      {winter && <div className="container" style={{ marginTop: 8, marginBottom: 32 }}><NewYearCountdown publicPage /></div>}
 
       {open.length > 0 && (
         <div className="ticker v5" aria-label={t("home.upcoming")}>

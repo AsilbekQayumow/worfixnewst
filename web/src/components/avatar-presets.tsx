@@ -218,16 +218,108 @@ function PersonArt({ p }: { p: Person }) {
   );
 }
 
-/** What the picker offers. */
-export const AVATAR_PRESETS: string[] = Object.keys(PEOPLE);
+
+/* ───────── v8: the New Year cast ───────── */
+const EYES = (y = 37.5, dx = 5.5) => <>
+  <ellipse cx={40 - dx} cy={y} rx="2.1" ry="2.5" fill="#1d1712" /><ellipse cx={40 + dx} cy={y} rx="2.1" ry="2.5" fill="#1d1712" />
+  <circle cx={40.7 - dx} cy={y - .8} r=".75" fill="#fff" /><circle cx={40.7 + dx} cy={y - .8} r=".75" fill="#fff" />
+</>;
+const SNOW_DOTS = <g fill="#fff" opacity=".8">{[[10, 12, 1.4], [70, 22, 1.2], [14, 58, 1], [66, 66, 1.5], [22, 30, .9], [60, 8, 1]].map(([x, y, r], i) => <circle key={i} cx={x} cy={y} r={r} />)}</g>;
+const WINTER: Record<string, ReactNode> = {
+  w01: <>{/* Qorbobo */}
+    <rect width="80" height="80" fill="#cfe3f6" />{SNOW_DOTS}
+    <path d="M12 80C12 64 24 57 40 57S68 64 68 80Z" fill="#d6262f" /><path d="M30 58h20l-2 22H32Z" fill="#fff" opacity=".95" />
+    <ellipse cx="40" cy="37" rx="15" ry="16.5" fill="#f5cfae" />
+    <path d="M23 40C23 58 32 66 40 66S57 58 57 40C54 46 48 49 40 49S26 46 23 40Z" fill="#fff" />
+    <path d="M30 47c4-3 7-3 10-1 3-2 6-2 10 1-3 3-7 3-10 1-3 2-7 2-10-1Z" fill="#f2f2f2" stroke="#e1e1e1" strokeWidth=".6" />
+    {EYES(36)}
+    <circle cx="30" cy="41.5" r="3" fill="#ff7a7a" opacity=".4" /><circle cx="50" cy="41.5" r="3" fill="#ff7a7a" opacity=".4" />
+    <ellipse cx="40" cy="42" rx="2.6" ry="2.2" fill="#f0a98a" />
+    <path d="M24 29C25 15 34 9 46 11 54 12 60 18 63 27 58 23 52 21 47 21Z" fill="#d6262f" />
+    <path d="M47 13c8 1 14 6 16 14" stroke="#a81c24" strokeWidth="1.2" fill="none" opacity=".5" />
+    <rect x="22" y="26" width="36" height="7.5" rx="3.75" fill="#fff" /><circle cx="63.5" cy="29" r="4.6" fill="#fff" />
+  </>,
+  w02: <>{/* Qorqiz */}
+    <rect width="80" height="80" fill="#e4f1fb" />{SNOW_DOTS}
+    <path d="M58 30c6 10 4 26 0 38-2 4-6 3-6-1 2-12 4-24 0-34Z" fill="#e8b04c" />
+    <path d="M12 80C12 65 24 57 40 57S68 65 68 80Z" fill="#2f7fd6" /><path d="M36 57h8v23h-8Z" fill="#fff" /><path d="M14 74c8-4 18-5 26-5s18 1 26 5v6H14Z" fill="#fff" opacity=".9" />
+    <ellipse cx="40" cy="38" rx="14.5" ry="16.5" fill="#f7dcc4" />
+    <path d="M26 36C26 24 32 20 40 20S54 24 54 36C51 30 46 27 40 27S29 30 26 36Z" fill="#e8b04c" />
+    {EYES(38, 5.2)}
+    <path d="M33 33.5q2.5-1.6 5 0M42 33.5q2.5-1.6 5 0" stroke="#b07a2a" strokeWidth="1.3" fill="none" strokeLinecap="round" />
+    <circle cx="31" cy="43.5" r="2.8" fill="#ff7aa0" opacity=".35" /><circle cx="49" cy="43.5" r="2.8" fill="#ff7aa0" opacity=".35" />
+    <path d="M36 46.5Q40 49.5 44 46.5" stroke="#c0455a" strokeWidth="1.7" fill="none" strokeLinecap="round" />
+    <path d="M23 26C24 13 31 7 40 7S56 13 57 26C51 23 46 22 40 22S29 23 23 26Z" fill="#2f7fd6" />
+    <path d="M23 26C29 22.5 51 22.5 57 26L56.5 29C50 26 30 26 23.5 29Z" fill="#fff" />
+    <g stroke="#fff" strokeWidth="1.4" strokeLinecap="round"><path d="M40 10v9M36.1 12.2l7.8 4.6M36.1 16.8l7.8-4.6" /></g>
+    <g fill="#bfe3ff">{[[28, 17], [52, 17], [33, 12.5], [47, 12.5]].map(([x, y], i) => <circle key={i} cx={x} cy={y} r="1.3" />)}</g>
+  </>,
+  w03: <>{/* Qorbola */}
+    <rect width="80" height="80" fill="#cfe7f2" />{SNOW_DOTS}
+    <circle cx="40" cy="86" r="30" fill="#fff" /><circle cx="40" cy="86" r="30" fill="none" stroke="#dbe8f0" strokeWidth="2" />
+    <path d="M18 58c10 6 34 6 44 0l1 6c-12 6-34 6-46 0Z" fill="#e2333b" /><path d="M50 61l6 16-6 1-4-15Z" fill="#c22831" />
+    <circle cx="40" cy="40" r="18" fill="#fff" /><path d="M24 46a18 18 0 0 0 32 0" fill="#e6eff5" opacity=".7" />
+    <circle cx="34" cy="37" r="2.3" fill="#1d1712" /><circle cx="46" cy="37" r="2.3" fill="#1d1712" />
+    <path d="M40 41l13 3-13 2Z" fill="#f08a24" />
+    <g fill="#2a2420">{[[33, 49], [36.5, 51], [40, 51.6], [43.5, 51], [47, 49]].map(([x, y], i) => <circle key={i} cx={x} cy={y} r="1.1" />)}</g>
+    <circle cx="30" cy="43" r="2.6" fill="#ff8a8a" opacity=".35" /><circle cx="50" cy="43" r="2.6" fill="#ff8a8a" opacity=".35" />
+    <rect x="27" y="22" width="26" height="4" rx="2" fill="#1f1f24" /><rect x="31" y="6" width="18" height="17" rx="2" fill="#1f1f24" /><rect x="31" y="17" width="18" height="3.5" fill="#e2333b" />
+  </>,
+  w04: <>{/* Elf */}
+    <rect width="80" height="80" fill="#e2f3e4" />{SNOW_DOTS}
+    <path d="M12 80C12 65 24 57 40 57S68 65 68 80Z" fill="#1d9a4a" /><path d="M28 58l12 8 12-8-2 8-10 4-10-4Z" fill="#d6262f" />
+    <path d="M23 38l-9-8 11 2ZM57 38l9-8-11 2Z" fill="#f2c7a2" />
+    <ellipse cx="40" cy="39" rx="15" ry="16.5" fill="#f5cfae" />
+    {EYES(39)}
+    <g fill="#c98a5e">{[[31, 43], [33, 44.5], [47, 43], [49, 44.5]].map(([x, y], i) => <circle key={i} cx={x} cy={y} r=".75" />)}</g>
+    <path d="M35 47Q40 51 45 47" stroke="#7a3a2a" strokeWidth="1.8" fill="none" strokeLinecap="round" />
+    <path d="M24 30C26 18 33 10 42 9 50 8 58 4 64 2 60 10 58 18 56 30Z" fill="#1d9a4a" />
+    <rect x="22" y="27" width="36" height="6" rx="3" fill="#d6262f" /><circle cx="64.5" cy="3.5" r="3.2" fill="#ffd23f" />
+  </>,
+  w05: <>{/* Bug'u */}
+    <rect width="80" height="80" fill="#f4e9d8" />{SNOW_DOTS}
+    <g stroke="#8a5a32" strokeWidth="3.2" strokeLinecap="round" fill="none"><path d="M28 24C22 16 22 8 24 4M24 14l-6-4M26 19l-7 1" /><path d="M52 24c6-8 6-16 4-20M56 14l6-4M54 19l7 1" /></g>
+    <path d="M16 80C16 66 26 58 40 58S64 66 64 80Z" fill="#b8473a" /><path d="M30 60h20v6H30Z" fill="#ffd23f" />
+    <ellipse cx="22" cy="30" rx="6" ry="3.5" transform="rotate(-25 22 30)" fill="#a26a3e" /><ellipse cx="58" cy="30" rx="6" ry="3.5" transform="rotate(25 58 30)" fill="#a26a3e" />
+    <path d="M26 34C26 24 32 20 40 20S54 24 54 34C54 46 50 58 40 58S26 46 26 34Z" fill="#a26a3e" />
+    <ellipse cx="40" cy="49" rx="9" ry="7.5" fill="#d9b48a" />
+    {EYES(35, 6)}
+    <circle cx="40" cy="47" r="4.6" fill="#e2333b" /><circle cx="38.6" cy="45.6" r="1.4" fill="#fff" opacity=".7" />
+    <path d="M36.5 53Q40 55.5 43.5 53" stroke="#5a3418" strokeWidth="1.5" fill="none" strokeLinecap="round" />
+  </>,
+  w06: <>{/* Pingvin */}
+    <rect width="80" height="80" fill="#dbeaf8" />{SNOW_DOTS}
+    <path d="M14 80C14 62 25 52 40 52S66 62 66 80Z" fill="#1f2530" /><path d="M26 80C26 66 32 60 40 60S54 66 54 80Z" fill="#fff" />
+    <path d="M20 56c10 5 30 5 40 0l1 6c-12 5-30 5-42 0Z" fill="#1c9bf0" /><path d="M24 60l-4 14 6 1 3-14Z" fill="#147fc8" />
+    <circle cx="40" cy="38" r="17" fill="#1f2530" />
+    <path d="M27 40C27 30 33 27 40 31 47 27 53 30 53 40 53 48 47 52 40 52S27 48 27 40Z" fill="#fff" />
+    {EYES(39, 5.2)}
+    <path d="M36 44l4 4 4-4Z" fill="#ffb21f" />
+    <circle cx="31" cy="45" r="2.4" fill="#ff8aa0" opacity=".4" /><circle cx="49" cy="45" r="2.4" fill="#ff8aa0" opacity=".4" />
+    <path d="M23 31C23 19 31 13 40 13S57 19 57 31Z" fill="#1c9bf0" /><rect x="21.5" y="27" width="37" height="7" rx="3.5" fill="#fff" />
+    <circle cx="40" cy="11" r="4" fill="#fff" />
+  </>,
+};
+
+/** What the picker offers (the New Year cast first). */
+export const AVATAR_PRESETS: string[] = [...Object.keys(WINTER), ...Object.keys(PEOPLE)];
+/** v8: presets that already wear something festive (no extra Santa hat on top). */
+export const HATTED = new Set(Object.keys(WINTER));
 
 export function isPreset(src: string | null | undefined): boolean {
   if (!src || !src.startsWith("preset:")) return false;
   const id = src.slice(7);
-  return id in PEOPLE || LEGACY.includes(id);
+  return id in PEOPLE || id in WINTER || LEGACY.includes(id);
 }
 
 export function PresetArt({ id }: { id: string }) {
+  if (WINTER[id]) {
+    return (
+      <svg viewBox="0 0 80 80" width="100%" height="100%" role="img" aria-hidden style={{ display: "block" }}>
+        {WINTER[id]}
+      </svg>
+    );
+  }
   if (PEOPLE[id]) {
     return (
       <svg viewBox="0 0 80 80" width="100%" height="100%" role="img" aria-hidden style={{ display: "block" }}>

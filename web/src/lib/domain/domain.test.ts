@@ -5,7 +5,7 @@ import { distanceM, hammingHex, runChecks } from "./checks";
 import { computeGrant, computeMissionReward, crossedCertificateLevels, DIFFICULTY_REWARD, levelForXp } from "./rewards";
 import { canReviewSubmission } from "./permissions";
 import { reviewSubmission } from "./verification";
-import { validateMission, validatePersonal, validateRegister } from "./validation";
+import { validateLogin, validateMission, validatePersonal, validateRegister } from "./validation";
 import type { Mission, Submission, UserProfile } from "./types";
 
 const now = "2026-11-19T10:00:00.000Z";
@@ -118,8 +118,16 @@ test("geo helpers", () => {
 });
 
 test("validation", () => {
-  const ok = validateRegister({ fullName: "Ali Valiyev", email: "ALI@x.uz", password: "secret123", accountType: "volunteer", ageConfirmed: true, guardianConsent: false, birthYear: 2000 });
-  assert.ok(ok.ok && ok.data.email === "ali@x.uz");
+  const ok = validateRegister({ fullName: "Ali Valiyev", username: "@Ali_V", email: "ALI@x.uz", password: "secret123", accountType: "volunteer", ageConfirmed: true, guardianConsent: false, birthYear: 2000 });
+  assert.ok(ok.ok && ok.data.email === "ali@x.uz" && ok.data.username === "ali_v");
+  const noName = validateRegister({ fullName: "Ali", username: "admin", email: "a@x.uz", password: "secret123", accountType: "volunteer", ageConfirmed: true, birthYear: 2000 });
+  assert.ok(!noName.ok && noName.errors.username === "v.usernameReserved");
+  const byName = validateLogin({ login: " @Dilnoza ", password: "x" });
+  assert.ok(byName.ok && byName.data.username === "dilnoza" && byName.data.email === null);
+  const byMail = validateLogin({ login: "A@B.uz", password: "x" });
+  assert.ok(byMail.ok && byMail.data.email === "a@b.uz" && byMail.data.username === null);
+  const bad = validateLogin({ login: "a b", password: "" });
+  assert.ok(!bad.ok && bad.errors.login === "v.login" && bad.errors.password === "v.passwordEmpty");
   const young = validateRegister({ fullName: "Ali", email: "a@x.uz", password: "secret123", accountType: "volunteer", ageConfirmed: true, guardianConsent: false, birthYear: new Date().getFullYear() - 12 });
   assert.ok(!young.ok && young.errors.birthYear === "v.age15");
   const org = validateRegister({ fullName: "Ali", email: "a@x.uz", password: "secret123", accountType: "organization", organization: { name: "", organizationType: "", description: "", email: "", phone: "", website: "", address: "", country: "", city: "" } });

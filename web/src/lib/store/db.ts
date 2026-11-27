@@ -95,9 +95,9 @@ let version = 0;
 let initPromise: Promise<void> | null = null;
 
 export const DEMO_ACCOUNTS = [
-  { label: "volunteer", email: "vol@demo.worfix.uz", password: "Volunteer-1" },
-  { label: "organization", email: "org@demo.worfix.uz", password: "Organizer-1" },
-  { label: "admin", email: "admin@demo.worfix.uz", password: "Moderator-1" },
+  { label: "volunteer", email: "vol@demo.worfix.uz", username: "dilnoza", password: "Volunteer-1" },
+  { label: "organization", email: "org@demo.worfix.uz", username: "bekzod_org", password: "Organizer-1" },
+  { label: "admin", email: "admin@demo.worfix.uz", username: "moderator", password: "Moderator-1" },
 ] as const;
 
 export const uid = () => globalThis.crypto.randomUUID();
@@ -244,9 +244,9 @@ async function seed(db: DB) {
   });
 
   const orgId = uid();
-  const vol = person({ email: DEMO_ACCOUNTS[0].email, fullName: "Dilnoza Rahimova", username: "dilnoza", bio: "Hafta oxirlari daraxt ekaman va daryo bo'yini tozalayman.", interests: ["environment", "water", "animals"], skills: ["Birinchi yordam", "Ingliz tili"], birthYear: 2004, mahalla: "Bog‘i shamol MFY", mahallaId: "m4973" });
-  const orgUser = person({ email: DEMO_ACCOUNTS[1].email, fullName: "Bekzod Tursunov", username: "bekzod_org", role: "organization", organizationId: orgId });
-  const admin = person({ email: DEMO_ACCOUNTS[2].email, fullName: "WORFIX moderatori", username: "moderator", role: "admin" });
+  const vol = person({ email: DEMO_ACCOUNTS[0].email, fullName: "Dilnoza Rahimova", username: DEMO_ACCOUNTS[0].username, bio: "Hafta oxirlari daraxt ekaman va daryo bo'yini tozalayman.", interests: ["environment", "water", "animals"], skills: ["Birinchi yordam", "Ingliz tili"], birthYear: 2004, mahalla: "Bog‘i shamol MFY", mahallaId: "m4973" });
+  const orgUser = person({ email: DEMO_ACCOUNTS[1].email, fullName: "Bekzod Tursunov", username: DEMO_ACCOUNTS[1].username, role: "organization", organizationId: orgId });
+  const admin = person({ email: DEMO_ACCOUNTS[2].email, fullName: "WORFIX moderatori", username: DEMO_ACCOUNTS[2].username, role: "admin" });
   db.users.push(vol, orgUser, admin);
   for (const u of [vol, orgUser, admin]) {
     const pw = DEMO_ACCOUNTS.find((a) => a.email === u.email)!.password;

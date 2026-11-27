@@ -254,11 +254,34 @@ function hotSpot(db: DB, live: Territory[], now: number): { point: GeoPoint; peo
   return { point: { lat: best.lat / best.w, lng: best.lng / best.w }, people: best.people };
 }
 
+/** v8: is this username free? (server in Firebase mode; null when it cannot tell) */
+async function usernameFree(name: string, me = ""): Promise<boolean | null> {
+  if (!FIREBASE) return !getDB().users.some((u) => u.id !== me && u.username === name);
+  try {
+    const res = await fetch(`/.netlify/functions/username-check?u=${encodeURIComponent(name)}&me=${encodeURIComponent(me)}`);
+    if (!res.ok) return null;
+    return ((await res.json()) as { free?: boolean }).free === true;
+  } catch { return null; }
+}
+/** v8: the email behind a username, given the right password (Firebase mode). */
+async function emailForLogin(username: string, password: string): Promise<string> {
+  let res: Response;
+  try {
+    res = await fetch("/.netlify/functions/login-name", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ username, password }) });
+  } catch { throw new DomainError("forbidden", "e.network"); }
+  if (res.status === 429) throw new DomainError("forbidden", "e.tooMany");
+  if (res.status === 501) throw new DomainError("forbidden", "e.loginByEmail");
+  if (!res.ok) throw new DomainError("forbidden", "e.badLogin");
+  return ((await res.json()) as { email: string }).email;
+}
+
 export const api = {
   ready,
   mode: (FIREBASE ? "firebase" : "local") as "firebase" | "local",
 
   /* ---- auth ---- */
+  /** v8: true / false, or null when the server cannot tell */
+  async usernameFree(name: string) { await ready(); return usernameFree(name, readSession(getDB())?.id ?? ""); },
   async me(): Promise<SelfUser | null> {
     await ready();
     const u = readSession(getDB());
@@ -280,6 +303,7 @@ export const api = {
     await ready();
     const data = unwrap(validateRegister(input));
     if (!FIREBASE && getDB().users.some((u) => u.email === data.email)) throw new ValidationError({ email: "e.emailTaken" });
+    if ((await usernameFree(data.username)) === false) throw new ValidationError({ username: "e.usernameTaken" });
     let cloudUid = "";
     if (FIREBASE) {
       try { cloudUid = await cloud.signUp(data.email, data.password); } catch (e) {
@@ -293,7 +317,7 @@ export const api = {
     await commit((db) => {
       const t = nowIso();
       const user: UserProfile = {
-        id: cloudUid || uid(), email: data.email, emailVerified: false, fullName: data.fullName, username: `user_${uid().slice(0, 8)}`,
+        id: cloudUid || uid(), email: data.email, emailVerified: false, fullName: data.fullName, username: data.username,
         avatar: null, bio: "", country: "", province: "", city: "", feedVisible: true, languages: [], skills: [], interests: [], level: 1, xp: 0,
         points: 0, trustScore: 50, reputation: 0, streak: 0, lastApprovedDay: null, totalVolunteerHours: 0, totalImpact: 0, impact: {},
         onboarded: data.accountType === "organization", organizationId: null, role: data.accountType, status: "active", createdAt: t, updatedAt: t,
@@ -318,17 +342,22 @@ export const api = {
     return { devVerifyToken: token, role: data.accountType };
   },
 
-  async login(input: { email: string; password: string }) {
+  async login(input: { login?: string; email?: string; password: string }) {
     await ready();
     const data = unwrap(validateLogin(input));
     if (FIREBASE) {
-      const id = await cloud.signIn(data.email, data.password);
+      const email = data.email ?? (await emailForLogin(data.username!, data.password));
+      let id: string;
+      try { id = await cloud.signIn(email, data.password); } catch (e) {
+        if (e instanceof cloud.CloudAuthError && /invalid|wrong-password|user-not-found/.test(e.code)) throw new DomainError("forbidden", "e.badLogin");
+        throw e;
+      }
       // An account created while the database was missing has no profile: recreate it, but only after the
       // server confirms there is none, so an existing profile is never overwritten.
       if (!getDB().users.some((x) => x.id === id) && (await cloud.profileExists(id)) === false) {
         await commit((db) => {
           const t = nowIso();
-          const email = cloud.currentAuthEmail() ?? data.email;
+          const email = cloud.currentAuthEmail() ?? data.email ?? "";
           db.users.push({
             id, email, emailVerified: false, fullName: email.split("@")[0], username: `user_${uid().slice(0, 8)}`,
             avatar: null, bio: "", country: "", province: "", city: "", feedVisible: true, languages: [], skills: [], interests: [], level: 1, xp: 0,
@@ -353,22 +382,22 @@ export const api = {
       return strip(u);
     }
     const db0 = getDB();
-    const att = db0.loginAttempts[data.email];
+    const att = db0.loginAttempts[data.login];
     if (att && Date.now() - att.first < WINDOW_MS && att.count >= MAX_ATTEMPTS) throw new DomainError("forbidden", "e.tooMany");
-    const user = db0.users.find((u) => u.email === data.email);
+    const user = db0.users.find((u) => (data.email ? u.email === data.email : u.username === data.username) && u.status !== "deleted");
     const cred = user && db0.credentials.find((c) => c.userId === user.id);
     const ok = user && cred ? (await hashPassword(data.password, cred.salt)).hash === cred.hash : false;
     if (!user || !ok) {
       await commit((db) => {
-        const a = db.loginAttempts[data.email];
-        db.loginAttempts[data.email] = !a || Date.now() - a.first > WINDOW_MS ? { count: 1, first: Date.now() } : { ...a, count: a.count + 1 };
+        const a = db.loginAttempts[data.login];
+        db.loginAttempts[data.login] = !a || Date.now() - a.first > WINDOW_MS ? { count: 1, first: Date.now() } : { ...a, count: a.count + 1 };
       });
       throw new DomainError("forbidden", "e.badLogin");
     }
     if (user.status === "suspended") throw new DomainError("suspended", "e.suspended");
     if (user.status === "deleted") throw new DomainError("forbidden", "e.badLogin");
     await commit((db) => {
-      delete db.loginAttempts[data.email];
+      delete db.loginAttempts[data.login];
       const u = db.users.find((x) => x.id === user.id)!;
       u.lastLogin = nowIso();
       startSession(u);
@@ -478,6 +507,8 @@ export const api = {
   async updateProfile(input: Partial<ProfileInput>, extra: { avatar?: string | null; mapColor?: string | null; onboarded?: boolean; birthYear?: number | null; guardianConsent?: boolean } = {}) {
     await ready();
     const data = unwrap(validateProfile(input));
+    const before = readSession(getDB());
+    if (FIREBASE && before && before.username !== data.username && (await usernameFree(data.username, before.id)) === false) throw new ValidationError({ username: "e.usernameTaken" });
     if (extra.birthYear !== undefined) {
       const e = ageErrors(extra.birthYear, extra.guardianConsent);
       if (Object.keys(e).length) throw new ValidationError(e);
@@ -493,6 +524,13 @@ export const api = {
       if (extra.onboarded) u.onboarded = true;
       log(db, u, "user.update_profile", "users", u.id);
     });
+  },
+
+  /** v8: the 3D person on the map (kept on the account so it follows you to other devices) */
+  async setHero(id: string) {
+    await ready();
+    if (!/^[a-z]{3,16}$/.test(id)) return;
+    await commit((db) => { const u = actor(db); u.hero = id; u.updatedAt = nowIso(); });
   },
 
   async updatePersonal(input: Partial<PersonalInput>) {

@@ -12,7 +12,7 @@ import { canSave, DAILY, dailyReward, liveStreak, play as runEngine, type Action
 import { activityOf, battlesFor, districtKeyOf, heatActivity, mahallaKeyOf, seasonExtraOf, tookPart, weekActivity } from "../game/context";
 import { questKey, questsFor, statsNow } from "../game/quests";
 import { buildHeat, spawnsAround, type Heat, type LatLng } from "../game/spawn";
-import { COSMETICS, seasonXp, SEASON_TIERS, tierOf, tierReward, tierXp } from "../game/season";
+import { adventReward, COSMETICS, seasonXp, SEASON_TIERS, tierOf, tierReward, tierXp } from "../game/season";
 import { DUEL, duelScore, lastWeek, settleDuel, type Battle, type Duel, type DuelMetric } from "../game/league";
 import { gameBadges } from "../game/badges";
 import { monthsWithActivity, wrapped } from "../game/wrapped";
@@ -125,6 +125,13 @@ export const api7 = {
         return { ...d, other: { id: other, name: o?.fullName ?? "—", avatar: o?.avatar ?? null }, mine: d.from === u.id, claim };
       }),
       friends: [...friendIdsOf(db, u.id)].map((id) => names.get(id)).filter(Boolean).map((f) => ({ id: f!.id, name: f!.fullName, avatar: f!.avatar })),
+      // v8: the New Year gift calendar
+      advent: {
+        year: Number(gameDay(now).slice(0, 4)),
+        day: gameDay(now).slice(5, 7) === "12" ? Number(gameDay(now).slice(8, 10)) : 0,
+        opened: (p.advent ?? []).filter((d) => d.slice(0, 4) === gameDay(now).slice(0, 4) && d.slice(5, 7) === "12").map((d) => Number(d.slice(8, 10))),
+        rewards: Array.from({ length: 31 }, (_, i) => adventReward(i + 1)),
+      },
     };
   },
 

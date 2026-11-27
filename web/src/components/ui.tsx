@@ -1,6 +1,6 @@
 "use client";
 import { createPortal } from "react-dom";
-import { isPreset, PresetArt } from "./avatar-presets";
+import { HATTED, isPreset, PresetArt } from "./avatar-presets";
 import Link from "next/link";
 import {
   createContext, useCallback, useContext, useEffect, useId, useRef, useState,
@@ -161,10 +161,26 @@ export function Coins({ value, size = 16, className }: { value: number | string;
 
 export function Avatar({ name, src, size = 36 }: { name: string; src?: string | null; size?: number }) {
   const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("") || "·";
+  const preset = src && isPreset(src) ? src.slice(7) : null;
+  // v8: in the New Year season every avatar wears a Santa hat (shown by theme-winter.css), unless it already has one
   return (
-    <span className="avatar" style={{ width: size, height: size, fontSize: Math.max(9, Math.round(size * 0.38)) }} aria-hidden>
-      {src && isPreset(src) ? <PresetArt id={src.slice(7)} /> : src && !src.startsWith("preset:") ? <img src={src} alt="" /> : size < 26 ? initials.slice(0, 1) : initials}
+    <span className="avatar-w" style={{ width: size, height: size }} data-hatless={preset && HATTED.has(preset) ? "" : undefined} data-small={size < 26 ? "" : undefined} aria-hidden>
+      <span className="avatar" style={{ width: size, height: size, fontSize: Math.max(9, Math.round(size * 0.38)) }}>
+        {preset ? <PresetArt id={preset} /> : src && !src.startsWith("preset:") ? <img src={src} alt="" /> : size < 26 ? initials.slice(0, 1) : initials}
+      </span>
+      <SantaHat />
     </span>
+  );
+}
+
+/** v8: the hat (hidden outside the season). */
+export function SantaHat() {
+  return (
+    <svg className="av-hat" viewBox="0 0 64 52" aria-hidden>
+      <path d="M8 40C10 22 22 8 38 7c9-.5 16 5 19 14-5-3-10-4-14-2 0 0 4 9 5 21Z" fill="#d6262f" />
+      <path d="M38 7c9-.5 16 5 19 14-5-3-10-4-14-2" fill="#b31d26" />
+      <rect x="3" y="36" width="50" height="12" rx="6" fill="#fff" /><circle cx="57" cy="22" r="6" fill="#fff" />
+    </svg>
   );
 }
 

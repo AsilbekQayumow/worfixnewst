@@ -86,6 +86,8 @@ export interface PlayState {
   /** weekly mahalla battles and duels already rewarded */
   battles: string[];
   duels: string[];
+  /** v8: days of the New Year gift calendar already opened ("2026-12-05") */
+  advent?: string[];
   updatedAt: string;
 }
 
