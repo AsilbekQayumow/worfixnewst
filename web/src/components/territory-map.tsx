@@ -94,7 +94,7 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
       const c = latest.current.me ?? (a0 ? { lng: a0[0], lat: a0[1] } : { lat: 39.6542, lng: 66.9597 });
       let raster = false;
       const m = new ml.Map({
-        container: box.current, style: STYLE[styleNow()], center: [c.lng, c.lat], zoom: 14.2, attributionControl: { compact: true },
+        container: box.current, style: STYLE[styleNow()], center: [c.lng, c.lat], zoom: 16, pitch: 42, maxPitch: 60, attributionControl: { compact: true },
         dragRotate: false, pitchWithRotate: false, touchPitch: false, fadeDuration: 0,
       });
       m.touchZoomRotate.disableRotation();
@@ -129,29 +129,46 @@ export function TerritoryMap({ areas, missions, me, trace, flash, taken, hot, do
     const m = map.current;
     if (!m || !ready || m.getSource("areas")) return;
     const accent = latest.current.myColor ?? css("--accent", "#0a6a2c");
+    // Overlays go under the basemap's own labels, so street and place names stay sharp over the area fills.
+    const before = m.getStyle().layers.find((l) => l.type === "symbol")?.id;
+    const add = (layer: Parameters<MlMap["addLayer"]>[0]) => { m.addLayer(layer, before); };
+    // The dark style ships without 3D buildings and place names; add them so it is as detailed as the light one.
+    if (m.getSource("openmaptiles") && !m.getLayer("building-3d")) {
+      try {
+        m.addLayer({ id: "building-3d", type: "fill-extrusion", source: "openmaptiles", "source-layer": "building", minzoom: 14,
+          paint: { "fill-extrusion-color": "hsl(220,8%,26%)", "fill-extrusion-height": ["get", "render_height"], "fill-extrusion-base": ["get", "render_min_height"], "fill-extrusion-opacity": 0.85 } }, before);
+        m.addLayer({ id: "poi-names", type: "symbol", source: "openmaptiles", "source-layer": "poi", minzoom: 15.5,
+          filter: ["all", ["==", ["geometry-type"], "Point"], ["<", ["get", "rank"], 12]],
+          layout: { "text-field": ["coalesce", ["get", "name_en"], ["get", "name"]], "text-font": ["Noto Sans Regular"], "text-size": 12, "text-max-width": 8, "text-anchor": "top", "text-offset": [0, 0.4] },
+          paint: { "text-color": "#cfd2d8", "text-halo-color": "#101114", "text-halo-width": 1.4 } });
+        for (const id of ["highway_name_other", "highway_name_motorway", "place_suburb", "place_village", "place_other"]) {
+          if (m.getLayer(id)) { m.setPaintProperty(id, "text-color", "#cfd2d8"); m.setPaintProperty(id, "text-halo-color", "#101114"); m.setPaintProperty(id, "text-halo-width", 1.4); }
+        }
+      } catch { /* a style without these sources keeps its own look */ }
+    }
     m.addSource("areas", { type: "geojson", data: fc([]) });
     m.addSource("flash", { type: "geojson", data: fc([]) });
     m.addSource("trace", { type: "geojson", data: fc([]) });
     m.addSource("taken", { type: "geojson", data: fc([]) });
-    m.addLayer({ id: "areas-fill", type: "fill", source: "areas", paint: {
+    add({ id: "areas-fill", type: "fill", source: "areas", paint: {
       "fill-color": ["get", "color"],
       "fill-opacity": ["match", ["get", "relation"], "mine", 0.26, "group", 0.2, 0.13],
     } });
-    m.addLayer({ id: "areas-line", type: "line", source: "areas", layout: { "line-join": "round" }, paint: {
+    add({ id: "areas-line", type: "line", source: "areas", layout: { "line-join": "round" }, paint: {
       "line-color": ["get", "line"], "line-width": ["match", ["get", "relation"], "mine", 2.6, 1.6],
       "line-dasharray": ["match", ["get", "relation"], "other", ["literal", [2, 1.5]], ["literal", [1, 0]]],
     } });
-    m.addLayer({ id: "taken-fill", type: "fill", source: "taken", paint: { "fill-color": ["get", "color"], "fill-opacity": 0 } });
-    m.addLayer({ id: "taken-line", type: "line", source: "taken", paint: { "line-color": ["get", "color"], "line-width": 3, "line-opacity": 0, "line-dasharray": [1.5, 1] } });
-    m.addLayer({ id: "flash-fill", type: "fill", source: "flash", paint: { "fill-color": accent, "fill-opacity": 0 } });
-    m.addLayer({ id: "flash-line", type: "line", source: "flash", paint: { "line-color": accent, "line-width": 4, "line-opacity": 0 } });
-    m.addLayer({ id: "trace-glow", type: "line", source: "trace", filter: ["==", ["get", "k"], "path"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": accent, "line-width": 28, "line-opacity": 0.35, "line-blur": 10 } });
-    m.addLayer({ id: "trace-casing", type: "line", source: "trace", filter: ["==", ["get", "k"], "path"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#ffffff", "line-width": 9, "line-opacity": 0.95 } });
-    m.addLayer({ id: "trace-close", type: "line", source: "trace", filter: ["==", ["get", "k"], "close"], layout: { "line-cap": "round" }, paint: { "line-color": accent, "line-width": 2.5, "line-dasharray": [1, 1.6], "line-opacity": 0.8 } });
-    m.addLayer({ id: "trace-line", type: "line", source: "trace", filter: ["==", ["get", "k"], "path"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": accent, "line-width": 5 } });
-    m.addLayer({ id: "trace-halo", type: "circle", source: "trace", filter: ["==", ["get", "k"], "head"], paint: { "circle-radius": 14, "circle-color": accent, "circle-opacity": 0.25, "circle-blur": 0.4 } });
-    m.addLayer({ id: "trace-head", type: "circle", source: "trace", filter: ["==", ["get", "k"], "head"], paint: { "circle-radius": 6, "circle-color": accent, "circle-stroke-color": "#ffffff", "circle-stroke-width": 2.5 } });
-    m.addLayer({ id: "trace-start", type: "circle", source: "trace", filter: ["==", ["get", "k"], "start"], paint: { "circle-radius": 8, "circle-color": "#ffffff", "circle-stroke-color": accent, "circle-stroke-width": 4 } });
+    add({ id: "taken-fill", type: "fill", source: "taken", paint: { "fill-color": ["get", "color"], "fill-opacity": 0 } });
+    add({ id: "taken-line", type: "line", source: "taken", paint: { "line-color": ["get", "color"], "line-width": 3, "line-opacity": 0, "line-dasharray": [1.5, 1] } });
+    add({ id: "flash-fill", type: "fill", source: "flash", paint: { "fill-color": accent, "fill-opacity": 0 } });
+    add({ id: "flash-line", type: "line", source: "flash", paint: { "line-color": accent, "line-width": 4, "line-opacity": 0 } });
+    add({ id: "trace-glow", type: "line", source: "trace", filter: ["==", ["get", "k"], "path"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": accent, "line-width": 28, "line-opacity": 0.35, "line-blur": 10 } });
+    add({ id: "trace-casing", type: "line", source: "trace", filter: ["==", ["get", "k"], "path"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": "#ffffff", "line-width": 9, "line-opacity": 0.95 } });
+    add({ id: "trace-close", type: "line", source: "trace", filter: ["==", ["get", "k"], "close"], layout: { "line-cap": "round" }, paint: { "line-color": accent, "line-width": 2.5, "line-dasharray": [1, 1.6], "line-opacity": 0.8 } });
+    add({ id: "trace-line", type: "line", source: "trace", filter: ["==", ["get", "k"], "path"], layout: { "line-cap": "round", "line-join": "round" }, paint: { "line-color": accent, "line-width": 5 } });
+    add({ id: "trace-halo", type: "circle", source: "trace", filter: ["==", ["get", "k"], "head"], paint: { "circle-radius": 14, "circle-color": accent, "circle-opacity": 0.25, "circle-blur": 0.4 } });
+    add({ id: "trace-head", type: "circle", source: "trace", filter: ["==", ["get", "k"], "head"], paint: { "circle-radius": 6, "circle-color": accent, "circle-stroke-color": "#ffffff", "circle-stroke-width": 2.5 } });
+    add({ id: "trace-start", type: "circle", source: "trace", filter: ["==", ["get", "k"], "start"], paint: { "circle-radius": 8, "circle-color": "#ffffff", "circle-stroke-color": accent, "circle-stroke-width": 4 } });
     try {
       m.addLayer({ id: "areas-name", type: "symbol", source: "areas", minzoom: 13.5, layout: {
         "text-field": ["get", "name"], "text-size": 12, "text-font": ["Noto Sans Regular"], "text-allow-overlap": false, "symbol-placement": "point",
